@@ -22,16 +22,16 @@ class SwipeDownModalVC: ColorMuxPagingViewController {
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        SDImageCache.shared().config.shouldCacheImagesInMemory = true
+        SDImageCache.shared.config.shouldCacheImagesInMemory = true
     }
 
-    override func prefersHomeIndicatorAutoHidden() -> Bool {
+    override var prefersHomeIndicatorAutoHidden: Bool {
         return true
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        SDImageCache.shared().config.shouldCacheImagesInMemory = false
+        SDImageCache.shared.config.shouldCacheImagesInMemory = false
         panGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(panGestureAction(_:)))
         panGestureRecognizer2 = UIPanGestureRecognizer(target: self, action: #selector(panGestureAction(_:)))
         panGestureRecognizer!.delegate = self
@@ -53,12 +53,12 @@ class SwipeDownModalVC: ColorMuxPagingViewController {
 
         self.view.insertSubview(background!, at: 0)
         let blurView = UIVisualEffectView(frame: UIScreen.main.bounds)
-        blurEffect.setValue(3, forKeyPath: "blurRadius")
+        blurEffect.setValue(5, forKeyPath: "blurRadius")
         blurView.effect = blurEffect
         view.insertSubview(blurView, at: 0)
     }
     
-    func panGestureAction(_ panGesture: UIPanGestureRecognizer) {
+    @objc func panGestureAction(_ panGesture: UIPanGestureRecognizer) {
         let translation = panGesture.translation(in: view)
 
         if panGesture.state == .began {

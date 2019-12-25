@@ -11,12 +11,13 @@ import MobileCoreServices
 import Photos
 import RealmSwift
 import reddift
+import SDCAlertView
 import SwiftyJSON
 import Then
-import TTTAttributedLabel
 import UIKit
+import YYText
 
-class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttributedLabelDelegate {
+class ReplyViewController: MediaViewController, UITextViewDelegate {
 
     public enum ReplyType {
         case NEW_MESSAGE
@@ -26,6 +27,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         case SUBMIT_TEXT
         case EDIT_SELFTEXT
         case REPLY_SUBMISSION
+        case CROSSPOST
 
         func isEdit() -> Bool {
             return self == ReplyType.EDIT_SELFTEXT
@@ -36,7 +38,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         }
 
         func isSubmission() -> Bool {
-            return self == ReplyType.SUBMIT_IMAGE || self == ReplyType.SUBMIT_LINK || self == ReplyType.SUBMIT_TEXT || self == ReplyType.EDIT_SELFTEXT
+            return self == ReplyType.SUBMIT_IMAGE || self == ReplyType.SUBMIT_LINK || self == ReplyType.SUBMIT_TEXT || self == ReplyType.EDIT_SELFTEXT || self == ReplyType.CROSSPOST
         }
 
         func isMessage() -> Bool {
@@ -44,10 +46,6 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         }
     }
     
-    func attributedLabel(_ label: TTTAttributedLabel!, didSelectLinkWith url: URL!) {
-        self.doShow(url: url, heroView: nil, heroVC: nil)
-    }
-
     var type = ReplyType.NEW_MESSAGE
     var text: [UITextView]?
     var extras: [UIView]?
@@ -59,6 +57,9 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
     var distinguish: UIStateButton?
     var sticky: UIStateButton?
     var info: UIStateButton?
+    
+    var subject: String?
+    var message: String?
 
     var subreddit = ""
     var canMod = false
@@ -103,6 +104,15 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
     convenience init(name: String, completion: @escaping(String?) -> Void) {
         self.init(completion: completion)
         self.username = name
+        setBarColors(color: ColorUtil.getColorForUser(name: name))
+    }
+    
+    //New message with sub colors
+    convenience init(name: String, subject: String, message: String, completion: @escaping(String?) -> Void) {
+        self.init(completion: completion)
+        self.subject = subject.isEmpty ? nil : subject
+        self.message = message.isEmpty ? nil : message
+        self.username = name.isEmpty ? nil : name
         setBarColors(color: ColorUtil.getColorForUser(name: name))
     }
 
@@ -161,6 +171,39 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                     self.toolbar?.saveDraft(self)
                     self.alertController?.dismiss(animated: false, completion: {
                         let alert = UIAlertController(title: "Uh oh, something went wrong", message: "Your submission has not been edited (but has been saved as a draft), please try again\n\nError:\(error!.localizedDescription)", preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "Ok", style: .cancel, handler: nil))
+                        self.present(alert, animated: true, completion: nil)
+                    })
+                } else {
+                    self.alertController?.dismiss(animated: false, completion: {
+                        self.dismiss(animated: true, completion: {
+                            completion(link)
+                        })
+                    })
+                }
+            }
+        }
+    }
+    
+    //Crosspost
+    init(submission: RSubmission, completion: @escaping (Link?) -> Void) {
+        type = .CROSSPOST
+        toReplyTo = submission
+        super.init(nibName: nil, bundle: nil)
+        subject = submission.title
+        setBarColors(color: ColorUtil.getColorForSub(sub: submission.subreddit))
+        self.submissionCallback = { (link, error) in
+            DispatchQueue.main.async {
+                if error == nil && link == nil {
+                    self.alertController?.dismiss(animated: false, completion: {
+                        let alert = UIAlertController(title: "Uh oh, something went wrong", message: "Reddit did not allow this post to be made.\nError message: \(self.errorText)", preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "Ok", style: .cancel, handler: nil))
+                        self.present(alert, animated: true, completion: nil)
+                    })
+                    
+                } else if error != nil {
+                    self.alertController?.dismiss(animated: false, completion: {
+                        let alert = UIAlertController(title: "Uh oh, something went wrong", message: "Reddit did not allow this post to be made.\n\nError message:\(error!.localizedDescription)", preferredStyle: .alert)
                         alert.addAction(UIAlertAction(title: "Ok", style: .cancel, handler: nil))
                         self.present(alert, animated: true, completion: nil)
                     })
@@ -268,9 +311,37 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             }
         }
     }
+    
+    var crosspostHeight = CGFloat(0)
 
-    func textViewDidChange(_ textView: UITextView) {
+    /* This is probably broken*/
+    @objc func textViewDidChange(_ textView: UITextView) {
         textView.sizeToFitHeight()
+        let split = textView.text.split("\n").suffix(1)
+        if split.first != nil && split.first!.startsWith("* ") && textView.text.endsWith("\n") {
+            if split.first == "* " {
+                textView.text = textView.text.substring(0, length: textView.text.length - 3) + "\n"
+            } else {
+                textView.text += "* "
+                textView.selectedTextRange = textView.textRange(from: textView.endOfDocument, to: textView.endOfDocument)
+            }
+        } else if split.first != nil && split.first!.startsWith("- ") && textView.text.endsWith("\n") {
+            if split.first == "- " {
+                textView.text = textView.text.substring(0, length: textView.text.length - 3) + "\n"
+            } else {
+                textView.text += "- "
+                textView.selectedTextRange = textView.textRange(from: textView.endOfDocument, to: textView.endOfDocument)
+            }
+        } else if split.first != nil && split.first!.length > 1 && split.first!.substring(0, length: 1).isNumeric() && split.first!.substring(1, length: 1) == "." && textView.text.endsWith("\n") {
+            let num = (Int(split.first!.substring(0, length: 1)) ?? 0) + 1
+            if split.first?.length ?? 0 < 4 {
+                textView.text = textView.text.substring(0, length: textView.text.length - 4) + "\n"
+            } else {
+                textView.text += "\(num). "
+                textView.selectedTextRange = textView.textRange(from: textView.endOfDocument, to: textView.endOfDocument)
+            }
+        }
+        
         var height = CGFloat(8)
         for view in extras! {
             height += CGFloat(8)
@@ -280,9 +351,18 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             height += CGFloat(8)
             height += textView.frame.size.height
         }
+        
+        height += CGFloat(8)
+        height += crosspostHeight
+        
         if replyButtons != nil {
             height += CGFloat(46)
         }
+        
+        if #available(iOS 13, *), !textView.text.isEmpty {
+            self.isModalInPresentation = true
+        }
+        
         scrollView.contentSize = CGSize.init(width: scrollView.frame.size.width, height: height)
     }
 
@@ -300,14 +380,13 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        NotificationCenter.default.addObserver(self, selector: #selector(self.keyboardWillShow), name: NSNotification.Name.UIKeyboardWillShow, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(self.keyboardWillHide), name: NSNotification.Name.UIKeyboardWillHide, object: nil)
-        layoutForType()
+        NotificationCenter.default.addObserver(self, selector: #selector(self.keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(self.keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
     }
 
     @objc func keyboardWillShow(notification: NSNotification) {
-        var userInfo = notification.userInfo!
-        var keyboardFrame: CGRect = (userInfo[UIKeyboardFrameBeginUserInfoKey] as! NSValue).cgRectValue
+        let userInfo = notification.userInfo!
+        var keyboardFrame: CGRect = (userInfo[UIResponder.keyboardFrameBeginUserInfoKey] as! NSValue).cgRectValue
         keyboardFrame = self.view.convert(keyboardFrame, from: nil)
 
         var contentInset: UIEdgeInsets = self.scrollView.contentInset
@@ -322,8 +401,15 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
     }
     
     func doButtons() {
-        replyButtons = TouchUIScrollView().then {
-            $0.accessibilityIdentifier = "Reply Extra Buttons"
+        
+        if replyButtons != nil {
+            for view in replyButtons!.subviews {
+                view.removeFromSuperview()
+            }
+        } else {
+            replyButtons = TouchUIScrollView().then {
+                $0.accessibilityIdentifier = "Reply Extra Buttons"
+            }
         }
         
         replies = UIStateButton.init(frame: CGRect.init(x: 0, y: 0, width: 100, height: 30)).then {
@@ -348,8 +434,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         info = UIStateButton.init(frame: CGRect.init(x: 0, y: 0, width: 100, height: 30)).then {
             $0.layer.cornerRadius = 15
             $0.clipsToBounds = true
-            $0.setTitle("Sidebar", for: .selected)
-            $0.setTitle("Sidebar", for: .normal)
+            $0.setTitle("Subreddit sidebar", for: .selected)
+            $0.setTitle("Subreddit sidebar", for: .normal)
             $0.setTitleColor(GMColor.blue500Color(), for: .normal)
             $0.setTitleColor(.white, for: .selected)
             $0.titleLabel?.textAlignment = .center
@@ -410,18 +496,108 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         }
 
         replyButtons!.addSubview(buttonBase)
-        buttonBase.widthAnchor == finalWidth
         buttonBase.heightAnchor == CGFloat(30)
-        buttonBase.leftAnchor == replyButtons!.leftAnchor
-        buttonBase.verticalAnchors == replyButtons!.verticalAnchors
+        buttonBase.edgeAnchors == replyButtons!.edgeAnchors
+        buttonBase.centerYAnchor == replyButtons!.centerYAnchor
         replyButtons?.contentSize = CGSize.init(width: finalWidth, height: CGFloat(30))
+        replyButtons?.alwaysBounceHorizontal = true
+        replyButtons?.showsHorizontalScrollIndicator = false
+
+        if type == .SUBMIT_LINK || type == .SUBMIT_TEXT || type == .SUBMIT_IMAGE || type == .CROSSPOST {
+            do {
+                self.session = (UIApplication.shared.delegate as! AppDelegate).session
+                try session?.getSubmitFlairs(subreddit, completion: { (result) in
+                    switch result {
+                    case .failure(let error):
+                        //do nothing
+                        print(error)
+                        DispatchQueue.main.async {
+                            buttonBase.widthAnchor == finalWidth
+                        }
+                    case .success(let json):
+                        if json is JSONArray {
+                            for item in json as! JSONArray {
+                                let flair = item as! [String: Any]
+                                if let type = flair["type"] as? String, type == "richtext" {
+                                    if let text = flair["text"] as? String {
+                                        if let id = flair["id"] as? String {
+                                            let fo = FlairObject()
+                                            fo.title = text
+                                            fo.id = id
+                                            self.flairs.append(fo)
+                                        }
+                                    }
+                                } else if let type = flair["type"] as? String, type == "text" {
+                                    if let text = flair["text"] as? String {
+                                        if let id = flair["id"] as? String {
+                                            let fo = FlairObject()
+                                            fo.title = text
+                                            fo.id = id
+                                            self.flairs.append(fo)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if !self.flairs.isEmpty {
+                            DispatchQueue.main.async {
+                                let flairs = UIStateButton.init(frame: CGRect.init(x: 0, y: 0, width: 100, height: 45)).then {
+                                    $0.layer.cornerRadius = 15
+                                    $0.clipsToBounds = true
+                                    $0.setTitle("Submission flair", for: .selected)
+                                    $0.setTitle("Submission flair", for: .normal)
+                                    $0.setTitleColor(.white, for: .normal)
+                                    $0.setTitleColor(.white, for: .selected)
+                                    $0.titleLabel?.textAlignment = .center
+                                    $0.backgroundColor = ColorUtil.getColorForSub(sub: self.subreddit)
+                                    $0.titleLabel?.font = UIFont.systemFont(ofSize: 12)
+                                }
+                                flairs.addTarget(self, action: #selector(self.flairs(_:)), for: .touchUpInside)
+                                let widthF = flairs.currentTitle!.size(with: flairs.titleLabel!.font).width + CGFloat(45)
+                                flairs.widthAnchor == widthS
+                                buttonBase.widthAnchor == finalWidth + CGFloat(8) + widthF
+                                buttonBase.addArrangedSubview(flairs)
+                                self.replyButtons?.contentSize = CGSize.init(width: finalWidth + CGFloat(8) + widthF, height: CGFloat(30))
+                            }
+                        }
+                    }
+                })
+            } catch let error {
+                print(error)
+                buttonBase.widthAnchor == finalWidth
+            }
+        } else {
+            buttonBase.widthAnchor == finalWidth
+        }
     }
     
-    func changeState(_ sender: UIStateButton) {
+    @objc func flairs(_ sender: AnyObject) {
+        let alert = UIAlertController(title: "Select post flair", message: nil, preferredStyle: .alert)
+        for item in flairs {
+            alert.addAction(UIAlertAction(title: item.title, style: .default, handler: { (_) in
+                self.selectedFlair = item.id
+                self.text?[0].placeholder = item.title
+            }))
+        }
+        alert.addAction(UIAlertAction(title: "No flair", style: .cancel, handler: { (_) in
+            self.selectedFlair = nil
+        }))
+        alert.showWindowless()
+    }
+    
+    var flairs = [FlairObject]()
+    var selectedFlair: String?
+    
+    class FlairObject {
+        var title = ""
+        var id = ""
+    }
+    
+    @objc func changeState(_ sender: UIStateButton) {
         sender.isSelected = !sender.isSelected
     }
 
-    func info(_ sender: UIStateButton) {
+    @objc func info(_ sender: UIStateButton) {
         Sidebar.init(parent: self, subname: subreddit).displaySidebar()
     }
 
@@ -429,9 +605,13 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         self.scrollView = UIScrollView.init(frame: CGRect.init(x: 0, y: 0, width: self.view.frame.size.width, height: self.view.frame.size.height))
         self.view.addSubview(scrollView)
         extras = [UIView]()
-        self.scrollView.backgroundColor = ColorUtil.backgroundColor
+        self.scrollView.backgroundColor = ColorUtil.theme.backgroundColor
         self.scrollView.isUserInteractionEnabled = true
         self.scrollView.contentInset = UIEdgeInsets.init(top: 8, left: 0, bottom: 0, right: 0)
+        self.scrollView.bottomAnchor == self.view.bottomAnchor - 64
+        self.scrollView.topAnchor == self.view.topAnchor
+        self.view.backgroundColor = ColorUtil.theme.backgroundColor
+        self.scrollView.horizontalAnchors == self.view.horizontalAnchors
 
         let stack = UIStackView().then {
             $0.accessibilityIdentifier = "Reply Stack Vertical"
@@ -444,32 +624,46 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         if type.isMessage() {
             if type == .REPLY_MESSAGE {
                 //two
-                let text1 = TTTAttributedLabel.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
-                    $0.textColor = ColorUtil.fontColor
-                    $0.backgroundColor = ColorUtil.foregroundColor
+                let text1 = YYLabel.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
+                    $0.textColor = ColorUtil.theme.fontColor
+                    $0.backgroundColor = ColorUtil.theme.foregroundColor
                     $0.clipsToBounds = true
                     $0.layer.cornerRadius = 10
-                    $0.delegate = self
-                    $0.numberOfLines = 0
                     $0.font = UIFont.systemFont(ofSize: 16)
-                    $0.textInsets = UIEdgeInsets.init(top: 24, left: 8, bottom: 24, right: 8)
+                    $0.numberOfLines = 0
                 })
                 extras?.append(text1)
                 let html = (toReplyTo as! RMessage).htmlBody
-                let content = TextDisplayStackView.createAttributedChunk(baseHTML: html, fontSize: 16, submission: false, accentColor: ColorUtil.baseAccent)
+                let content = TextDisplayStackView.createAttributedChunk(baseHTML: html, fontSize: 16, submission: false, accentColor: ColorUtil.baseAccent, fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
                 
+                // TODO: - this
+                /*
                 let activeLinkAttributes = NSMutableDictionary(dictionary: text1.activeLinkAttributes)
                 activeLinkAttributes[kCTForegroundColorAttributeName] = ColorUtil.baseAccent
                 text1.activeLinkAttributes = activeLinkAttributes as NSDictionary as? [AnyHashable: Any]
                 text1.linkAttributes = activeLinkAttributes as NSDictionary as? [AnyHashable: Any]
-
-                text1.setText(content)
+*/
+                text1.attributedText = content
+                text1.highlightTapAction = { (containerView: UIView, text: NSAttributedString, range: NSRange, rect: CGRect) in
+                    text.enumerateAttributes(in: range, options: .longestEffectiveRangeNotRequired, using: { (attrs, _, _) in
+                        for attr in attrs {
+                            if attr.value is YYTextHighlight {
+                                if let url = (attr.value as! YYTextHighlight).userInfo?["url"] as? URL {
+                                    self.doShow(url: url, heroView: nil, heroVC: nil)
+                                    return
+                                }
+                            }
+                        }
+                    })
+                }
+                text1.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+                text1.preferredMaxLayoutWidth = self.view.frame.size.width - 16
 
                 let text3 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                     $0.isEditable = true
                     $0.placeholder = "Body"
-                    $0.textColor = ColorUtil.fontColor
-                    $0.backgroundColor = ColorUtil.foregroundColor
+                    $0.textColor = ColorUtil.theme.fontColor
+                    $0.backgroundColor = ColorUtil.theme.foregroundColor
                     $0.layer.masksToBounds = false
                     $0.layer.cornerRadius = 10
                     $0.font = UIFont.systemFont(ofSize: 16)
@@ -494,8 +688,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                 //three
                 let text1 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                     $0.isEditable = true
-                    $0.textColor = ColorUtil.fontColor
-                    $0.backgroundColor = ColorUtil.foregroundColor
+                    $0.textColor = ColorUtil.theme.fontColor
+                    $0.backgroundColor = ColorUtil.theme.foregroundColor
                     $0.layer.masksToBounds = false
                     $0.layer.cornerRadius = 10
                     $0.delegate = self
@@ -503,11 +697,14 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                     $0.isScrollEnabled = false
                     $0.textContainerInset = UIEdgeInsets.init(top: 24, left: 8, bottom: 8, right: 8)
                 })
+                if !ColorUtil.theme.isLight {
+                    text1.keyboardAppearance = .dark
+                }
                 
                 let text2 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                     $0.isEditable = true
-                    $0.textColor = ColorUtil.fontColor
-                    $0.backgroundColor = ColorUtil.foregroundColor
+                    $0.textColor = ColorUtil.theme.fontColor
+                    $0.backgroundColor = ColorUtil.theme.foregroundColor
                     $0.layer.masksToBounds = false
                     $0.layer.cornerRadius = 10
                     $0.font = UIFont.systemFont(ofSize: 16)
@@ -519,7 +716,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                 })
                 
                 if toReplyTo != nil {
-                    text1.text = "re: \((toReplyTo as! RMessage).subject)"
+                    text1.text = "re: \((toReplyTo as! RMessage).subject.escapeHTML)"
                     text1.isEditable = false
                     text2.text = ((toReplyTo as! RMessage).author)
                     text2.isEditable = false
@@ -539,8 +736,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                 let text3 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                     $0.isEditable = true
                     $0.placeholder = "Body"
-                    $0.textColor = ColorUtil.fontColor
-                    $0.backgroundColor = ColorUtil.foregroundColor
+                    $0.textColor = ColorUtil.theme.fontColor
+                    $0.backgroundColor = ColorUtil.theme.foregroundColor
                     $0.layer.masksToBounds = false
                     $0.layer.cornerRadius = 10
                     $0.font = UIFont.systemFont(ofSize: 16)
@@ -549,6 +746,14 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                     $0.delegate = self
                 })
                 
+                if subject != nil {
+                    text1.text = subject!
+                }
+                
+                if message != nil {
+                    text3.text = message!
+                }
+
                 stack.addArrangedSubviews(text1, text2, text3)
                 text1.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
                 text1.heightAnchor >= CGFloat(70)
@@ -567,8 +772,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             //three
             let text1 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                 $0.isEditable = true
-                $0.textColor = ColorUtil.fontColor
-                $0.backgroundColor = ColorUtil.foregroundColor
+                $0.textColor = ColorUtil.theme.fontColor
+                $0.backgroundColor = ColorUtil.theme.foregroundColor
                 $0.layer.masksToBounds = false
                 $0.layer.cornerRadius = 10
                 $0.delegate = self
@@ -579,8 +784,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
 
             let text2 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                 $0.isEditable = true
-                $0.textColor = ColorUtil.fontColor
-                $0.backgroundColor = ColorUtil.foregroundColor
+                $0.textColor = ColorUtil.theme.fontColor
+                $0.backgroundColor = ColorUtil.theme.foregroundColor
                 $0.layer.masksToBounds = false
                 $0.layer.cornerRadius = 10
                 $0.textContainer.maximumNumberOfLines = 1
@@ -590,7 +795,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                 $0.textContainerInset = UIEdgeInsets.init(top: 24, left: 8, bottom: 8, right: 8)
             })
 
-            if toReplyTo != nil {
+            if toReplyTo != nil && type != .CROSSPOST {
                 text1.text = "\((toReplyTo as! RSubmission).title)"
                 text1.isEditable = false
                 text2.text = ((toReplyTo as! RSubmission).subreddit)
@@ -602,13 +807,23 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             
             if !subreddit.isEmpty() && subreddit != "all" && subreddit != "frontpage" && subreddit != "popular" && subreddit != "friends" && subreddit != "mod" && !subreddit.contains("m/") {
                 text2.text = subreddit
-                text2.isEditable = false
+            }
+            text2.isEditable = false
+
+            text2.addTapGestureRecognizer {
+                let search = SubredditFindReturnViewController(includeSubscriptions: true, includeCollections: false, includeTrending: false, subscribe: false, callback: { (subreddit) in
+                    text2.text = subreddit
+                    self.subreddit = subreddit
+                    self.doButtons()
+                    self.setBarColors(color: ColorUtil.getColorForSub(sub: subreddit))
+                })
+                VCPresenter.presentModally(viewController: search, self, nil)
             }
             let text3 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                 $0.isEditable = true
                 $0.placeholder = "Body"
-                $0.textColor = ColorUtil.fontColor
-                $0.backgroundColor = ColorUtil.foregroundColor
+                $0.textColor = ColorUtil.theme.fontColor
+                $0.backgroundColor = ColorUtil.theme.foregroundColor
                 $0.layer.masksToBounds = false
                 $0.layer.cornerRadius = 10
                 $0.font = UIFont.systemFont(ofSize: 16)
@@ -617,9 +832,9 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                 $0.delegate = self
             })
             
-            if type != .SUBMIT_TEXT && type != .EDIT_SELFTEXT {
+            if type != .SUBMIT_TEXT && type != .EDIT_SELFTEXT && type != .CROSSPOST {
                 text3.placeholder = "Link"
-                text3.textContainer.maximumNumberOfLines = 1
+                text3.textContainer.maximumNumberOfLines = 0
                 
                 if type == .SUBMIT_IMAGE {
                     text3.addTapGestureRecognizer {
@@ -631,57 +846,116 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
 
             if type != .EDIT_SELFTEXT {
                 doButtons()
-                stack.addArrangedSubviews(text1, text2, replyButtons!, text3)
-                replyButtons!.heightAnchor == CGFloat(30)
-                replyButtons!.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                if type == .CROSSPOST {
+                    let link = toReplyTo as! RSubmission
+                    let linkCV = link.isSelf ? TextLinkCellView(frame: CGRect.zero) : ThumbnailLinkCellView(frame: CGRect.zero)
+                    linkCV.aspectWidth = self.view.frame.size.width - 16
+                    linkCV.configure(submission: link, parent: self, nav: nil, baseSub: "all", embedded: true, parentWidth: self.view.frame.size.width - 16, np: false)
+                    let linkView = linkCV.contentView
+                    linkView.isUserInteractionEnabled = false
+                    let height = linkCV.estimateHeight(false, true, np: false)
+                    
+                    stack.addArrangedSubviews(linkView, text1, text2, replyButtons!)
+                    replyButtons!.heightAnchor == CGFloat(30)
+                    replyButtons!.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                    
+                    linkView.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                    linkView.heightAnchor == CGFloat(height)
+                    self.crosspostHeight = CGFloat(height)
+
+                    text1.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                    text1.heightAnchor >= CGFloat(70)
+                    text2.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                    text2.heightAnchor == CGFloat(70)
+                    
+                    scrollView.addSubview(stack)
+                    stack.widthAnchor == scrollView.widthAnchor
+                    stack.verticalAnchors == scrollView.verticalAnchors
+                    
+                    text = [text1, text2]
+                    toolbar = ToolbarTextView.init(textView: text2, parent: self)
+                } else {
+                    stack.addArrangedSubviews(text1, text2, replyButtons!, text3)
+                    replyButtons!.heightAnchor == CGFloat(30)
+                    replyButtons!.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                    text1.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                    text1.heightAnchor >= CGFloat(70)
+                    text2.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                    text2.heightAnchor == CGFloat(70)
+                    text3.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                    
+                    text3.heightAnchor >= CGFloat(70)
+                    
+                    scrollView.addSubview(stack)
+                    stack.widthAnchor == scrollView.widthAnchor
+                    stack.verticalAnchors == scrollView.verticalAnchors
+                    
+                    text = [text1, text2, text3]
+                    toolbar = ToolbarTextView.init(textView: text3, parent: self)
+                }
             } else {
                 stack.addArrangedSubviews(text1, text2, text3)
                 text3.text = (toReplyTo as! RSubmission).body
+                text1.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                text1.heightAnchor >= CGFloat(70)
+                text2.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                text2.heightAnchor == CGFloat(70)
+                text3.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
+                
+                text3.heightAnchor >= CGFloat(70)
+                
+                scrollView.addSubview(stack)
+                stack.widthAnchor == scrollView.widthAnchor
+                stack.verticalAnchors == scrollView.verticalAnchors
+                
+                text = [text1, text2, text3]
+                toolbar = ToolbarTextView.init(textView: text3, parent: self)
             }
 
-            text1.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
-            text1.heightAnchor >= CGFloat(70)
-            text2.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
-            text2.heightAnchor == CGFloat(70)
-            text3.horizontalAnchors == stack.horizontalAnchors + CGFloat(8)
-
-            text3.heightAnchor >= CGFloat(70)
-
-            scrollView.addSubview(stack)
-            stack.widthAnchor == scrollView.widthAnchor
-            stack.verticalAnchors == scrollView.verticalAnchors
-
-            text = [text1, text2, text3]
-            toolbar = ToolbarTextView.init(textView: text3, parent: self)
         } else if type.isComment() {
-            if (toReplyTo as! RSubmission).type == .SELF {
+            if (toReplyTo as! RSubmission).type == .SELF && !(toReplyTo as! RSubmission).htmlBody.trimmed().isEmpty {
                 //two
-                let text1 = TTTAttributedLabel.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
-                    $0.textColor = ColorUtil.fontColor
-                    $0.backgroundColor = ColorUtil.foregroundColor
+                let text1 = YYLabel.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
+                    $0.textColor = ColorUtil.theme.fontColor
+                    $0.backgroundColor = ColorUtil.theme.foregroundColor
                     $0.clipsToBounds = true
-                    $0.layer.cornerRadius = 10
                     $0.numberOfLines = 0
-                    $0.delegate = self
+                    $0.layer.cornerRadius = 10
                     $0.font = UIFont.systemFont(ofSize: 16)
-                    $0.textInsets = UIEdgeInsets.init(top: 24, left: 8, bottom: 24, right: 8)
                 })
                 extras?.append(text1)
                 let html = (toReplyTo as! RSubmission).htmlBody
-                let content = TextDisplayStackView.createAttributedChunk(baseHTML: html, fontSize: 16, submission: false, accentColor: ColorUtil.baseAccent)
+                let content = TextDisplayStackView.createAttributedChunk(baseHTML: html, fontSize: 16, submission: false, accentColor: ColorUtil.baseAccent, fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
                 
+                // TODO: - this
+                /*
                 let activeLinkAttributes = NSMutableDictionary(dictionary: text1.activeLinkAttributes)
                 activeLinkAttributes[kCTForegroundColorAttributeName] = ColorUtil.baseAccent
                 text1.activeLinkAttributes = activeLinkAttributes as NSDictionary as? [AnyHashable: Any]
                 text1.linkAttributes = activeLinkAttributes as NSDictionary as? [AnyHashable: Any]
-
-                text1.setText(content)
+*/
+                
+                text1.attributedText = content
+                text1.highlightTapAction = { (containerView: UIView, text: NSAttributedString, range: NSRange, rect: CGRect) in
+                    text.enumerateAttributes(in: range, options: .longestEffectiveRangeNotRequired, using: { (attrs, _, _) in
+                        for attr in attrs {
+                            if attr.value is YYTextHighlight {
+                                if let url = (attr.value as! YYTextHighlight).userInfo?["url"] as? URL {
+                                    self.doShow(url: url, heroView: nil, heroVC: nil)
+                                    return
+                                }
+                            }
+                        }
+                    })
+                }
+                text1.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+                text1.preferredMaxLayoutWidth = self.view.frame.size.width - 16
 
                 let text3 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                     $0.isEditable = true
                     $0.placeholder = "Body"
-                    $0.textColor = ColorUtil.fontColor
-                    $0.backgroundColor = ColorUtil.foregroundColor
+                    $0.textColor = ColorUtil.theme.fontColor
+                    $0.backgroundColor = ColorUtil.theme.foregroundColor
                     $0.layer.masksToBounds = false
                     $0.layer.cornerRadius = 10
                     $0.font = UIFont.systemFont(ofSize: 16)
@@ -716,8 +990,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                 let text3 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                     $0.isEditable = true
                     $0.placeholder = "Body"
-                    $0.textColor = ColorUtil.fontColor
-                    $0.backgroundColor = ColorUtil.foregroundColor
+                    $0.textColor = ColorUtil.theme.fontColor
+                    $0.backgroundColor = ColorUtil.theme.foregroundColor
                     $0.layer.masksToBounds = false
                     $0.layer.cornerRadius = 10
                     $0.font = UIFont.systemFont(ofSize: 16)
@@ -750,8 +1024,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             //two
             let text1 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                 $0.isEditable = true
-                $0.textColor = ColorUtil.fontColor
-                $0.backgroundColor = ColorUtil.foregroundColor
+                $0.textColor = ColorUtil.theme.fontColor
+                $0.backgroundColor = ColorUtil.theme.foregroundColor
                 $0.layer.masksToBounds = false
                 $0.layer.cornerRadius = 10
                 $0.delegate = self
@@ -770,8 +1044,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             let text3 = UITextView.init(frame: CGRect.init(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 60)).then({
                 $0.isEditable = true
                 $0.placeholder = "Body"
-                $0.textColor = ColorUtil.fontColor
-                $0.backgroundColor = ColorUtil.foregroundColor
+                $0.textColor = ColorUtil.theme.fontColor
+                $0.backgroundColor = ColorUtil.theme.foregroundColor
                 $0.layer.masksToBounds = false
                 $0.layer.cornerRadius = 10
                 $0.font = UIFont.systemFont(ofSize: 16)
@@ -795,20 +1069,32 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             text = [text1, text3]
             toolbar = ToolbarTextView.init(textView: text3, parent: self)
         }
-        var first = false
-        for textField in text! {
-            if textField.isEditable && !first {
-                first = true
-                textField.becomeFirstResponder()
-            }
-            if ColorUtil.theme != .LIGHT {
-                textField.keyboardAppearance = .dark
+    }
+    
+    var doneOnceLayout = false
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if !doneOnceLayout {
+            layoutForType()
+            doneOnceLayout = true
+            var first = false
+            for textField in text! {
+                if textField.isEditable && !first {
+                    first = true
+                    textField.becomeFirstResponder()
+                }
+                if !ColorUtil.theme.isLight {
+                    textField.keyboardAppearance = .dark
+                }
             }
         }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        
+        self.navigationController?.setToolbarHidden(true, animated: false)
+        self.navigationController?.setNavigationBarHidden(false, animated: true)
 
         if type.isMessage() {
             title = "New message"
@@ -821,30 +1107,35 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                 title = "Editing"
             } else if type.isComment() {
                 title = "Replying to \((toReplyTo as! RSubmission).author)"
+            } else if type == .CROSSPOST {
+                title = "Crosspost submission"
             } else {
                 title = "New submission"
             }
         }
 
         let send = UIButton.init(type: .custom)
-        send.imageView?.contentMode = UIViewContentMode.scaleAspectFit
-        send.setImage(UIImage.init(named: "send")!.navIcon(), for: UIControlState.normal)
-        send.addTarget(self, action: #selector(self.send(_:)), for: UIControlEvents.touchUpInside)
+        send.imageView?.contentMode = UIView.ContentMode.scaleAspectFit
+        send.setImage(UIImage(sfString: SFSymbol.paperplaneFill, overrideString: "send")!.navIcon(), for: UIControl.State.normal)
+        send.addTarget(self, action: #selector(self.send(_:)), for: UIControl.Event.touchUpInside)
         send.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
+        send.accessibilityLabel = "Send"
         let sendB = UIBarButtonItem.init(customView: send)
         navigationItem.rightBarButtonItem = sendB
 
         let button = UIButtonWithContext.init(type: .custom)
-        button.imageView?.contentMode = UIViewContentMode.scaleAspectFit
-        button.setImage(UIImage.init(named: "close")!.navIcon(), for: UIControlState.normal)
+        button.imageView?.contentMode = UIView.ContentMode.scaleAspectFit
+        button.setImage(UIImage(sfString: SFSymbol.xmark, overrideString: "close")!.navIcon(), for: UIControl.State.normal)
         button.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
+        button.accessibilityLabel = "Close"
         button.addTarget(self, action: #selector(self.close(_:)), for: .touchUpInside)
 
         let barButton = UIBarButtonItem.init(customView: button)
         navigationItem.leftBarButtonItem = barButton
+        
     }
 
-    func close(_ sender: AnyObject) {
+    @objc func close(_ sender: AnyObject) {
         let alert = UIAlertController.init(title: "Discard this \(type.isMessage() ? "message" : (type.isComment()) ? "comment" : type.isEdit() ? "edit" : "submission")?", message: "", preferredStyle: .alert)
         alert.addAction(UIAlertAction.init(title: "Yes", style: .destructive, handler: { (_) in
             if self.navigationController?.viewControllers.count ?? 1 == 1 {
@@ -876,11 +1167,25 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         }
     }
     
+    var doneOnce = false
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        if type == .SUBMIT_IMAGE {
+        if type == .SUBMIT_IMAGE && !doneOnce {
             toolbar?.uploadImage(UIButton())
+            doneOnce = true
         }
+        var first = false
+        for textField in text! {
+            if textField.isEditable && !first {
+                first = true
+                textField.becomeFirstResponder()
+                textViewDidChange(textField)
+                UIView.animate(withDuration: 0.25) {
+                    textField.insertText("")
+                }
+            }
+        }
+        
     }
     
     func completeGetSubmission(_ name: String) {
@@ -900,7 +1205,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                 
             })
         } catch {
-            //todo success but null child
+           // TODO: - success but null child
             self.submissionCallback(nil, error)
         }
     }
@@ -928,11 +1233,11 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         }
 
         if type == .EDIT_SELFTEXT {
-            alertController = UIAlertController(title: nil, message: "Editing submission...\n\n", preferredStyle: .alert)
+            alertController = UIAlertController(title: "Editing submission...\n\n\n", message: nil, preferredStyle: .alert)
 
-            let spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+            let spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
             spinnerIndicator.center = CGPoint(x: 135.0, y: 65.5)
-            spinnerIndicator.color = UIColor.black
+            spinnerIndicator.color = ColorUtil.theme.fontColor
             spinnerIndicator.startAnimating()
 
             alertController?.view.addSubview(spinnerIndicator)
@@ -950,11 +1255,11 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             }
 
         } else {
-            alertController = UIAlertController(title: nil, message: "Posting submission...\n\n", preferredStyle: .alert)
+            alertController = UIAlertController(title: "Posting submission...\n\n\n", message: nil, preferredStyle: .alert)
 
-            let spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+            let spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
             spinnerIndicator.center = CGPoint(x: 135.0, y: 65.5)
-            spinnerIndicator.color = UIColor.black
+            spinnerIndicator.color = ColorUtil.theme.fontColor
             spinnerIndicator.startAnimating()
 
             alertController?.view.addSubview(spinnerIndicator)
@@ -964,7 +1269,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
 
             do {
                 if type == .SUBMIT_TEXT {
-                    try self.session?.submitText(Subreddit.init(subreddit: subreddit.text), title: title.text, text: body.text, sendReplies: replies!.isSelected, captcha: "", captchaIden: "", completion: { (result) -> Void in
+                    try self.session?.submitText(Subreddit.init(subreddit: subreddit.text), title: title.text, text: body.text ?? "", sendReplies: replies!.isSelected, captcha: "", captchaIden: "", flairID: self.selectedFlair, completion: { (result) -> Void in
                         switch result {
                         case .failure(let error):
                             print(error.description)
@@ -980,7 +1285,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                     })
 
                 } else {
-                    try self.session?.submitLink(Subreddit.init(subreddit: subreddit.text), title: title.text, URL: body.text, sendReplies: replies!.isSelected, captcha: "", captchaIden: "", completion: { (result) -> Void in
+                    try self.session?.submitLink(Subreddit.init(subreddit: subreddit.text), title: title.text, URL: body.text, sendReplies: replies!.isSelected, captcha: "", captchaIden: "", flairID: self.selectedFlair, completion: { (result) -> Void in
                         switch result {
                         case .failure(let error):
                             print(error.description)
@@ -999,6 +1304,53 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             } catch {
                 print((error as NSError).description)
             }
+        }
+    }
+
+    func crosspost() {
+        let title = text![0]
+        let subreddit = text![1]
+        let cLink = toReplyTo as! RSubmission
+        
+        if title.text.isEmpty() {
+            BannerUtil.makeBanner(text: "Title cannot be empty", color: GMColor.red500Color(), seconds: 5, context: self, top: true)
+            return
+        }
+        
+        if subreddit.text.isEmpty() {
+            BannerUtil.makeBanner(text: "Subreddit cannot be empty", color: GMColor.red500Color(), seconds: 5, context: self, top: true)
+            return
+        }
+        
+        alertController = UIAlertController(title: "Crossposting...\n\n\n", message: nil, preferredStyle: .alert)
+        
+        let spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
+        spinnerIndicator.center = CGPoint(x: 135.0, y: 65.5)
+        spinnerIndicator.color = ColorUtil.theme.fontColor
+        spinnerIndicator.startAnimating()
+        
+        alertController?.view.addSubview(spinnerIndicator)
+        self.present(alertController!, animated: true, completion: nil)
+        
+        session = (UIApplication.shared.delegate as! AppDelegate).session
+            
+        do {
+            try (UIApplication.shared.delegate as! AppDelegate).session?.crosspost(Link.init(id: cLink.id), subreddit: subreddit.text, newTitle: title.text) { result in
+                switch result {
+                case .failure(let error):
+                    print(error.description)
+                    self.submissionCallback(nil, error)
+                case .success(let submission):
+                    if let string = self.getIDString(submission).value {
+                        self.getSubmissionEdited(string)
+                    } else {
+                        self.errorText = self.getError(submission)
+                        self.submissionCallback(nil, nil)
+                    }
+                }
+            }
+        } catch {
+            
         }
     }
 
@@ -1036,10 +1388,10 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             }
         }
 
-        alertController = UIAlertController(title: nil, message: "Sending message...\n\n", preferredStyle: .alert)
-        let spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+        alertController = UIAlertController(title: "Sending message...\n\n\n", message: nil, preferredStyle: .alert)
+        let spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
         spinnerIndicator.center = CGPoint(x: 135.0, y: 65.5)
-        spinnerIndicator.color = UIColor.black
+        spinnerIndicator.color = ColorUtil.theme.fontColor
         spinnerIndicator.startAnimating()
 
         alertController?.view.addSubview(spinnerIndicator)
@@ -1083,10 +1435,10 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
     func submitComment() {
         let body = text!.last!
 
-        alertController = UIAlertController(title: nil, message: "Posting comment...\n\n", preferredStyle: .alert)
-        let spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+        alertController = UIAlertController(title: "Posting comment...\n\n\n", message: nil, preferredStyle: .alert)
+        let spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
         spinnerIndicator.center = CGPoint(x: 135.0, y: 65.5)
-        spinnerIndicator.color = UIColor.black
+        spinnerIndicator.color = ColorUtil.theme.fontColor
         spinnerIndicator.startAnimating()
 
         alertController?.view.addSubview(spinnerIndicator)
@@ -1117,7 +1469,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
                     try self.session?.distinguish(comment.getId(), how: "yes", sticky: true, completion: { (_) -> Void in
                         var newComment = comment
                         newComment.stickied = true
-                        newComment.distinguished = "mod"
+                        newComment.distinguished = .moderator
                         self.checkReplies(newComment)
                     })
                 } catch {
@@ -1145,7 +1497,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         }
     }
 
-    func send(_ sender: AnyObject) {
+    @objc func send(_ sender: AnyObject) {
         switch type {
         case .SUBMIT_IMAGE:
             fallthrough
@@ -1161,6 +1513,8 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
             fallthrough
         case .REPLY_MESSAGE:
             submitMessage()
+        case .CROSSPOST:
+            crosspost()
         }
     }
 
@@ -1194,7 +1548,7 @@ class ReplyViewController: MediaViewController, UITextViewDelegate, TTTAttribute
         return ""
     }
     
-    func dismiss(_ sender: AnyObject) {
+    @objc func dismiss(_ sender: AnyObject) {
         self.dismiss(animated: true, completion: nil)
     }
 
@@ -1208,8 +1562,8 @@ extension UIView {
         self.translatesAutoresizingMaskIntoConstraints = false
         cont.translatesAutoresizingMaskIntoConstraints = false
         cont.addSubview(self)
-        cont.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "V:|[innerView]|", options: NSLayoutFormatOptions(rawValue: 0), metrics: nil, views: ["innerView": self]))
-        cont.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "H:|[innerView]|", options: NSLayoutFormatOptions(rawValue: 0), metrics: nil, views: ["innerView": self]))
+        cont.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "V:|[innerView]|", options: NSLayoutConstraint.FormatOptions(rawValue: 0), metrics: nil, views: ["innerView": self]))
+        cont.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "H:|[innerView]|", options: NSLayoutConstraint.FormatOptions(rawValue: 0), metrics: nil, views: ["innerView": self]))
         cont.addConstraint(NSLayoutConstraint(item: self, attribute: .width, relatedBy: .equal, toItem: cont, attribute: .width, multiplier: 1.0, constant: 0))
         return cont
     }
@@ -1297,9 +1651,9 @@ public class UIStateButton: UIButton {
     var color = UIColor.white
     override open var isSelected: Bool {
         didSet {
-            backgroundColor = isSelected ? color : ColorUtil.foregroundColor
-            borderColor = color
-            borderWidth = isSelected ? CGFloat(0) : CGFloat(2)
+            backgroundColor = isSelected ? color : ColorUtil.theme.foregroundColor
+            self.layer.borderColor = color .cgColor
+            self.layer.borderWidth = isSelected ? CGFloat(0) : CGFloat(2)
         }
     }
 }

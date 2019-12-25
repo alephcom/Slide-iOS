@@ -18,6 +18,8 @@ public class SubmissionRowController: NSObject {
     var thumbnail: UIImage?
     var id: String?
     var sub: String?
+    var scoreText: String!
+    var commentText: String!
 
     @IBOutlet weak var bannerImage: WKInterfaceImage!
     @IBOutlet weak var imageGroup: WKInterfaceGroup!
@@ -27,12 +29,9 @@ public class SubmissionRowController: NSObject {
     @IBOutlet weak var titleLabel: WKInterfaceLabel!
     
     @IBAction func didSelect() {
-        if !(self.parent?.isPro ?? true) {
-            self.parent?.presentController(withName: "Pro", context: self)
-        } else {
-            self.parent?.presentController(withName: "DetailView", context: self)
-        }
+        self.parent?.presentController(withName: "DetailView", context: self)
     }
+    
     func setData(dictionary: NSDictionary, color: UIColor) {
         let titleFont = UIFont.systemFont(ofSize: 14)
         let subtitleFont = UIFont.boldSystemFont(ofSize: 10)
@@ -61,7 +60,7 @@ public class SubmissionRowController: NSObject {
         
         let attrs = [NSAttributedString.Key.font: subtitleFont, NSAttributedString.Key.foregroundColor: UIColor.white]
         
-        let endString = NSMutableAttributedString(string: "  •  \(DateFormatter().timeSince(from: NSDate.init(timeIntervalSince1970: TimeInterval(dictionary["created"] as? Int ?? 0)), numericDates: true))", attributes: [NSAttributedString.Key.font: subtitleFont, NSAttributedString.Key.foregroundColor: UIColor.gray])
+        let endString = NSMutableAttributedString(string: "  •  \(dictionary["created"] as! String)", attributes: [NSAttributedString.Key.font: subtitleFont, NSAttributedString.Key.foregroundColor: UIColor.gray])
         
         let authorString = NSMutableAttributedString(string: "\nu/\(dictionary["author"] as? String ?? "")", attributes: [NSAttributedString.Key.font: subtitleFont, NSAttributedString.Key.foregroundColor: UIColor.gray])
         
@@ -112,7 +111,7 @@ public class SubmissionRowController: NSObject {
             }
         case .IMGUR:
             text = ("Imgur")
-        case .VIDEO:
+        case .YOUTUBE:
             text = "YouTube"
         case .STREAMABLE:
             text = "Streamable"
@@ -152,10 +151,11 @@ public class SubmissionRowController: NSObject {
         titleText = infoString
         
         let scoreNumber = dictionary["score"] as? Int ?? 0
-        let score = scoreNumber > 1000 ?
+        scoreText = scoreNumber > 1000 ?
             String(format: "%0.1fk   ", (Double(scoreNumber) / Double(1000))) : "\(scoreNumber)   "
-        scoreLabel.setText(score)
-        commentsLabel.setText("\(dictionary["num_comments"] as? Int ?? 0)")
+        scoreLabel.setText(scoreText)
+        commentText = "\(dictionary["num_comments"] as? Int ?? 0)"
+        commentsLabel.setText(commentText)
         if let thumburl = (dictionary["thumbnail"] as? String), !thumburl.isEmpty(), thumburl.startsWith("http") {
             DispatchQueue.global().async {
                 let imageUrl = URL(string: thumburl)!

@@ -43,14 +43,14 @@ class InboxContributionLoader: ContributionLoader {
                     case .failure(let error):
                         print(error)
                         DispatchQueue.main.async {
-                            self.delegate?.doneLoading(before: 0)
+                            self.delegate?.doneLoading(before: 0, filter: false)
                         }
                     case .success(let listing):
                         if reload {
                             self.content = []
                         }
                         let before = self.content.count
-                        for message in listing.children.flatMap({ $0 }) {
+                        for message in listing.children.compactMap({ $0 }) {
                             self.content.append(RealmDataWrapper.messageToRMessage(message: message as! Message))
                             if (message as! Message).baseJson["replies"] != nil {
                                 let json = (message as! Message).baseJson as JSONDictionary
@@ -65,7 +65,7 @@ class InboxContributionLoader: ContributionLoader {
                         self.paginator = listing.paginator
                         self.canGetMore = self.paginator.hasMore()
                         DispatchQueue.main.async {
-                            self.delegate?.doneLoading(before: before)
+                            self.delegate?.doneLoading(before: before, filter: false)
                         }
                     }
                 })

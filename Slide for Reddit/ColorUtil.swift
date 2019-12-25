@@ -30,53 +30,63 @@ extension UIColor {
     }
 }
 
-class ColorUtil {
-    static var theme = Theme.DARK
-    static var setOnce = false
+public class ColorUtil {
+    static var theme: Theme = Theme(title: "dark", displayName: "Dark Gray", foregroundColor: UIColor(hexString: "#303030"), backgroundColor: UIColor(hexString: "#212121"), navIconColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), isLight: false, isCustom: false) {
+        didSet {
+            LinkCellImageCache.initialize()
+        }
+    }
+    
+    static var defaultTheme = ""
+    static var currentTheme = ""
+    
+    static var CUSTOM_FOREGROUND = "customForeground"
+    static var CUSTOM_FONT = "customFont"
+    static var CUSTOM_BACKGROUND = "customBackground"
+    static var CUSTOM_NAVICON = "customNavicon"
+    static var CUSTOM_STATUSBAR = "customStatus"
+
+    static var CUSTOM_FOREGROUND_NIGHT = "customForegroundNight"
+    static var CUSTOM_FONT_NIGHT = "customFontNight"
+    static var CUSTOM_BACKGROUND_NIGHT = "customBackgroundNight"
+    static var CUSTOM_NAVICON_NIGHT = "customNaviconNight"
+    static var CUSTOM_STATUSBAR_NIGHT = "customStatusNight"
 
     static func shouldBeNight() -> Bool {
+        if !SettingValues.nightModeEnabled {
+            return false
+        }
+        if #available(iOS 13, *) {
+            return UITraitCollection.current.userInterfaceStyle == .dark
+        }
         let hour = Calendar.current.component(.hour, from: Date())
         let minute = Calendar.current.component(.minute, from: Date())
-        return SettingValues.nightModeEnabled && /*todo pro*/ (hour >= SettingValues.nightStart + 12 || hour < SettingValues.nightEnd) &&  (hour == SettingValues.nightStart + 12 ? (minute >= SettingValues.nightStartMin) : true) && (hour == SettingValues.nightEnd  ? (minute < SettingValues.nightEndMin) : true)
+        return SettingValues.nightModeEnabled && (hour >= SettingValues.nightStart + 12 || hour < SettingValues.nightEnd) &&  (hour == SettingValues.nightStart + 12 ? (minute >= SettingValues.nightStartMin) : true) && (hour == SettingValues.nightEnd  ? (minute < SettingValues.nightEndMin) : true) // TODO: - Pro
     }
 
     static func doInit() -> Bool {
-        var defaultTheme = Theme.DARK
-        if let name = UserDefaults.standard.string(forKey: "theme") {
-            if let t = Theme(rawValue: name) {
-                defaultTheme = t
-            }
-        }
-        var toReturn = false
-        if theme != defaultTheme || (shouldBeNight() || (!shouldBeNight() && theme == SettingValues.nightTheme)) || (defaultTheme == SettingValues.nightTheme && theme != defaultTheme) {
-            if shouldBeNight() && theme != SettingValues.nightTheme && SettingValues.nightTheme != defaultTheme {
-                theme = SettingValues.nightTheme
-                CachedTitle.titles.removeAll()
-                LinkCellImageCache.initialize()
-                SingleSubredditViewController.cellVersion += 1
-                toReturn = true
-            } else if !shouldBeNight() && theme != defaultTheme {
-                theme = defaultTheme
-                CachedTitle.titles.removeAll()
-                LinkCellImageCache.initialize()
-                SingleSubredditViewController.cellVersion += 1
-                toReturn = true
-            } else if defaultTheme == SettingValues.nightTheme && theme != defaultTheme {
-                theme = defaultTheme
-                CachedTitle.titles.removeAll()
-                LinkCellImageCache.initialize()
-                SingleSubredditViewController.cellVersion += 1
-                toReturn = true
+        initializeThemes()
+        theme = themes[0]
+        
+        let name = shouldBeNight() ? SettingValues.nightTheme : UserDefaults.standard.string(forKey: "theme") ?? "light"
+        defaultTheme = name
+        for bTheme in themes {
+            if bTheme.title == name {
+                theme = bTheme
+                break
             }
         }
         
-        if !setOnce {
+        print("Switching theme to \(theme.title)")
+        var toReturn = false
+        if currentTheme != theme.title {
+            CachedTitle.titles.removeAll()
             LinkCellImageCache.initialize()
-            setOnce = true
+            SingleSubredditViewController.cellVersion += 1
+            toReturn = true
+            currentTheme = theme.title
         }
-        foregroundColor = theme.foregroundColor
-        backgroundColor = theme.backgroundColor
-        fontColor = theme.fontColor
+        
         let color = UserDefaults.standard.colorForKey(key: "basecolor")
         if color != nil {
             baseColor = color!
@@ -87,21 +97,7 @@ class ColorUtil {
         }
         return toReturn
     }
-
-    static var foregroundColor = UIColor.white
-    static var backgroundColor = UIColor.white
-    static var fontColor = UIColor.black {
-        didSet {
-            LinkCellImageCache.initialize()
-        }
-    }
-
-    public static func setBackgroundToolbar(toolbar: UINavigationBar?) {
-        if toolbar != nil {
-            toolbar?.barTintColor = backgroundColor
-        }
-    }
-
+    
     private static func image(fromLayer layer: CALayer) -> UIImage {
         UIGraphicsBeginImageContext(layer.frame.size)
         layer.render(in: UIGraphicsGetCurrentContext()!)
@@ -117,22 +113,12 @@ class ColorUtil {
 
     public static func getColorForSub(sub: String, _ header: Bool = false) -> UIColor {
         if header && SettingValues.reduceColor {
-            return ColorUtil.backgroundColor
+            return ColorUtil.theme.backgroundColor
         }
-        let color = UserDefaults.standard.colorForKey(key: "color+" + sub)
-        if color == nil {
+        if let color = UserDefaults.standard.colorForKey(key: "color+" + sub) {
+            return color
+        } else {
             return baseColor
-        } else {
-            return color!
-        }
-    }
-
-    public static func getColorForSubBackground(sub: String) -> UIColor {
-        let color = UserDefaults.standard.colorForKey(key: "color+" + sub)
-        if color == nil {
-            return foregroundColor
-        } else {
-            return color!
         }
     }
 
@@ -182,7 +168,7 @@ class ColorUtil {
         }
         let color = UserDefaults.standard.colorForKey(key: "commentcolor")
         if color == nil {
-            return ColorUtil.fontColor
+            return ColorUtil.theme.fontColor
         } else {
             return color!
         }
@@ -209,8 +195,8 @@ class ColorUtil {
         UserDefaults.standard.synchronize()
     }
 
-    public static func getTagForUser(name: String) -> String {
-        return UserDefaults.standard.string(forKey: "tag+" + name) ?? ""
+    public static func getTagForUser(name: String) -> String? {
+        return UserDefaults.standard.string(forKey: "tag+" + name)
     }
 
     public static func removeTagForUser(name: String) {
@@ -236,138 +222,50 @@ class ColorUtil {
             return color!
         }
     }
-
-    enum Theme: String {
-        case LIGHT = "light"
-        case DARK = "dark"
-        case BLACK = "black"
-        case BLUE = "blue"
-        case SEPIA = "sepia"
-        case RED = "red"
-        case DEEP = "deep"
-        case MINT = "mint"
-        case CREAM = "cream"
-        case CONTRAST = "acontrast"
+    
+    struct Theme: Equatable {
+        var title: String
+        var displayName: String
+        var foregroundColor: UIColor
+        var backgroundColor: UIColor
+        var navIconColor: UIColor
+        var fontColor: UIColor
+        var isLight: Bool
+        var isCustom: Bool
         
-        public var displayName: String {
-            switch self {
-            case .LIGHT:
-                return "Light"
-            case .DEEP:
-                return "Deep purple"
-            case .DARK:
-                return "Dark gray"
-            case .BLUE:
-                return "Blue"
-            case .SEPIA:
-                return "Sepia"
-            case .RED:
-                return "Dark red"
-            case .BLACK:
-                return "AMOLED black"
-            case .CONTRAST:
-                return "AMOLED black with contrast"
-            case .MINT:
-                return "Mint green"
-            case .CREAM:
-                return "Crème"
-            }
-        }
-
-        public static var cases: [Theme] {
-            return [.LIGHT, .DARK, .BLACK, .CONTRAST, .BLUE, .SEPIA, .RED, .DEEP, .MINT, .CREAM]
-        }
-        public var foregroundColor: UIColor {
-            switch self {
-            case .LIGHT:
-                return UIColor.white
-            case .DARK:
-                return UIColor(hexString: "#303030")
-            case .DEEP:
-                return UIColor(hexString: "#1f1e26")
-            case .BLUE:
-                return UIColor(hexString: "#37474F")
-            case .SEPIA:
-                return UIColor(hexString: "#e2dfd7")
-            case .RED:
-                return UIColor(hexString: "#402c2c")
-            case .BLACK:
-                return UIColor.black
-            case .CONTRAST:
-                return UIColor.black
-            case .MINT:
-                return UIColor.white
-            case .CREAM:
-                return UIColor(hexString: "#DCD8C2")
-            }
-        }
-
-        public var backgroundColor: UIColor {
-            switch self {
-            case .LIGHT:
-                return UIColor(hexString: "#e5e5e5")
-            case .DEEP:
-                return UIColor(hexString: "#16161C")
-            case .DARK:
-                return UIColor(hexString: "#212121")
-            case .BLUE:
-                return UIColor(hexString: "#2F3D44")
-            case .SEPIA:
-                return UIColor(hexString: "#cac5ad")
-            case .RED:
-                return UIColor(hexString: "#312322")
-            case .BLACK:
-                return UIColor.black
-            case .CONTRAST:
-                return UIColor(hexString: "#111010")
-            case .MINT:
-                return UIColor(hexString: "#eef6e8")
-            case .CREAM:
-                return UIColor(hexString: "#D1CDB9")
-            }
-        }
-        
-        public func isLight() -> Bool {
-            return self == .LIGHT || self == .MINT || self == .CREAM
-        }
-
-        public var fontColor: UIColor {
-            switch self {
-            case .LIGHT:
-                return UIColor(hexString: "#000000").withAlphaComponent(0.87)
-            case .DARK:
-                return UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87)
-            case .BLUE:
-                return UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87)
-            case .DEEP:
-                return UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87)
-            case .SEPIA:
-                return UIColor(hexString: "#3e3d36").withAlphaComponent(0.87)
-            case .RED:
-                return UIColor(hexString: "#fff7ed").withAlphaComponent(0.87)
-            case .BLACK:
-                return UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87)
-            case .CONTRAST:
-                return UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87)
-            case .MINT:
-                return UIColor(hexString: "#09360f").withAlphaComponent(0.87)
-            case .CREAM:
-                return UIColor(hexString: "#444139").withAlphaComponent(0.87)
-            }
+        static func == (lhs: Theme, rhs: Theme) -> Bool {
+            return lhs.title == rhs.title
         }
     }
     
-    public static func distance(a: UIColor, b: UIColor) -> CGFloat {
-        let redDist = pow(a.redValue - b.redValue, 2)
-        let greenDist = pow(a.greenValue - b.greenValue, 2)
-        let blueDist = pow(a.blueValue - b.blueValue, 2)
-        return sqrt(redDist + greenDist + blueDist)
-    }
+    static var themes = [Theme]()
     
+    static func initializeThemes() {
+        ColorUtil.themes.removeAll()
+        ColorUtil.themes.append(Theme(title: "light", displayName: "Light", foregroundColor: UIColor.white, backgroundColor: UIColor(hexString: "#e5e5e5"), navIconColor: UIColor(hexString: "#000000").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#000000").withAlphaComponent(0.87), isLight: true, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "dark", displayName: "Dark Gray", foregroundColor: UIColor(hexString: "#303030"), backgroundColor: UIColor(hexString: "#212121"), navIconColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), isLight: false, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "black", displayName: "AMOLED Black", foregroundColor: UIColor.black, backgroundColor: UIColor.black, navIconColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), isLight: false, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "blue", displayName: "Blue", foregroundColor: UIColor(hexString: "#37474F"), backgroundColor: UIColor(hexString: "#2F3D44"), navIconColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), isLight: false, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "sepia", displayName: "Sepia", foregroundColor: UIColor(hexString: "#e2dfd7"), backgroundColor: UIColor(hexString: "#cac5ad"), navIconColor: UIColor(hexString: "#3e3d36").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#3e3d36").withAlphaComponent(0.87), isLight: false, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "red", displayName: "Dark Red", foregroundColor: UIColor(hexString: "#402c2c"), backgroundColor: UIColor(hexString: "#312322"), navIconColor: UIColor(hexString: "#fff7ed").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#fff7ed").withAlphaComponent(0.87), isLight: false, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "deep", displayName: "Deep Purple", foregroundColor: UIColor(hexString: "#1f1e26"), backgroundColor: UIColor(hexString: "#16161C"), navIconColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), isLight: false, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "mint", displayName: "Mint Green", foregroundColor: UIColor(hexString: "#ffffff"), backgroundColor: UIColor(hexString: "#eef6e8"), navIconColor: UIColor(hexString: "#9fc675"), fontColor: UIColor(hexString: "#09360f").withAlphaComponent(0.87), isLight: true, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "cream", displayName: "Crème", foregroundColor: UIColor(hexString: "#DCD8C2"), backgroundColor: UIColor(hexString: "#D1CDB9"), navIconColor: UIColor(hexString: "#444139").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#444139").withAlphaComponent(0.87), isLight: true, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "acontrast", displayName: "AMOLED Black with Contrast", foregroundColor: UIColor.black, backgroundColor: UIColor(hexString: "#111010"), navIconColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), fontColor: UIColor(hexString: "#FFFFFF").withAlphaComponent(0.87), isLight: false, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "pink", displayName: "Pink", foregroundColor: UIColor(hexString: "#FFFFFC"), backgroundColor: UIColor(hexString: "#fff5e8"), navIconColor: UIColor(hexString: "#ea8ab4"), fontColor: UIColor(hexString: "#262844").withAlphaComponent(0.87), isLight: true, isCustom: false))
+        ColorUtil.themes.append(Theme(title: "solarize", displayName: "Solarized", foregroundColor: UIColor(hexString: "#0C3641"), backgroundColor: UIColor(hexString: "#032B35"), navIconColor: UIColor(hexString: "#6E73C1"), fontColor: UIColor(hexString: "#839496"), isLight: false, isCustom: false))
+        
+        for theme in UserDefaults.standard.dictionaryRepresentation().keys.filter({ $0.startsWith("Theme+") }) {
+            let themeData = UserDefaults.standard.string(forKey: theme)!.removingPercentEncoding!
+            let split = themeData.split("#")
+            let title = split[1].removingPercentEncoding!.replacingOccurrences(of: "<H>", with: "#")
+            themes.append(Theme(title: title, displayName: title, foregroundColor: UIColor(hex: split[2]), backgroundColor: UIColor(hex: split[3]), navIconColor: UIColor(hex: split[5]), fontColor: UIColor(hex: split[4]), isLight: Bool(split[8])!, isCustom: true))
+        }
+    }
+
     public static func getClosestColor(hex: String) -> UIColor {
-        let allColors = GMPalette.allColorNoBlack()
-        
-        return UIColor.init(hexString: hex).closestColor(inPalette: allColors)
+        let color = UIColor(hexString: hex)
+        return color.closestColor(inPalette: GMPalette.allColorNoBlack()) ?? color
     }
 
 }

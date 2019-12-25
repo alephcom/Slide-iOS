@@ -6,83 +6,63 @@
 //  Copyright © 2017 Haptic Apps. All rights reserved.
 //
 
+import Anchorage
+import TGPControls
+import SloppySwiper
 import reddift
 import UIKit
 
-class SettingsFont: UITableViewController {
-    
-    var enlargeCell: UITableViewCell = UITableViewCell()
-    var typeCell: UITableViewCell = UITableViewCell()
+class SettingsFont: BubbleSettingTableViewController {
+
+    var enlargeCell: UITableViewCell = InsetCell()
+    var typeCell: UITableViewCell = InsetCell()
     var enlarge = UISwitch()
     var type = UISwitch()
-    var commentSize: UITableViewCell = UITableViewCell(style: .subtitle, reuseIdentifier: "commentSize")
-    var submissionSize: UITableViewCell = UITableViewCell(style: .subtitle, reuseIdentifier: "submissionSize")
+    var slider: TGPDiscreteSlider!
+    var sliderSub: TGPDiscreteSlider!
 
-    var commentHelvetica: UITableViewCell = UITableViewCell()
-    var commentRCR: UITableViewCell = UITableViewCell()
-    var commentRCB: UITableViewCell = UITableViewCell()
-    var commentRL: UITableViewCell = UITableViewCell()
-    var commentRB: UITableViewCell = UITableViewCell()
-    var commentRM: UITableViewCell = UITableViewCell()
-    var commentSystem: UITableViewCell = UITableViewCell()
-    var commentPapyrus: UITableViewCell = UITableViewCell()
-    var commentChalkboard: UITableViewCell = UITableViewCell()
-    var commentAvenir: UITableViewCell = UITableViewCell()
-    var commentAvenirMedium: UITableViewCell = UITableViewCell()
+    var previewCell: UITableViewCell = InsetCell()
+    var preview = UISwitch()
 
-    var submissionHelvetica: UITableViewCell = UITableViewCell()
-    var submissionRCR: UITableViewCell = UITableViewCell()
-    var submissionRCB: UITableViewCell = UITableViewCell()
-    var submissionRL: UITableViewCell = UITableViewCell()
-    var submissionRB: UITableViewCell = UITableViewCell()
-    var submissionRM: UITableViewCell = UITableViewCell()
-    var submissionSystem: UITableViewCell = UITableViewCell()
-    var submissionPapyrus: UITableViewCell = UITableViewCell()
-    var submissionChalkboard: UITableViewCell = UITableViewCell()
-    var submissionAvenir: UITableViewCell = UITableViewCell()
-    var submissionAvenirMedium: UITableViewCell = UITableViewCell()
+    var commentSize: UITableViewCell = InsetCell(style: .value1, reuseIdentifier: "commentSize")
+    var submissionSize: UITableViewCell = InsetCell(style: .value1, reuseIdentifier: "submissionSize")
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        // Do any additional setup after loading the view.
+    var submissionFont = InsetCell(style: .value1, reuseIdentifier: "submissionFont")
+    var commentFont = InsetCell(style: .value1, reuseIdentifier: "commentFont")
+
+    var submissionWeight = InsetCell(style: .value1, reuseIdentifier: "submissionWeight")
+    var commentWeight = InsetCell(style: .value1, reuseIdentifier: "commentWeight")
+
+    var submissionPreview = InsetCell(style: .default, reuseIdentifier: "submissionPreview").then {
+        $0.selectionStyle = .none
     }
-    
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
+    var commentPreview = InsetCell(style: .default, reuseIdentifier: "commentPreview").then {
+        $0.selectionStyle = .none
     }
-    
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        setupBaseBarColors()
-    }
-    
-    func switchIsChanged(_ changed: UISwitch) {
+
+    let fontSizes: [Int: String] = [
+        10: "Largest",
+        8: "Extra Large",
+        4: "Very Large",
+        2: "Large",
+        0: "Normal",
+        -2: "Small",
+        -4: "Very Small",
+        -6: "Smallest",
+        ]
+
+    @objc func switchIsChanged(_ changed: UISwitch) {
         if changed == enlarge {
             SettingValues.enlargeLinks = changed.isOn
             UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_enlargeLinks)
         } else if changed == type {
             SettingValues.showLinkContentType = changed.isOn
             UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_showLinkContentType)
+        } else if changed == preview {
+            SettingValues.disablePreviews = changed.isOn
+            UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_disablePreviews)
         }
         UserDefaults.standard.synchronize()
-    }
-    
-    override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        let label: UILabel = UILabel()
-        label.textColor = ColorUtil.baseAccent
-        label.font = FontGenerator.boldFontOfSize(size: 20, submission: true)
-        let toReturn = label.withPadding(padding: UIEdgeInsets.init(top: 0, left: 12, bottom: 0, right: 0))
-        toReturn.backgroundColor = ColorUtil.backgroundColor
-        
-        switch section {
-        case 0: label.text  = "Font size"
-        case 1: label.text  = "Submission font"
-        case 2: label.text = "Comment font"
-        default: label.text  = ""
-        }
-        return toReturn
     }
     
     func setSizeComment(size: Int) {
@@ -90,7 +70,7 @@ class SettingsFont: UITableViewController {
         UserDefaults.standard.set(size, forKey: SettingValues.pref_commentFontSize)
         UserDefaults.standard.synchronize()
         FontGenerator.initialize()
-        doFontSizes()
+        refresh()
     }
     
     func setSizeSubmission(size: Int) {
@@ -98,603 +78,387 @@ class SettingsFont: UITableViewController {
         UserDefaults.standard.set(size, forKey: SettingValues.pref_postFontSize)
         UserDefaults.standard.synchronize()
         SubredditReorderViewController.changed = true
-        CachedTitle.titleFont = FontGenerator.fontOfSize(size: 18, submission: true)
+        CachedTitle.titleFont = FontGenerator.fontOfSize(size: CachedTitle.baseFontSize, submission: true)
         FontGenerator.initialize()
-        doFontSizes()
-    }
-    
-    func doCommentSize() {
-        let actionSheetController: UIAlertController = UIAlertController(title: "Comment font size", message: "", preferredStyle: .actionSheet)
-        
-        var cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-            print("Cancel")
-        }
-        actionSheetController.addAction(cancelActionButton)
-
-        let currentCommentSize = SettingValues.commentFontOffset
-        let selected = UIImage.init(named: "selected")!.getCopy(withSize: .square(size: 20), withColor: .blue)
-        
-        cancelActionButton = UIAlertAction(title: "Largest", style: .default) { _ -> Void in
-            self.setSizeComment(size: 10)
-        }
-        if currentCommentSize == 10 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Extra Large", style: .default) { _ -> Void in
-            self.setSizeComment(size: 8)
-        }
-        if currentCommentSize == 8 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-        
-        cancelActionButton = UIAlertAction(title: "Very Large", style: .default) { _ -> Void in
-            self.setSizeComment(size: 4)
-        }
-        if currentCommentSize == 4 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Large", style: .default) { _ -> Void in
-            self.setSizeComment(size: 2)
-        }
-        if currentCommentSize == 2 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Normal", style: .default) { _ -> Void in
-            self.setSizeComment(size: 0)
-        }
-        if currentCommentSize == 0 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Small", style: .default) { _ -> Void in
-            self.setSizeComment(size: -2)
-        }
-        if currentCommentSize == -2 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Very Small", style: .default) { _ -> Void in
-            self.setSizeComment(size: -4)
-        }
-        if currentCommentSize == -4 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Smallest", style: .default) { _ -> Void in
-            self.setSizeComment(size: -6)
-        }
-        if currentCommentSize == -6 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-
-        actionSheetController.modalPresentationStyle = .popover
-        if let presenter = actionSheetController.popoverPresentationController {
-            presenter.sourceView = commentSize.contentView
-            presenter.sourceRect = commentSize.contentView.bounds
-        }
-        self.present(actionSheetController, animated: true, completion: nil)
-    
-    }
-    
-    func doSubmissionSize() {
-        let actionSheetController: UIAlertController = UIAlertController(title: "Submission font size", message: "", preferredStyle: .actionSheet)
-        
-        var cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-            print("Cancel")
-        }
-        actionSheetController.addAction(cancelActionButton)
-
-        let currentLinkSize = SettingValues.postFontOffset
-        let selected = UIImage.init(named: "selected")!.getCopy(withSize: .square(size: 20), withColor: .blue)
-
-        cancelActionButton = UIAlertAction(title: "Largest", style: .default) { _ -> Void in
-            self.setSizeSubmission(size: 10)
-        }
-        if currentLinkSize == 10 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Extra Large", style: .default) { _ -> Void in
-            self.setSizeSubmission(size: 8)
-        }
-        if currentLinkSize == 8 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-        
-        cancelActionButton = UIAlertAction(title: "Very Large", style: .default) { _ -> Void in
-            self.setSizeSubmission(size: 4)
-        }
-        if currentLinkSize == 4 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-        
-        cancelActionButton = UIAlertAction(title: "Large", style: .default) { _ -> Void in
-            self.setSizeSubmission(size: 2)
-        }
-        if currentLinkSize == 2 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-        
-        cancelActionButton = UIAlertAction(title: "Normal", style: .default) { _ -> Void in
-            self.setSizeSubmission(size: 0)
-        }
-        if currentLinkSize == 0 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-        
-        cancelActionButton = UIAlertAction(title: "Small", style: .default) { _ -> Void in
-            self.setSizeSubmission(size: -2)
-        }
-        if currentLinkSize == -2 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-        
-        cancelActionButton = UIAlertAction(title: "Very Small", style: .default) { _ -> Void in
-            self.setSizeSubmission(size: -4)
-        }
-        if currentLinkSize == -4 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-        
-        cancelActionButton = UIAlertAction(title: "Smallest", style: .default) { _ -> Void in
-            self.setSizeSubmission(size: -6)
-        }
-        if currentLinkSize == -6 {
-            cancelActionButton.setValue(selected, forKey: "image")
-        }
-        actionSheetController.addAction(cancelActionButton)
-        
-        actionSheetController.modalPresentationStyle = .popover
-        if let presenter = actionSheetController.popoverPresentationController {
-            presenter.sourceView = submissionSize.contentView
-            presenter.sourceRect = submissionSize.contentView.bounds
-        }
-        self.present(actionSheetController, animated: true, completion: nil)
+        refresh()
     }
     
     override func loadView() {
         super.loadView()
         
-        self.view.backgroundColor = ColorUtil.backgroundColor
+        self.view.backgroundColor = ColorUtil.theme.backgroundColor
         // set the title
-        self.title = "Font"
-        self.tableView.separatorStyle = .none
+        self.title = "Font settings"
+        headers = ["Submissions", "Comments", "Link options"]
 
-        enlarge = UISwitch()
-        enlarge.isOn = SettingValues.enlargeLinks
-        enlarge.addTarget(self, action: #selector(SettingsFont.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
-        self.enlargeCell.textLabel?.text = "Enlarge links"
-        self.enlargeCell.accessoryView = enlarge
-        self.enlargeCell.backgroundColor = ColorUtil.foregroundColor
-        self.enlargeCell.textLabel?.textColor = ColorUtil.fontColor
-        enlargeCell.selectionStyle = UITableViewCellSelectionStyle.none
+        enlarge = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+            $0.isOn = SettingValues.enlargeLinks
+        }
+        enlarge.addTarget(self, action: #selector(SettingsFont.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
+        enlargeCell.textLabel?.text = "Make links larger and easier to select"
+        enlargeCell.accessoryView = enlarge
+        enlargeCell.textLabel?.numberOfLines = 0
+        enlargeCell.selectionStyle = UITableViewCell.SelectionStyle.none
         
-        type = UISwitch()
-        type.isOn = SettingValues.showLinkContentType
-        type.addTarget(self, action: #selector(SettingsFont.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
-        self.typeCell.textLabel?.text = "Show content type next to links"
-        self.typeCell.textLabel?.numberOfLines = 0
-        self.typeCell.textLabel?.lineBreakMode = .byWordWrapping
-        self.typeCell.accessoryView = type
-        self.typeCell.backgroundColor = ColorUtil.foregroundColor
-        self.typeCell.textLabel?.textColor = ColorUtil.fontColor
-        typeCell.selectionStyle = UITableViewCellSelectionStyle.none
+        preview = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+            $0.isOn = SettingValues.disablePreviews
+        }
+        preview.addTarget(self, action: #selector(SettingsFont.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
+        previewCell.textLabel?.text = "Disable link preview bubbles"
+        previewCell.accessoryView = preview
+        previewCell.textLabel?.numberOfLines = 0
+        previewCell.selectionStyle = UITableViewCell.SelectionStyle.none
+
+        type = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+            $0.isOn = SettingValues.showLinkContentType
+        }
+        type.addTarget(self, action: #selector(SettingsFont.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
+        typeCell.textLabel?.text = "Show content type preview next to links"
+        typeCell.textLabel?.numberOfLines = 0
+        typeCell.textLabel?.lineBreakMode = .byWordWrapping
+        typeCell.accessoryView = type
+        typeCell.selectionStyle = UITableViewCell.SelectionStyle.none
+
+        submissionPreview.textLabel?.text = "I'm a text preview!"
+
+        sliderSub = TGPDiscreteSlider()
+        sliderSub.incrementValue = 1
+        sliderSub.minimumValue = -8
+        sliderSub.tickCount = 16
+        sliderSub.tickSize = CGSize(width: 3, height: 10)
+        sliderSub.tickStyle = 2 //rounded
+        sliderSub.value = CGFloat(SettingValues.postFontOffset)
+        sliderSub.addTarget(self, action: #selector(valueChanged(_:event:)), for: .valueChanged)
+        sliderSub.minimumTrackTintColor = ColorUtil.baseAccent
+        sliderSub.maximumTrackTintColor = ColorUtil.theme.fontColor
         
-        self.commentSize.backgroundColor = ColorUtil.foregroundColor
-        self.commentSize.textLabel?.textColor = ColorUtil.fontColor
-        self.commentSize.detailTextLabel?.textColor = ColorUtil.fontColor
+        submissionSize.contentView.addSubview(sliderSub)
+        if let label = submissionSize.textLabel {
+            label.topAnchor == submissionSize.contentView.topAnchor + 20
+            label.leftAnchor == submissionSize.contentView.leftAnchor + 21
+            label.bottomAnchor == submissionSize.contentView.bottomAnchor - 50
+            label.heightAnchor == 20
+        }
         
-        let tap = UITapGestureRecognizer.init(target: self, action: #selector(self.doCommentSize))
-        self.commentSize.contentView.addGestureRecognizer(tap)
+        sliderSub.horizontalAnchors == submissionSize.contentView.horizontalAnchors
+        sliderSub.heightAnchor == 60
+        sliderSub.bottomAnchor == submissionSize.contentView.bottomAnchor
 
-        self.submissionSize.backgroundColor = ColorUtil.foregroundColor
-        self.submissionSize.textLabel?.textColor = ColorUtil.fontColor
-        self.submissionSize.detailTextLabel?.textColor = ColorUtil.fontColor
-        let tap2 = UITapGestureRecognizer.init(target: self, action: #selector(self.doSubmissionSize))
-        self.submissionSize.contentView.addGestureRecognizer(tap2)
+        submissionSize.textLabel?.text = "Font size"
 
-        doFontSizes()
+        submissionWeight.textLabel?.text = "Font variant"
+        submissionWeight.addTapGestureRecognizer { [weak self] in
+            self?.weightCellWasTapped(submission: true)
+        }
 
-        self.commentHelvetica.textLabel?.text = "Helvetica"
-        self.commentHelvetica.textLabel?.font = FontGenerator.Font.HELVETICA.font
-        self.commentHelvetica.backgroundColor = ColorUtil.foregroundColor
-        self.commentHelvetica.textLabel?.textColor = ColorUtil.fontColor
+        submissionFont.textLabel?.text = "Font"
+        submissionFont.addTapGestureRecognizer { [weak self] in
+            self?.submissionFontCellWasTapped()
+        }
+
+        commentPreview.textLabel?.text = "I'm a text preview!"
+
+        commentSize.textLabel?.text = "Font size"
         
-        self.commentRCR.textLabel?.text = "Roboto Condensed"
-        self.commentRCR.textLabel?.font = FontGenerator.Font.ROBOTOCONDENSED_REGULAR.font
-        self.commentRCR.backgroundColor = ColorUtil.foregroundColor
-        self.commentRCR.textLabel?.textColor = ColorUtil.fontColor
+        slider = TGPDiscreteSlider()
+        slider.incrementValue = 1
+        slider.minimumValue = -8
+        slider.tickCount = 16
+        slider.tickSize = CGSize(width: 3, height: 10)
+        slider.tickStyle = 2 //rounded
+        slider.value = CGFloat(SettingValues.commentFontOffset)
+        slider.addTarget(self, action: #selector(valueChanged(_:event:)), for: .valueChanged)
+        slider.minimumTrackTintColor = ColorUtil.baseAccent
+        slider.maximumTrackTintColor = ColorUtil.theme.fontColor
         
-        self.commentRCB.textLabel?.text = "Roboto Condensed Bold"
-        self.commentRCB.textLabel?.font = FontGenerator.Font.ROBOTOCONDENSED_BOLD.font
-        self.commentRCB.backgroundColor = ColorUtil.foregroundColor
-        self.commentRCB.textLabel?.textColor = ColorUtil.fontColor
-
-        self.commentRL.textLabel?.text = "Roboto Light"
-        self.commentRL.textLabel?.font = FontGenerator.Font.ROBOTO_LIGHT.font
-        self.commentRL.backgroundColor = ColorUtil.foregroundColor
-        self.commentRL.textLabel?.textColor = ColorUtil.fontColor
-
-        self.commentAvenir.textLabel?.text = "Avenir"
-        self.commentAvenir.textLabel?.font = FontGenerator.Font.AVENIR.font
-        self.commentAvenir.backgroundColor = ColorUtil.foregroundColor
-        self.commentAvenir.textLabel?.textColor = ColorUtil.fontColor
-
-        self.commentAvenirMedium.textLabel?.text = "Avenir Medium"
-        self.commentAvenirMedium.textLabel?.font = FontGenerator.Font.AVENIR_MEDIUM.font
-        self.commentAvenirMedium.backgroundColor = ColorUtil.foregroundColor
-        self.commentAvenirMedium.textLabel?.textColor = ColorUtil.fontColor
-
-        self.commentRB.textLabel?.text = "Roboto Bold"
-        self.commentRB.textLabel?.font = FontGenerator.Font.ROBOTO_BOLD.font
-        self.commentRB.backgroundColor = ColorUtil.foregroundColor
-        self.commentRB.textLabel?.textColor = ColorUtil.fontColor
-
-        self.commentRM.textLabel?.text = "Roboto Medium"
-        self.commentRM.textLabel?.font = FontGenerator.Font.ROBOTO_MEDIUM.font
-        self.commentRM.backgroundColor = ColorUtil.foregroundColor
-        self.commentRM.textLabel?.textColor = ColorUtil.fontColor
-
-        self.commentSystem.textLabel?.text = "System"
-        self.commentSystem.textLabel?.font = FontGenerator.Font.SYSTEM.font
-        self.commentSystem.backgroundColor = ColorUtil.foregroundColor
-        self.commentSystem.textLabel?.textColor = ColorUtil.fontColor
+        commentSize.contentView.addSubview(slider)
+        if let label = commentSize.textLabel {
+            label.topAnchor == commentSize.contentView.topAnchor + 20
+            label.leftAnchor == commentSize.contentView.leftAnchor + 21
+            label.bottomAnchor == commentSize.contentView.bottomAnchor - 50
+            label.heightAnchor == 20
+        }
         
-        self.submissionHelvetica.textLabel?.text = "Helvetica"
-        self.submissionHelvetica.textLabel?.font = FontGenerator.Font.HELVETICA.font
-        self.submissionHelvetica.backgroundColor = ColorUtil.foregroundColor
-        self.submissionHelvetica.textLabel?.textColor = ColorUtil.fontColor
-        
-        self.submissionRCR.textLabel?.text = "Roboto Condensed"
-        self.submissionRCR.textLabel?.font = FontGenerator.Font.ROBOTOCONDENSED_REGULAR.font
-        self.submissionRCR.backgroundColor = ColorUtil.foregroundColor
-        self.submissionRCR.textLabel?.textColor = ColorUtil.fontColor
-        
-        self.submissionRCB.textLabel?.text = "Roboto Condensed Bold"
-        self.submissionRCB.textLabel?.font = FontGenerator.Font.ROBOTOCONDENSED_BOLD.font
-        self.submissionRCB.backgroundColor = ColorUtil.foregroundColor
-        self.submissionRCB.textLabel?.textColor = ColorUtil.fontColor
-        
-        self.submissionRL.textLabel?.text = "Roboto Light"
-        self.submissionRL.textLabel?.font = FontGenerator.Font.ROBOTO_LIGHT.font
-        self.submissionRL.backgroundColor = ColorUtil.foregroundColor
-        self.submissionRL.textLabel?.textColor = ColorUtil.fontColor
-        
-        self.submissionRB.textLabel?.text = "Roboto Bold"
-        self.submissionRB.textLabel?.font = FontGenerator.Font.ROBOTO_BOLD.font
-        self.submissionRB.backgroundColor = ColorUtil.foregroundColor
-        self.submissionRB.textLabel?.textColor = ColorUtil.fontColor
-        
-        self.submissionAvenir.textLabel?.text = "Avenir"
-        self.submissionAvenir.textLabel?.font = FontGenerator.Font.AVENIR.font
-        self.submissionAvenir.backgroundColor = ColorUtil.foregroundColor
-        self.submissionAvenir.textLabel?.textColor = ColorUtil.fontColor
+        slider.horizontalAnchors == commentSize.contentView.horizontalAnchors
+        slider.heightAnchor == 60
+        slider.bottomAnchor == commentSize.contentView.bottomAnchor
+        commentFont.textLabel?.text = "Font"
+        commentFont.addTapGestureRecognizer { [weak self] in
+            self?.commentFontCellWasTapped()
+        }
 
-        self.submissionAvenirMedium.textLabel?.text = "Avenir Medium"
-        self.submissionAvenirMedium.textLabel?.font = FontGenerator.Font.AVENIR_MEDIUM.font
-        self.submissionAvenirMedium.backgroundColor = ColorUtil.foregroundColor
-        self.submissionAvenirMedium.textLabel?.textColor = ColorUtil.fontColor
+        if let swiper = self.navigationController?.delegate as? SloppySwiper {
+            swiper.panRecognizer.delegate = self
+        }
 
-        self.submissionRM.textLabel?.text = "Roboto Medium"
-        self.submissionRM.textLabel?.font = FontGenerator.Font.ROBOTO_MEDIUM.font
-        self.submissionRM.backgroundColor = ColorUtil.foregroundColor
-        self.submissionRM.textLabel?.textColor = ColorUtil.fontColor
-        
-        self.submissionSystem.textLabel?.text = "System"
-        self.submissionSystem.textLabel?.font = FontGenerator.Font.SYSTEM.font
-        self.submissionSystem.backgroundColor = ColorUtil.foregroundColor
-        self.submissionSystem.textLabel?.textColor = ColorUtil.fontColor
-        
-        self.commentPapyrus.textLabel?.text = "Papyrus"
-        self.commentPapyrus.textLabel?.font = FontGenerator.Font.PAPYRUS.font
-        self.commentPapyrus.backgroundColor = ColorUtil.foregroundColor
-        self.commentPapyrus.textLabel?.textColor = ColorUtil.fontColor
-        
-        self.submissionPapyrus.textLabel?.text = "Papyrus"
-        self.submissionPapyrus.textLabel?.font = FontGenerator.Font.PAPYRUS.font
-        self.submissionPapyrus.backgroundColor = ColorUtil.foregroundColor
-        self.submissionPapyrus.textLabel?.textColor = ColorUtil.fontColor
+        commentWeight.textLabel?.text = "Font variant"
+        commentWeight.addTapGestureRecognizer { [weak self] in
+            self?.weightCellWasTapped(submission: false)
+        }
 
-        self.commentChalkboard.textLabel?.text = "Chalkboard"
-        self.commentChalkboard.textLabel?.font = FontGenerator.Font.CHALKBOARD.font
-        self.commentChalkboard.backgroundColor = ColorUtil.foregroundColor
-        self.commentChalkboard.textLabel?.textColor = ColorUtil.fontColor
-
-        self.submissionChalkboard.textLabel?.text = "Chalkboard"
-        self.submissionChalkboard.textLabel?.font = FontGenerator.Font.CHALKBOARD.font
-        self.submissionChalkboard.backgroundColor = ColorUtil.foregroundColor
-        self.submissionChalkboard.textLabel?.textColor = ColorUtil.fontColor
-
-        doChecks()
+        refresh()
         self.tableView.tableFooterView = UIView()
-
     }
     
-    func doFontSizes() {
-        self.submissionSize.textLabel?.font = FontGenerator.fontOfSize(size: 16, submission: true)
-        self.commentSize.textLabel?.font = FontGenerator.fontOfSize(size: 16, submission: false)
-        
-        var commentText = ""
-        switch SettingValues.commentFontOffset {
-        case 10:
-            commentText = "Largest"
-        case 8:
-            commentText = "Extra Large"
-        case 4:
-            commentText = "Very Large"
-        case 2:
-            commentText = "Large"
-        case 0:
-            commentText = "Normal"
-        case -2:
-            commentText = "Small"
-        case -4:
-            commentText = "Very Small"
-        case -6:
-            commentText = "Smallest"
-        default:
-            commentText = "Default"
+    @objc func valueChanged(_ sender: TGPDiscreteSlider, event: UIEvent) {
+        if sender == sliderSub {
+            SettingValues.postFontOffset = Int(Double(sender.value))
+            UserDefaults.standard.set(SettingValues.postFontOffset, forKey: SettingValues.pref_postFontSize)
+        } else {
+            SettingValues.commentFontOffset = Int(Double(sender.value))
+            UserDefaults.standard.set(SettingValues.commentFontOffset, forKey: SettingValues.pref_commentFontSize)
         }
-        
-        var submissionText = ""
-        switch SettingValues.postFontOffset {
-        case 10:
-            submissionText = "Largest"
-        case 8:
-            submissionText = "Extra Large"
-        case 4:
-            submissionText = "Very Large"
-        case 2:
-            submissionText = "Large"
-        case 0:
-            submissionText = "Normal"
-        case -2:
-            submissionText = "Small"
-        case -4:
-            submissionText = "Very Small"
-        case -6:
-            submissionText = "Smallest"
-        default:
-            submissionText = "Default"
+        let submissionFont = FontGenerator.fontOfSize(size: 16, submission: true)
+        let commentFont = FontGenerator.fontOfSize(size: 16, submission: false)
+        self.submissionPreview.textLabel?.font = submissionFont
+        self.commentPreview.textLabel?.font = commentFont
+    }
+    
+    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        if (indexPath.section == 1 && indexPath.row == 2) || (indexPath.section == 0 && indexPath.row == 2) {
+            return 90
         }
-        
-        self.commentSize.textLabel?.text = "Comment font size"
-        self.submissionSize.textLabel?.text = "Submission title size"
-        
-        self.submissionSize.detailTextLabel?.text = submissionText
-        self.commentSize.detailTextLabel?.text = commentText
+        return 60
+    }
+    
+    func refresh() {
+        let submissionFont = FontGenerator.fontOfSize(size: 16, submission: true)
+        let commentFont = FontGenerator.fontOfSize(size: 16, submission: false)
+
+        self.submissionPreview.textLabel?.font = submissionFont
+        self.commentPreview.textLabel?.font = commentFont
+
+        let subFontKey = UserDefaults.standard.string(forKey: "postfont") ?? ""
+        let subFontDisplayName = FontMapping.fromStoredName(name: subFontKey).displayedName
+        self.submissionFont.detailTextLabel?.text = subFontDisplayName
+
+        let commentFontKey = UserDefaults.standard.string(forKey: "commentfont") ?? ""
+        let commentFontDisplayName = FontMapping.fromStoredName(name: commentFontKey).displayedName
+        self.commentFont.detailTextLabel?.text = commentFontDisplayName
+
+        self.submissionWeight.detailTextLabel?.text = FontGenerator.fontOfSize(size: 12, submission: true).fontName
+        self.commentWeight.detailTextLabel?.text = FontGenerator.fontOfSize(size: 12, submission: false).fontName
+
+        // Enable/disable if we have font variants to choose from for submission font
+        if UIFont.fontNames(forFamilyName: submissionFont.familyName).count > 1 {
+            self.submissionWeight.contentView.alpha = 1
+            self.submissionWeight.isUserInteractionEnabled = true
+        } else {
+            self.submissionWeight.detailTextLabel?.text = "Default"
+            self.submissionWeight.contentView.alpha = 0.7
+            self.submissionWeight.isUserInteractionEnabled = false
+        }
+
+        // Enable/disable if we have font variants to choose from for comment font
+        if UIFont.fontNames(forFamilyName: commentFont.familyName).count > 1 {
+            self.commentWeight.contentView.alpha = 1
+            self.commentWeight.isUserInteractionEnabled = true
+        } else {
+            self.commentWeight.detailTextLabel?.text = "Default"
+            self.commentWeight.contentView.alpha = 0.7
+            self.commentWeight.isUserInteractionEnabled = false
+        }
 
         self.tableView.reloadData()
-    }
-    
-    func doChecks() {
-        
-        submissionHelvetica.accessoryType = .none
-        submissionRCR.accessoryType = .none
-        submissionRCB.accessoryType = .none
-        submissionRL.accessoryType = .none
-        submissionRB.accessoryType = .none
-        submissionRM.accessoryType = .none
-        submissionSystem.accessoryType = .none
-        submissionPapyrus.accessoryType = .none
-        submissionAvenirMedium.accessoryType = .none
-        submissionAvenir.accessoryType = .none
-        submissionChalkboard.accessoryType = .none
-        switch FontGenerator.postFont {
-        case .HELVETICA:
-            submissionHelvetica.accessoryType = .checkmark
-        case .AVENIR:
-            submissionAvenir.accessoryType = .checkmark
-        case .AVENIR_MEDIUM:
-            submissionAvenirMedium.accessoryType = .checkmark
-        case .ROBOTOCONDENSED_REGULAR:
-            submissionRCR.accessoryType = .checkmark
-        case .ROBOTOCONDENSED_BOLD:
-            submissionRCB.accessoryType = .checkmark
-        case .ROBOTO_LIGHT:
-            submissionRL.accessoryType = .checkmark
-        case .ROBOTO_BOLD:
-            submissionRB.accessoryType = .checkmark
-        case .ROBOTO_MEDIUM:
-            submissionRM.accessoryType = .checkmark
-        case .PAPYRUS:
-            submissionPapyrus.accessoryType = .checkmark
-        case .CHALKBOARD:
-            submissionChalkboard.accessoryType = .checkmark
-        case .SYSTEM:
-            submissionSystem.accessoryType = .checkmark
-        }
-
-        commentHelvetica.accessoryType = .none
-        commentRCR.accessoryType = .none
-        commentRCB.accessoryType = .none
-        commentRL.accessoryType = .none
-        commentAvenir.accessoryType = .none
-        commentAvenirMedium.accessoryType = .none
-        commentRB.accessoryType = .none
-        commentRM.accessoryType = .none
-        commentSystem.accessoryType = .none
-        commentPapyrus.accessoryType = .none
-        commentChalkboard.accessoryType = .none
-        switch FontGenerator.commentFont {
-        case .HELVETICA:
-            commentHelvetica.accessoryType = .checkmark
-        case .ROBOTOCONDENSED_REGULAR:
-            commentRCR.accessoryType = .checkmark
-        case .AVENIR:
-            commentAvenir.accessoryType = .checkmark
-        case .AVENIR_MEDIUM:
-            commentAvenirMedium.accessoryType = .checkmark
-        case .ROBOTOCONDENSED_BOLD:
-            commentRCB.accessoryType = .checkmark
-        case .ROBOTO_LIGHT:
-            commentRL.accessoryType = .checkmark
-        case .ROBOTO_BOLD:
-            commentRB.accessoryType = .checkmark
-        case .ROBOTO_MEDIUM:
-            commentRM.accessoryType = .checkmark
-        case .PAPYRUS:
-            commentPapyrus.accessoryType = .checkmark
-        case .CHALKBOARD:
-            commentChalkboard.accessoryType = .checkmark
-        case .SYSTEM:
-            commentSystem.accessoryType = .checkmark
-        }
-
     }
     
     override func numberOfSections(in tableView: UITableView) -> Int {
         return 3
     }
-    override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        return 70
-    }
-    
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 60
-    }
-    
-    func tableView(tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
-    }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell: UITableViewCell
         switch indexPath.section {
         case 0:
             switch indexPath.row {
-            case 0: return self.submissionSize
-            case 1: return self.commentSize
-            case 2: return self.enlargeCell
-            case 3: return self.typeCell
-            default: fatalError("Unknown row in section 0")
+            case 0: cell = self.submissionFont
+            case 1: cell = self.submissionWeight
+            case 2: cell = self.submissionSize
+            case 3: cell = self.submissionPreview
+            default: fatalError("Unknown row in section \(indexPath.section)")
             }
         case 1:
             switch indexPath.row {
-            case 0: return self.submissionHelvetica
-            case 1: return self.submissionAvenir
-            case 2: return self.submissionAvenirMedium
-            case 3: return self.submissionRCR
-            case 4: return self.submissionRCB
-            case 5: return self.submissionRL
-            case 6: return self.submissionRB
-            case 7: return self.submissionRM
-            case 8: return self.submissionSystem
-            case 9: return self.submissionPapyrus
-            case 10: return self.submissionChalkboard
-            default: fatalError("Unknown row in section 1")
+            case 0: cell = self.commentFont
+            case 1: cell = self.commentWeight
+            case 2: cell = self.commentSize
+            case 3: cell = self.commentPreview
+            default: fatalError("Unknown row in section \(indexPath.section)")
             }
         case 2:
             switch indexPath.row {
-            case 0: return self.commentHelvetica
-            case 1: return self.commentAvenir
-            case 2: return self.commentAvenirMedium
-            case 3: return self.commentRCR
-            case 4: return self.commentRCB
-            case 5: return self.commentRL
-            case 6: return self.commentRB
-            case 7: return self.commentRM
-            case 8: return self.commentSystem
-            case 9: return self.commentPapyrus
-            case 10: return self.commentChalkboard
-            default: fatalError("Unknown row in section 1")
+            case 0: cell = self.previewCell
+            case 1: cell = self.enlargeCell
+            case 2: cell = self.typeCell
+            default: fatalError("Unknown row in section \(indexPath.section)")
             }
         default: fatalError("Unknown section")
         }
-        
+
+        cell.style()
+        if indexPath == IndexPath(row: 3, section: 0) || indexPath == IndexPath(row: 3, section: 1) {
+            cell.backgroundColor = ColorUtil.theme.backgroundColor
+        }
+        return cell
     }
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // Each cell already has a tap handler in init
         tableView.deselectRow(at: indexPath, animated: true)
-        if indexPath.section == 1 {
-            switch indexPath.row {
-            case 0:
-                UserDefaults.standard.set(FontGenerator.Font.HELVETICA.rawValue, forKey: "postfont")
-            case 1:
-                UserDefaults.standard.set(FontGenerator.Font.AVENIR.rawValue, forKey: "postfont")
-            case 2:
-                UserDefaults.standard.set(FontGenerator.Font.AVENIR_MEDIUM.rawValue, forKey: "postfont")
-            case 3:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTOCONDENSED_REGULAR.rawValue, forKey: "postfont")
-            case 4:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTOCONDENSED_BOLD.rawValue, forKey: "postfont")
-            case 5:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTO_LIGHT.rawValue, forKey: "postfont")
-            case 6:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTO_BOLD.rawValue, forKey: "postfont")
-            case 7:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTO_MEDIUM.rawValue, forKey: "postfont")
-            case 8:
-                UserDefaults.standard.set(FontGenerator.Font.SYSTEM.rawValue, forKey: "postfont")
-            case 9:
-                UserDefaults.standard.set(FontGenerator.Font.PAPYRUS.rawValue, forKey: "postfont")
-            case 10:
-                UserDefaults.standard.set(FontGenerator.Font.CHALKBOARD.rawValue, forKey: "postfont")
-            default: fatalError("Unknown row in section 1")
-            }
-        } else if indexPath.section == 2 {
-            switch indexPath.row {
-            case 0:
-                UserDefaults.standard.set(FontGenerator.Font.HELVETICA.rawValue, forKey: "commentfont")
-            case 1:
-                UserDefaults.standard.set(FontGenerator.Font.AVENIR.rawValue, forKey: "commentfont")
-            case 2:
-                UserDefaults.standard.set(FontGenerator.Font.AVENIR_MEDIUM.rawValue, forKey: "commentfont")
-            case 3:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTOCONDENSED_REGULAR.rawValue, forKey: "commentfont")
-            case 4:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTOCONDENSED_BOLD.rawValue, forKey: "commentfont")
-            case 5:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTO_LIGHT.rawValue, forKey: "commentfont")
-            case 6:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTO_BOLD.rawValue, forKey: "commentfont")
-            case 7:
-                UserDefaults.standard.set(FontGenerator.Font.ROBOTO_MEDIUM.rawValue, forKey: "commentfont")
-            case 8:
-                UserDefaults.standard.set(FontGenerator.Font.SYSTEM.rawValue, forKey: "commentfont")
-            case 9:
-                UserDefaults.standard.set(FontGenerator.Font.PAPYRUS.rawValue, forKey: "commentfont")
-            case 10:
-                UserDefaults.standard.set(FontGenerator.Font.CHALKBOARD.rawValue, forKey: "commentfont")
-            default: fatalError("Unknown row in section 1")
-            }
-        }
-        tableView.deselectRow(at: indexPath, animated: true)
-        UserDefaults.standard.synchronize()
-        FontGenerator.initialize()
-        CachedTitle.titleFont = FontGenerator.fontOfSize(size: 18, submission: true)
-        CachedTitle.titles.removeAll()
-        doChecks()
-        doFontSizes()
     }
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0: return 4    // section 0 has 2 rows
-        case 1: return 11    // section 1 has 1 row
-        case 2: return 11    // section 1 has 1 row
+        case 1: return 4    // section 1 has 2 rows
+        case 2: return 3
         default: fatalError("Unknown number of sections")
         }
     }
+}
+
+// MARK: - Actions
+extension SettingsFont {
+    func submissionFontCellWasTapped() {
+        let vc = FontSelectionTableViewController()
+        vc.title = "Submission Font"
+        vc.key = FontSelectionTableViewController.Key.postFont
+        vc.delegate = self
+        VCPresenter.showVC(viewController: vc, popupIfPossible: false, parentNavigationController: self.navigationController, parentViewController: self)
+    }
+
+    func commentFontCellWasTapped() {
+        let vc = FontSelectionTableViewController()
+        vc.title = "Comment Font"
+        vc.key = FontSelectionTableViewController.Key.commentFont
+        vc.delegate = self
+        VCPresenter.showVC(viewController: vc, popupIfPossible: false, parentNavigationController: self.navigationController, parentViewController: self)
+    }
+
+    func commentSizeCellWasTapped() {
+        let actionSheetController = DragDownAlertMenu(title: "Comment font size", subtitle: "Applies to text displayed throughout Slide", icon: nil, themeColor: nil, full: true)
+
+        let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.menuIcon()
+
+        for key in fontSizes.keys.sorted() {
+            let description = fontSizes[key]!
+            actionSheetController.addAction(title: description, icon: SettingValues.commentFontOffset == key ? selected : nil) {
+                self.setSizeComment(size: key)
+            }
+        }
+
+        actionSheetController.show(self)
+    }
+
+    func submissionSizeCellWasTapped() {
+        let actionSheetController = DragDownAlertMenu(title: "Submission font size", subtitle: "Applies to submission titles and subtitles", icon: nil, themeColor: nil, full: true)
+
+        let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.menuIcon()
+
+        for key in fontSizes.keys.sorted() {
+            let description = fontSizes[key]!
+            actionSheetController.addAction(title: description, icon: SettingValues.postFontOffset == key ? selected : nil) {
+                self.setSizeSubmission(size: key)
+            }
+        }
+        
+        actionSheetController.show(self)
+    }
     
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        CachedTitle.titles.removeAll()
+    }
+
+    func weightCellWasTapped(submission: Bool) {
+
+        let actionSheetController = DragDownAlertMenu(title: submission ? "Submission font variant" : "Comment font variant", subtitle: "", icon: nil, themeColor: nil, full: true)
+
+        let currentFamily = FontGenerator.fontOfSize(size: 16, submission: submission).familyName
+        let fontsInFamily = UIFont.fontNames(forFamilyName: currentFamily)
+
+        let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.menuIcon()
+
+        // Prune out the weights that aren't available for the selected font
+        for font in fontsInFamily {
+            if font.contains("Italic") || font.contains("Oblique") {
+                continue
+            }
+            actionSheetController.addAction(title: font, icon: font == FontGenerator.fontOfSize(size: 16, submission: submission).fontName ? selected : nil) {
+                // Update the stored font weight
+                UserDefaults.standard.set(font, forKey: submission ? "postfont" : "commentfont")
+                
+                UserDefaults.standard.synchronize()
+                FontGenerator.initialize()
+                CachedTitle.titleFont = FontGenerator.fontOfSize(size: CachedTitle.baseFontSize, submission: true)
+                CachedTitle.titles.removeAll()
+                self.refresh()
+            }
+        }
+
+        actionSheetController.show(self)
+    }
+}
+
+extension UIFont {
+    func withWeight(_ weight: UIFont.Weight) -> UIFont {
+        var attributes = fontDescriptor.fontAttributes
+        var traits = (attributes[.traits] as? [UIFontDescriptor.TraitKey: Any]) ?? [:]
+
+        traits[.weight] = weight
+
+        attributes[.name] = nil
+        attributes[.traits] = traits
+        attributes[.family] = familyName
+
+        let descriptor = UIFontDescriptor(fontAttributes: attributes)
+
+        return UIFont(descriptor: descriptor, size: pointSize)
+    }
+}
+
+extension SettingsFont: FontSelectionTableViewControllerDelegate {
+
+    func fontSelectionTableViewController(_ controller: FontSelectionTableViewController,
+                                          didChooseFontWithName fontName: String,
+                                          forKey key: FontSelectionTableViewController.Key) {
+
+        // Reset the font weight if the font was changed
+        switch key {
+        case .postFont:
+            SettingValues.submissionFontWeight = "Regular"
+        case .commentFont:
+            SettingValues.commentFontWeight = "Regular"
+        }
+
+        // Update the VC
+        UserDefaults.standard.synchronize()
+        FontGenerator.initialize()
+        CachedTitle.titleFont = FontGenerator.fontOfSize(size: CachedTitle.baseFontSize, submission: true)
+        CachedTitle.titles.removeAll()
+        refresh()
+    }
+}
+
+private extension UITableViewCell {
+    func style() {
+        backgroundColor = ColorUtil.theme.foregroundColor
+        textLabel?.textColor = ColorUtil.theme.fontColor
+        detailTextLabel?.textColor = ColorUtil.theme.fontColor.withAlphaComponent(0.7)
+    }
+}
+
+extension SettingsFont: UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        if slider.bounds.insetBy(dx: -15, dy: -15).contains( touch.location(in: self.commentSize.contentView)) {
+            return false
+        }
+        if sliderSub.bounds.insetBy(dx: -15, dy: -15).contains( touch.location(in: self.submissionSize.contentView)) {
+            return false
+        }
+        return true
+    }
 }

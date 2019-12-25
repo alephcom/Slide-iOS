@@ -6,8 +6,8 @@
 //  Copyright © 2017 Haptic Apps. All rights reserved.
 //
 
-import TTTAttributedLabel
 import UIKit
+import YYText
 
 public class WrapSpoilers: NSObject {
     
@@ -19,7 +19,7 @@ public class WrapSpoilers: NSObject {
             let spoilerText = match[1]
             let spoilerTeaser = match[2]
             // Remove the last </a> tag, but keep the < for parsing.
-            if !tag.contains("<a href=\"http") {
+            if !tag.contains("<a href=\"http") && !tag.contains("<a href=\"/r") {
                 base = base.replacingOccurrences(of: tag, with: tag.substring(0, length: tag.length - 4) + (spoilerTeaser.isEmpty() ? "spoiler" : "") + " [[s[ \(spoilerText)]s]]</a> ")
             }
         }
@@ -74,9 +74,9 @@ extension String {
                 return results
             }
             var res = [String]()
-            res.append((self as NSString).substring(with: match.rangeAt(0)))
+            res.append((self as NSString).substring(with: match.range(at: 0)))
             for i in 1...lastRangeIndex {
-                let capturedGroupIndex = match.rangeAt(i)
+                let capturedGroupIndex = match.range(at: i)
                 let matchedString = (self as NSString).substring(with: capturedGroupIndex)
                 res.append(matchedString)
             }

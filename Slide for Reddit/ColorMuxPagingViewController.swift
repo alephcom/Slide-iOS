@@ -9,7 +9,7 @@ public class ColorMuxPagingViewController: UIPageViewController, UIScrollViewDel
     public var color1, color2: UIColor?
     public var viewToMux: UIView?
     public var navToMux: UINavigationBar?
-    
+
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         for view in self.view.subviews {
@@ -25,19 +25,15 @@ public class ColorMuxPagingViewController: UIPageViewController, UIScrollViewDel
         let point = scrollView.contentOffset
 
         var percentComplete: CGFloat
-        percentComplete = fabs(point.x - self.view.frame.size.width) / self.view.frame.size.width
+        percentComplete = abs(point.x - self.view.frame.size.width) / self.view.frame.size.width
 
-        if viewToMux != nil && color1 != nil && color2 != nil {
-            let color = ColorMuxPagingViewController.fadeFromColor(fromColor: color1!, toColor: color2!, withPercentage: percentComplete)
-            if percentComplete > 0.1 && percentComplete != 1 {
-                viewToMux!.backgroundColor = color
-            }
-        }
-
-        if navToMux != nil {
-            let color = ColorMuxPagingViewController.fadeFromColor(fromColor: color1!, toColor: color2!, withPercentage: percentComplete)
-            if percentComplete > 0 {
-                navToMux!.barTintColor = color
+        if let color1 = color1, let color2 = color2 {
+            if !color2.cgColor.__equalTo(color1.cgColor) {
+                let lerpedColor = ColorMuxPagingViewController.fadeFromColor(fromColor: color1, toColor: color2, withPercentage: percentComplete)
+                if !lerpedColor.cgColor.__equalTo(color1.cgColor) && percentComplete > 0.1 && percentComplete != 1 {
+                    viewToMux?.backgroundColor = lerpedColor
+                    navToMux?.barTintColor = lerpedColor
+                }
             }
         }
     }
@@ -57,14 +53,13 @@ public class ColorMuxPagingViewController: UIPageViewController, UIScrollViewDel
 
         toColor.getRed(&toRed, green: &toGreen, blue: &toBlue, alpha: &toAlpha)
 
-        //calculate the actual RGBA values of the fade colour
+        // Calculate the actual RGBA values of the fade color
         let red = (toRed - fromRed) * withPercentage + fromRed
         let green = (toGreen - fromGreen) * withPercentage + fromGreen
         let blue = (toBlue - fromBlue) * withPercentage + fromBlue
-        let alpha = (toAlpha - fromAlpha) * withPercentage + fromAlpha
 
-        // return the fade colour
-        return UIColor(red: red, green: green, blue: blue, alpha: alpha)
+        // Return the fade color
+        return UIColor(red: red, green: green, blue: blue, alpha: 1)
     }
 
 }

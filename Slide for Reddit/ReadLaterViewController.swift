@@ -6,6 +6,7 @@
 //  Copyright © 2018 Haptic Apps. All rights reserved.
 //
 
+import Anchorage
 import reddift
 import RLBAlertsPickers
 import UIKit
@@ -38,15 +39,15 @@ class ReadLaterViewController: ContentListingViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         let doneall = UIButton.init(type: .custom)
-        doneall.setImage(UIImage.init(named: "doneall")?.navIcon(), for: UIControlState.normal)
-        doneall.addTarget(self, action: #selector(self.doneAll), for: UIControlEvents.touchUpInside)
+        doneall.setImage(UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "doneall")?.navIcon(), for: UIControl.State.normal)
+        doneall.addTarget(self, action: #selector(self.doneAll), for: UIControl.Event.touchUpInside)
         doneall.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
         let doneallB = UIBarButtonItem.init(customView: doneall)
         
         self.navigationItem.rightBarButtonItem = doneallB
     }
     
-    func doneAll() {
+    @objc func doneAll() {
         let alert = UIAlertController(title: "Really mark all as read?", message: nil, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Yes", style: .destructive, handler: { (_) in
             for item in self.baseData.content {
@@ -72,27 +73,29 @@ public extension UIViewController {
         let titleLabel = UILabel()
         titleLabel.text = title
         titleLabel.font = UIFont.boldSystemFont(ofSize: 17)
-        titleLabel.textColor = ColorUtil.fontColor
+        titleLabel.textColor = ColorUtil.theme.fontColor
         titleLabel.textAlignment = .center
         titleLabel.sizeToFit()
 
         let subTitleLabel = UILabel()
         subTitleLabel.text = subtitle
         subTitleLabel.font = UIFont.systemFont(ofSize: 11)
-        subTitleLabel.textColor = ColorUtil.fontColor
+        subTitleLabel.textColor = ColorUtil.theme.fontColor
         subTitleLabel.textAlignment = .center
         subTitleLabel.lineBreakMode = .byTruncatingTail
         subTitleLabel.sizeToFit()
 
         let stackView = UIStackView(arrangedSubviews: [titleLabel, subTitleLabel])
-        stackView.distribution = .equalCentering
+        stackView.distribution = .fillProportionally
         stackView.axis = .vertical
 
         let width = max(titleLabel.frame.size.width, subTitleLabel.frame.size.width)
-        stackView.frame = CGRect(x: 0, y: 0, width: width, height: 35)
+        stackView.frame = CGRect(x: 0, y: 0, width: width, height: 45)
 
         titleLabel.sizeToFit()
         subTitleLabel.sizeToFit()
+        
+        stackView.heightAnchor == 45
 
         return stackView
     }

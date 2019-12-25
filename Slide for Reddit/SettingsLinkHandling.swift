@@ -9,21 +9,31 @@
 import reddift
 import UIKit
 
-class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
+class SettingsLinkHandling: BubbleSettingTableViewController, UISearchBarDelegate {
 
-    var domainEnter = UISearchBar()
+    var domainEnter = UISearchBar().then {
+        $0.tintColor = ColorUtil.baseAccent
+    }
 
-    var internalGifCell: UITableViewCell = UITableViewCell()
-    var internalGif = UISwitch()
+    var internalGifCell: UITableViewCell = InsetCell()
+    var internalGif = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
 
-    var internalImageCell: UITableViewCell = UITableViewCell()
-    var internalImage = UISwitch()
+    var internalImageCell: UITableViewCell = InsetCell()
+    var internalImage = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
 
-    var internalAlbumCell: UITableViewCell = UITableViewCell()
-    var internalAlbum = UISwitch()
+    var internalAlbumCell: UITableViewCell = InsetCell()
+    var internalAlbum = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
 
-    var internalYouTubeCell: UITableViewCell = UITableViewCell()
-    var internalYouTube = UISwitch()
+    var internalYouTubeCell: UITableViewCell = InsetCell()
+    var internalYouTube = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
     
     var chromeIcon: UIImage?
     var safariIcon: UIImage?
@@ -31,51 +41,54 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
     var internalIcon: UIImage?
     var firefoxIcon: UIImage?
     var focusIcon: UIImage?
-
-    //for future var dontLoadImagePreviewsCell: UITableViewCell = UITableViewCell()
-    // var dontLoadImagePreviews = UISwitch()
+    var focusKlarIcon: UIImage?
+    var duckIcon: UIImage?
+    var braveIcon: UIImage?
 
     override func viewDidLoad() {
         super.viewDidLoad()
-
         testBrowsers()
         doImages()
-        // Do any additional setup after loading the view.
     }
 
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
-    }
-    
     func doImages() {
         var first = GMColor.blue500Color()
         var second = first.add(overlay: UIColor.white.withAlphaComponent(0.4))
         var coloredIcon = UIImage.convertGradientToImage(colors: [first, second], frame: CGSize.square(size: 40))
-        safariIcon = coloredIcon.overlayWith(image: UIImage(named: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
+        safariIcon = coloredIcon.overlayWith(image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
         
         first = GMColor.lightBlue500Color()
         second = first.add(overlay: UIColor.white.withAlphaComponent(0.4))
         coloredIcon = UIImage.convertGradientToImage(colors: [first, second], frame: CGSize.square(size: 40))
-        safariInternalIcon = coloredIcon.overlayWith(image: UIImage(named: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
+        safariInternalIcon = coloredIcon.overlayWith(image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
 
         internalIcon = UIImage(named: "roundicon")?.getCopy(withSize: CGSize.square(size: 40))
         
         first = GMColor.orange500Color()
         second = first.add(overlay: UIColor.white.withAlphaComponent(0.4))
         coloredIcon = UIImage.convertGradientToImage(colors: [first, second], frame: CGSize.square(size: 40))
-        firefoxIcon = coloredIcon.overlayWith(image: UIImage(named: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .black), posX: 10, posY: 10)
+        firefoxIcon = coloredIcon.overlayWith(image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .black), posX: 10, posY: 10)
 
         first = GMColor.yellow500Color()
         second = first.add(overlay: UIColor.white.withAlphaComponent(0.4))
         coloredIcon = UIImage.convertGradientToImage(colors: [first, second], frame: CGSize.square(size: 40))
-        chromeIcon = coloredIcon.overlayWith(image: UIImage(named: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: GMColor.orange700Color()), posX: 10, posY: 10)
+        chromeIcon = coloredIcon.overlayWith(image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: GMColor.orange700Color()), posX: 10, posY: 10)
         
         first = GMColor.purple500Color()
         second = GMColor.pink500Color()
         coloredIcon = UIImage.convertGradientToImage(colors: [first, second], frame: CGSize.square(size: 40))
-        focusIcon = coloredIcon.overlayWith(image: UIImage(named: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
+        focusIcon = coloredIcon.overlayWith(image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
+        focusKlarIcon = coloredIcon.overlayWith(image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
+        
+        first = GMColor.orange800Color()
+        second = GMColor.lightGreen500Color()
+        coloredIcon = UIImage.convertGradientToImage(colors: [first, second], frame: CGSize.square(size: 40))
+        duckIcon = coloredIcon.overlayWith(image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
 
+        first = GMColor.orange400Color()
+        second = GMColor.red500Color()
+        coloredIcon = UIImage.convertGradientToImage(colors: [first, second], frame: CGSize.square(size: 40))
+        braveIcon = coloredIcon.overlayWith(image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.getCopy(withSize: CGSize.square(size: 20), withColor: .white), posX: 10, posY: 10)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -92,6 +105,9 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
         let operaURL = URL(string: "opera-http://google.com")!
         let firefoxURL = URL(string: "firefox://google.com")!
         let focusURL = URL(string: "firefox-focus://google.com")!
+        let focusKlarURL = URL(string: "firefox-klar://google.com")!
+        let ddgURL = URL(string: "ddgQuickLink://google.com")!
+        let braveURL = URL(string: "brave://google.com")!
 
         let sharedApplication = UIApplication.shared
         
@@ -121,13 +137,22 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
         if sharedApplication.canOpenURL(focusURL) {
             browsers.append(SettingValues.BROWSER_FOCUS)
         }
+        if sharedApplication.canOpenURL(focusKlarURL) {
+            browsers.append(SettingValues.BROWSER_FOCUS_KLAR)
+        }
+        if sharedApplication.canOpenURL(ddgURL) {
+            browsers.append(SettingValues.BROWSER_DDG)
+        }
+        if sharedApplication.canOpenURL(braveURL) {
+            browsers.append(SettingValues.BROWSER_BRAVE)
+        }
     }
     
     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
         return indexPath.section == 2
     }
 
-    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCellEditingStyle, forRowAt indexPath: IndexPath) {
+    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
         if editingStyle == .delete {
             switch indexPath.section {
             case 2:
@@ -139,19 +164,19 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
         }
     }
     
-    func switchIsChanged(_ changed: UISwitch) {
+    @objc func switchIsChanged(_ changed: UISwitch) {
         if changed == internalImage {
-            SettingValues.internalImageView = !changed.isOn
-            UserDefaults.standard.set(!changed.isOn, forKey: SettingValues.pref_internalImageView)
+            SettingValues.internalImageView = changed.isOn
+            UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_internalImageView)
         } else if changed == internalGif {
-            SettingValues.internalGifView = !changed.isOn
-            UserDefaults.standard.set(!changed.isOn, forKey: SettingValues.pref_internalGifView)
+            SettingValues.internalGifView = changed.isOn
+            UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_internalGifView)
         } else if changed == internalAlbum {
-            SettingValues.internalAlbumView = !changed.isOn
-            UserDefaults.standard.set(!changed.isOn, forKey: SettingValues.pref_internalAlbumView)
+            SettingValues.internalAlbumView = changed.isOn
+            UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_internalAlbumView)
         } else if changed == internalYouTube {
-            SettingValues.internalYouTube = !changed.isOn
-            UserDefaults.standard.set(!changed.isOn, forKey: SettingValues.pref_internalYouTube)
+            SettingValues.internalYouTube = changed.isOn
+            UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_internalYouTube)
         }
         UserDefaults.standard.synchronize()
         tableView.reloadData()
@@ -159,49 +184,45 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
 
     public func createCell(_ cell: UITableViewCell, _ switchV: UISwitch? = nil, isOn: Bool, text: String) {
         cell.textLabel?.text = text
-        cell.textLabel?.textColor = ColorUtil.fontColor
-        cell.backgroundColor = ColorUtil.foregroundColor
+        cell.textLabel?.textColor = ColorUtil.theme.fontColor
+        cell.backgroundColor = ColorUtil.theme.foregroundColor
         cell.textLabel?.numberOfLines = 0
         cell.textLabel?.lineBreakMode = .byWordWrapping
         if let s = switchV {
             s.isOn = isOn
-            s.addTarget(self, action: #selector(SettingsLayout.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+            s.addTarget(self, action: #selector(SettingsLayout.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
             cell.accessoryView = s
         }
-        cell.selectionStyle = UITableViewCellSelectionStyle.none
+        cell.selectionStyle = UITableViewCell.SelectionStyle.none
     }
 
     override func loadView() {
         super.loadView()
 
-        self.view.backgroundColor = ColorUtil.backgroundColor
+        self.view.backgroundColor = ColorUtil.theme.backgroundColor
         // set the title
         self.title = "Link Handling"
-        self.tableView.separatorStyle = .none
+        headers = ["Web browser", "Internal link handling", "Domains to open externally"]
 
-        createCell(internalGifCell, internalGif, isOn: !SettingValues.internalGifView, text: "Open videos (gifs, v.redd.it, streamable.com) externally")
-        createCell(internalAlbumCell, internalAlbum, isOn: !SettingValues.internalAlbumView, text: "Open Imgur albums externally")
-        createCell(internalImageCell, internalImage, isOn: !SettingValues.internalImageView, text: "Open images (Imgur, direct image links) externally")
-        createCell(internalYouTubeCell, internalYouTube, isOn: !SettingValues.internalYouTube, text: "Open YouTube videos externally")
+        createCell(internalGifCell, internalGif, isOn: SettingValues.internalGifView, text: "Video viewer (gifs, v.redd.it, streamable.com)")
+        createCell(internalAlbumCell, internalAlbum, isOn: SettingValues.internalAlbumView, text: "Imgur Album viewer")
+        createCell(internalImageCell, internalImage, isOn: SettingValues.internalImageView, text: "Image viewer (Imgur, direct image links)")
+        createCell(internalYouTubeCell, internalYouTube, isOn: SettingValues.internalYouTube, text: "YouTube viewer")
 
         self.tableView.tableFooterView = UIView()
 
-        domainEnter.searchBarStyle = UISearchBarStyle.minimal
+        domainEnter.searchBarStyle = UISearchBar.Style.minimal
         domainEnter.placeholder = "Enter domain to open externally"
         domainEnter.delegate = self
         domainEnter.returnKeyType = .done
-        domainEnter.textColor = ColorUtil.fontColor
+        domainEnter.textColor = ColorUtil.theme.fontColor
+        if !ColorUtil.theme.isLight {
+            domainEnter.keyboardAppearance = .dark
+        }
         domainEnter.setImage(UIImage(), for: .search, state: .normal)
         domainEnter.autocapitalizationType = .none
         domainEnter.isTranslucent = false
 
-    }
-
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 60
-    }
-
-    func tableView(tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
     }
 
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
@@ -218,10 +239,10 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         switch indexPath.section {
         case 0:
-            let cell = UITableViewCell()
-            cell.backgroundColor = ColorUtil.foregroundColor
-            cell.backgroundColor = ColorUtil.foregroundColor
-            cell.textLabel?.textColor = ColorUtil.fontColor
+            let cell = InsetCell()
+            cell.backgroundColor = ColorUtil.theme.foregroundColor
+            cell.backgroundColor = ColorUtil.theme.foregroundColor
+            cell.textLabel?.textColor = ColorUtil.theme.fontColor
             
             let text = browsers[indexPath.row]
             if text == SettingValues.BROWSER_SAFARI {
@@ -238,13 +259,22 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
                 cell.imageView?.image = chromeIcon
             } else if text == SettingValues.BROWSER_OPERA {
                 cell.textLabel?.text = "Opera"
-                cell.imageView?.image = UIImage.init(named: "world")?.toolbarIcon()
+                cell.imageView?.image = UIImage(named: "world")?.toolbarIcon()
             } else if text == SettingValues.BROWSER_FIREFOX {
-                cell.textLabel?.text = "FireFox"
+                cell.textLabel?.text = "Firefox"
                 cell.imageView?.image = firefoxIcon
             } else if text == SettingValues.BROWSER_FOCUS {
-                cell.textLabel?.text = "FireFox Focus"
+                cell.textLabel?.text = "Firefox Focus"
                 cell.imageView?.image = focusIcon
+            } else if text == SettingValues.BROWSER_FOCUS_KLAR {
+                cell.textLabel?.text = "Firefox Klar"
+                cell.imageView?.image = focusKlarIcon
+            } else if text == SettingValues.BROWSER_DDG {
+                cell.textLabel?.text = "Duck Duck Go"
+                cell.imageView?.image = duckIcon
+            } else if text == SettingValues.BROWSER_BRAVE {
+                cell.textLabel?.text = "Brave Browser"
+                cell.imageView?.image = braveIcon
             } else if text == SettingValues.BROWSER_INTERNAL {
                 cell.textLabel?.text = "Internal browser (supports ad-blocking with Pro)"
                 cell.textLabel?.numberOfLines = 0
@@ -268,11 +298,9 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
             default: fatalError("Unknown row in section 0")
             }
         case 2:
-            let cell = UITableViewCell()
-            cell.backgroundColor = ColorUtil.foregroundColor
-            cell.accessoryType = .disclosureIndicator
-            cell.backgroundColor = ColorUtil.foregroundColor
-            cell.textLabel?.textColor = ColorUtil.fontColor
+            let cell = InsetCell()
+            cell.backgroundColor = ColorUtil.theme.foregroundColor
+            cell.textLabel?.textColor = ColorUtil.theme.fontColor
             cell.textLabel?.text = PostFilter.openExternally[indexPath.row] as String
             return cell
 
@@ -296,28 +324,6 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
         }
     }
 
-    override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        return 70
-    }
-
-    override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        let label: UILabel = UILabel()
-        label.textColor = ColorUtil.baseAccent
-        label.font = FontGenerator.boldFontOfSize(size: 20, submission: true)
-        label.numberOfLines = 0
-        let toReturn = label.withPadding(padding: UIEdgeInsets.init(top: 0, left: 12, bottom: 0, right: 0))
-        let contentAttribute = NSMutableAttributedString(string: "Content Settings", attributes: [NSFontAttributeName: label.font, NSForegroundColorAttributeName: label.textColor])
-        contentAttribute.append(NSMutableAttributedString(string: "\nAdditionally, you can set specific domains to open externally in the section below", attributes: [NSFontAttributeName: FontGenerator.fontOfSize(size: 16, submission: true), NSForegroundColorAttributeName: label.textColor]))
-        toReturn.backgroundColor = ColorUtil.backgroundColor
-        switch section {
-        case 0: label.text = "Web browser"
-        case 1: label.attributedText = contentAttribute
-        case 2: label.text =  "External Domains"
-        default: label.text  = ""
-        }
-        return toReturn
-    }
-
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0: return browsers.count
@@ -326,4 +332,15 @@ class SettingsLinkHandling: UITableViewController, UISearchBarDelegate {
         default: fatalError("Unknown number of sections")
         }
     }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
+	guard let input = input else { return nil }
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringKey(_ input: NSAttributedString.Key) -> String {
+	return input.rawValue
 }

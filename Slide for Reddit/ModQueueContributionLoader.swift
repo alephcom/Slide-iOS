@@ -47,7 +47,7 @@ class ModQueueContributionLoader: ContributionLoader {
                             self.content = []
                         }
                         let before = self.content.count
-                        let baseContent = listing.children.flatMap({ $0 })
+                        let baseContent = listing.children.compactMap({ $0 })
                         for item in baseContent {
                             if item is Comment {
                                 self.content.append(RealmDataWrapper.commentToRComment(comment: item as! Comment, depth: 0))
@@ -57,7 +57,7 @@ class ModQueueContributionLoader: ContributionLoader {
                         }
                         self.paginator = listing.paginator
                         DispatchQueue.main.async {
-                            self.delegate?.doneLoading(before: before)
+                            self.delegate?.doneLoading(before: before, filter: false)
                         }
                     }
                 })

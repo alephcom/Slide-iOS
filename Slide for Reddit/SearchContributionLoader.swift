@@ -19,7 +19,7 @@ class SearchContributionLoader: ContributionLoader {
     var sub: String
     var color: UIColor
     var canGetMore = true
-    var sorting: SearchSortBy = .relevance
+    var sorting: SearchSortBy = SettingValues.defaultSearchSorting
     var time: SearchTimePeriod = .all
 
     init(query: String, sub: String) {
@@ -51,7 +51,7 @@ class SearchContributionLoader: ContributionLoader {
                             self.content = []
                         }
                         let before = self.content.count
-                        for item in listing.children.flatMap({ $0 }) {
+                        for item in listing.children.compactMap({ $0 }) {
                             if item is Comment {
                                 self.content.append(RealmDataWrapper.commentToRComment(comment: item as! Comment, depth: 0))
                             } else {
@@ -61,7 +61,7 @@ class SearchContributionLoader: ContributionLoader {
                         self.paginator = listing.paginator
                         self.canGetMore = listing.paginator.hasMore()
                         DispatchQueue.main.async {
-                            self.delegate?.doneLoading(before: before)
+                            self.delegate?.doneLoading(before: before, filter: true)
                         }
                     }
                 })

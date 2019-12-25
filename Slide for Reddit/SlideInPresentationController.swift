@@ -10,7 +10,7 @@ import UIKit
 
 class SlideInPresentationController: UIPresentationController {
 
-    fileprivate var dimmingView: UIView!
+    private var dimmingView: UIView!
     private var direction: PresentationDirection
     private var coverageRatio: CGFloat
 
@@ -59,24 +59,25 @@ class SlideInPresentationController: UIPresentationController {
     }
 
     override func presentationTransitionWillBegin() {
+        if let dim = dimmingView {
+            containerView?.insertSubview(dim, at: 0)
 
-        containerView?.insertSubview(dimmingView, at: 0)
+            NSLayoutConstraint.activate(
+                NSLayoutConstraint.constraints(withVisualFormat: "V:|[dimmingView]|",
+                                               options: [], metrics: nil, views: ["dimmingView": dim]))
+            NSLayoutConstraint.activate(
+                NSLayoutConstraint.constraints(withVisualFormat: "H:|[dimmingView]|",
+                                               options: [], metrics: nil, views: ["dimmingView": dim]))
 
-        NSLayoutConstraint.activate(
-            NSLayoutConstraint.constraints(withVisualFormat: "V:|[dimmingView]|",
-                                           options: [], metrics: nil, views: ["dimmingView": dimmingView]))
-        NSLayoutConstraint.activate(
-            NSLayoutConstraint.constraints(withVisualFormat: "H:|[dimmingView]|",
-                                           options: [], metrics: nil, views: ["dimmingView": dimmingView]))
+            guard let coordinator = presentedViewController.transitionCoordinator else {
+                dim.alpha = 1.0
+                return
+            }
 
-        guard let coordinator = presentedViewController.transitionCoordinator else {
-            dimmingView.alpha = 1.0
-            return
+            coordinator.animate(alongsideTransition: { _ in
+                self.dimmingView.alpha = 1.0
+            })
         }
-
-        coordinator.animate(alongsideTransition: { _ in
-            self.dimmingView.alpha = 1.0
-        })
     }
 
     override func dismissalTransitionWillBegin() {
@@ -101,7 +102,7 @@ private extension SlideInPresentationController {
         dimmingView.alpha = 0.0
         let blurEffect = (NSClassFromString("_UICustomBlurEffect") as! UIBlurEffect.Type).init()
         let blurView = UIVisualEffectView(frame: UIScreen.main.bounds)
-        blurEffect.setValue(3, forKeyPath: "blurRadius")
+        blurEffect.setValue(5, forKeyPath: "blurRadius")
         blurView.effect = blurEffect
         dimmingView.insertSubview(blurView, at: 0)
 
@@ -109,7 +110,7 @@ private extension SlideInPresentationController {
         dimmingView.addGestureRecognizer(recognizer)
     }
 
-    dynamic func handleTap(recognizer: UITapGestureRecognizer) {
+    @objc dynamic func handleTap(recognizer: UITapGestureRecognizer) {
         presentingViewController.dismiss(animated: true)
     }
 }

@@ -12,9 +12,8 @@ import reddift
 import SDWebImage
 import SwiftSpreadsheet
 import Then
-import TTTAttributedLabel
 import UIKit
-import XLActionController
+import YYText
 
 class CodeDisplayView: UIScrollView {
     
@@ -24,8 +23,12 @@ class CodeDisplayView: UIScrollView {
     var baseColor: UIColor
     var baseLabel: UILabel
     var globalHeight: CGFloat
+    var linksCallback: ((URL) -> Void)?
+    var indexCallback: (() -> Int)?
     
-    init(baseHtml: String, color: UIColor) {
+    init(baseHtml: String, color: UIColor, linksCallback: ((URL) -> Void)?, indexCallback: (() -> Int)?) {
+        self.linksCallback = linksCallback
+        self.indexCallback = indexCallback
         self.baseColor = color
         globalHeight = CGFloat(0)
         baseLabel = UILabel()
@@ -46,7 +49,7 @@ class CodeDisplayView: UIScrollView {
             }
             let baseHtml = DTHTMLAttributedStringBuilder.init(html: string.trimmed().data(using: .unicode)!, options: [DTUseiOS6Attributes: true, DTDefaultTextColor: baseColor, DTDefaultFontFamily: "Courier", DTDefaultFontSize: FontGenerator.fontOfSize(size: 16, submission: false).pointSize, DTDefaultFontName: "Courier"], documentAttributes: nil).generatedAttributedString()!
             let attr = NSMutableAttributedString(attributedString: baseHtml)
-            let cell = LinkParser.parse(attr, baseColor)
+            let cell = LinkParser.parse(attr, baseColor, font: UIFont(name: "Courier", size: 16)!, fontColor: ColorUtil.theme.fontColor, linksCallback: linksCallback, indexCallback: indexCallback)
             baseData.append(cell)
         }
     }
@@ -74,9 +77,10 @@ class CodeDisplayView: UIScrollView {
         }
         baseLabel.attributedText = finalString
         
-        let framesetterB = CTFramesetterCreateWithAttributedString(finalString)
-        let textSizeB = CTFramesetterSuggestFrameSizeWithConstraints(framesetterB, CFRange(), nil, CGSize.init(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude), nil)
-
+        let size = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        let layout = YYTextLayout(containerSize: size, text: finalString)!
+        let textSizeB = layout.textBoundingSize
+        
         addSubview(baseLabel)
         contentInset = UIEdgeInsets.init(top: 8, left: 8, bottom: 0, right: 8)
         baseLabel.widthAnchor == getWidestCell()

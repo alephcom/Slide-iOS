@@ -7,19 +7,68 @@
 //
 
 import Anchorage
+import AudioToolbox
 import reddift
-import TTTAttributedLabel
 import UIKit
+import YYText
 
-class CommentCellView: UICollectionViewCell, UIGestureRecognizerDelegate, TTTAttributedLabelDelegate {
+class CommentCellView: UICollectionViewCell, UIGestureRecognizerDelegate, TextDisplayStackViewDelegate {
     
-    var text = TextDisplayStackView()
-    var single = false
-
-    func attributedLabel(_ label: TTTAttributedLabel!, didSelectLinkWith url: URL!) {
-        parentViewController?.doShow(url: url, heroView: nil, heroVC: nil)
+    var longBlocking = false
+    func linkTapped(url: URL, text: String) {
+        if !text.isEmpty {
+            self.parentViewController?.showSpoiler(text)
+        } else {
+            self.parentViewController?.doShow(url: url, heroView: nil, heroVC: nil)
+        }
     }
 
+    func linkLongTapped(url: URL) {
+        longBlocking = true
+        
+        let alertController = DragDownAlertMenu(title: "Link options", subtitle: url.absoluteString, icon: url.absoluteString)
+        
+        alertController.addAction(title: "Share URL", icon: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")!.menuIcon()) {
+            let shareItems: Array = [url]
+            let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+            activityViewController.popoverPresentationController?.sourceView = self.contentView
+            self.parentViewController?.present(activityViewController, animated: true, completion: nil)
+        }
+        
+        alertController.addAction(title: "Copy URL", icon: UIImage(sfString: SFSymbol.docOnDocFill, overrideString: "copy")!.menuIcon()) {
+            UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
+            BannerUtil.makeBanner(text: "URL Copied", seconds: 5, context: self.parentViewController)
+        }
+        
+        alertController.addAction(title: "Open in default app", icon: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) {
+            if #available(iOS 10.0, *) {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            } else {
+                UIApplication.shared.openURL(url)
+            }
+        }
+        
+        let open = OpenInChromeController.init()
+        if open.isChromeInstalled() {
+            alertController.addAction(title: "Open in Chrome", icon: UIImage(named: "world")!.menuIcon()) {
+                _ = open.openInChrome(url, callbackURL: nil, createNewTab: true)
+            }
+        }
+        
+        if #available(iOS 10.0, *) {
+            HapticUtility.hapticActionStrong()
+        } else if SettingValues.hapticFeedback {
+            AudioServicesPlaySystemSound(1519)
+        }
+        
+        if parentViewController != nil {
+            alertController.show(parentViewController!)
+        }
+    }
+
+    var text: TextDisplayStackView!
+    var single = false
+    
     override func layoutSubviews() {
         super.layoutSubviews()
         let topmargin = 0
@@ -28,7 +77,7 @@ class CommentCellView: UICollectionViewCell, UIGestureRecognizerDelegate, TTTAtt
         let rightmargin = 0
         
         let f = self.contentView.frame
-        let fr = UIEdgeInsetsInsetRect(f, UIEdgeInsets(top: CGFloat(topmargin), left: CGFloat(leftmargin), bottom: CGFloat(bottommargin), right: CGFloat(rightmargin)))
+        let fr = f.inset(by: UIEdgeInsets(top: CGFloat(topmargin), left: CGFloat(leftmargin), bottom: CGFloat(bottommargin), right: CGFloat(rightmargin)))
         self.contentView.frame = fr
     }
 
@@ -39,27 +88,35 @@ class CommentCellView: UICollectionViewCell, UIGestureRecognizerDelegate, TTTAtt
         super.init(frame: frame)
         self.contentView.layoutMargins = UIEdgeInsets.init(top: 2, left: 0, bottom: 0, right: 0)
 
-        self.text = TextDisplayStackView.init(fontSize: 16, submission: false, color: ColorUtil.accentColorForSub(sub: ""), delegate: self, width: frame.width - 16)
+        self.text = TextDisplayStackView.init(fontSize: 16, submission: false, color: ColorUtil.accentColorForSub(sub: ""), width: frame.width - 16, delegate: self)
         self.contentView.addSubview(text)
         
-        text.verticalAnchors == contentView.verticalAnchors + CGFloat(8)
+        text.topAnchor == contentView.topAnchor + CGFloat(8)
+        text.bottomAnchor <= contentView.bottomAnchor + CGFloat(8)
         text.horizontalAnchors == contentView.horizontalAnchors + CGFloat(8)
-        self.contentView.backgroundColor = ColorUtil.foregroundColor
+        self.contentView.backgroundColor = ColorUtil.theme.foregroundColor
     }
     
     func setComment(comment: RComment, parent: MediaViewController, nav: UIViewController?, width: CGFloat) {
         text.tColor = ColorUtil.accentColorForSub(sub: comment.subreddit)
+        text.estimatedWidth = self.contentView.frame.size.width - 16
         parentViewController = parent
         if navViewController == nil && nav != nil {
             navViewController = nav
         }
-        let titleText = NSMutableAttributedString.init(string: comment.submissionTitle, attributes: [NSFontAttributeName: FontGenerator.fontOfSize(size: 18, submission: false), NSForegroundColorAttributeName: ColorUtil.fontColor])
+        let titleText = CommentCellView.getTitle(comment)
         self.comment = comment
        
         let commentClick = UITapGestureRecognizer(target: self, action: #selector(CommentCellView.openComment(sender:)))
         commentClick.delegate = self
         self.addGestureRecognizer(commentClick)
         
+        text.setTextWithTitleHTML(titleText, htmlString: comment.htmlText)
+    }
+    
+    public static func getTitle(_ comment: RComment) -> NSAttributedString {
+        let titleText = NSMutableAttributedString.init(string: comment.submissionTitle, attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.font): FontGenerator.fontOfSize(size: 18, submission: false), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): ColorUtil.theme.fontColor]))
+                
         var uC: UIColor
         switch ActionStates.getVoteDirection(s: comment) {
         case .down:
@@ -67,33 +124,33 @@ class CommentCellView: UICollectionViewCell, UIGestureRecognizerDelegate, TTTAtt
         case .up:
             uC = ColorUtil.upvoteColor
         default:
-            uC = ColorUtil.fontColor
+            uC = ColorUtil.theme.fontColor
         }
         
-        let attrs = [NSFontAttributeName: FontGenerator.boldFontOfSize(size: 12, submission: false), NSForegroundColorAttributeName: uC] as [String: Any]
+        let attrs = [convertFromNSAttributedStringKey(NSAttributedString.Key.font): FontGenerator.boldFontOfSize(size: 12, submission: false), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): uC] as [String: Any]
         
-        let attrs2 = [NSFontAttributeName: FontGenerator.boldFontOfSize(size: 12, submission: false), NSForegroundColorAttributeName: ColorUtil.fontColor] as [String: Any]
-
-        let endString = NSMutableAttributedString(string: "  •  \(DateFormatter().timeSince(from: comment.created, numericDates: true))  •  ", attributes: attrs2)
+        let attrs2 = [convertFromNSAttributedStringKey(NSAttributedString.Key.font): FontGenerator.boldFontOfSize(size: 12, submission: false), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): ColorUtil.theme.fontColor] as [String: Any]
         
-        let boldString = NSMutableAttributedString(string: "\(comment.score)pts", attributes: attrs)
+        let endString = NSMutableAttributedString(string: "  •  \(DateFormatter().timeSince(from: comment.created, numericDates: true))  •  ", attributes: convertToOptionalNSAttributedStringKeyDictionary(attrs2))
+        
+        let boldString = NSMutableAttributedString(string: "\(comment.score)pts", attributes: convertToOptionalNSAttributedStringKeyDictionary(attrs))
         let subString = NSMutableAttributedString(string: "r/\(comment.subreddit)")
         let color = ColorUtil.getColorForSub(sub: comment.subreddit)
         if color != ColorUtil.baseColor {
-            subString.addAttribute(NSForegroundColorAttributeName, value: color, range: NSRange.init(location: 0, length: subString.length))
+            subString.addAttribute(NSAttributedString.Key.foregroundColor, value: color, range: NSRange.init(location: 0, length: subString.length))
         } else {
-            subString.addAttribute(NSForegroundColorAttributeName, value: ColorUtil.fontColor, range: NSRange.init(location: 0, length: subString.length))
+            subString.addAttribute(NSAttributedString.Key.foregroundColor, value: ColorUtil.theme.fontColor, range: NSRange.init(location: 0, length: subString.length))
         }
         
         let infoString = NSMutableAttributedString()
         infoString.append(boldString)
         infoString.append(endString)
         infoString.append(subString)
-
+        
         titleText.append(NSAttributedString.init(string: "\n", attributes: nil))
         titleText.append(infoString)
-        
-        text.setTextWithTitleHTML(titleText, htmlString: comment.htmlText)
+
+        return titleText
     }
     
     var registered: Bool = false
@@ -107,7 +164,18 @@ class CommentCellView: UICollectionViewCell, UIGestureRecognizerDelegate, TTTAtt
     public var parentViewController: (UIViewController & MediaVCDelegate)?
     public var navViewController: UIViewController?
     
-    func openComment(sender: UITapGestureRecognizer? = nil) {
+    @objc func openComment(sender: UITapGestureRecognizer? = nil) {
         VCPresenter.openRedditLink(self.comment!.permalink, parentViewController?.navigationController, parentViewController)
     }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
+	guard let input = input else { return nil }
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringKey(_ input: NSAttributedString.Key) -> String {
+	return input.rawValue
 }

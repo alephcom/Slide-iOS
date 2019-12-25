@@ -39,17 +39,17 @@ class ReadLaterContributionLoader: ContributionLoader {
                     paginator = Paginator()
                     ids = ReadLater.getReadLaterIDs(sub: sub)
                 }
-                
-                try delegate?.session?.getLinksById(ids, completion: {(result) in
+                if reload {
+                    self.content = []
+                }
+                try delegate?.session?.getLinksById(Array(ids[self.content.count..<ids.count]), completion: {(result) in
                     switch result {
                     case .failure:
                         self.delegate?.failed(error: result.error!)
                     case .success(let listing):
-                        if reload {
-                            self.content = []
-                        }
+                        
                         let before = self.content.count
-                        let baseContent = listing.children.flatMap({ $0 })
+                        let baseContent = listing.children.compactMap({ $0 })
                         for item in baseContent {
                             if item is Link {
                                 self.content.append(RealmDataWrapper.linkToRSubmission(submission: item as! Link))
@@ -58,7 +58,7 @@ class ReadLaterContributionLoader: ContributionLoader {
                         self.canGetMore = listing.paginator.hasMore()
                         self.paginator = listing.paginator
                         DispatchQueue.main.async {
-                            self.delegate?.doneLoading(before: before)
+                            self.delegate?.doneLoading(before: before, filter: false)
                         }
                     }
                 })

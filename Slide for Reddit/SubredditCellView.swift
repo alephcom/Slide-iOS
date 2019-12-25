@@ -29,7 +29,7 @@ class SubredditCellView: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override init(style: UITableViewCellStyle, reuseIdentifier: String?) {
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
 
         configureViews()
@@ -42,7 +42,7 @@ class SubredditCellView: UITableViewCell {
 
         self.title = UILabel().then {
             $0.numberOfLines = 0
-            $0.font = UIFont.systemFont(ofSize: 16)
+            $0.font = UIFont.boldSystemFont(ofSize: 16)
         }
 
         self.sideView = UIView().then {
@@ -53,7 +53,7 @@ class SubredditCellView: UITableViewCell {
 
         self.pin = UIImageView().then {
             $0.frame = CGRect(x: 0, y: 0, width: 10, height: 10)
-            $0.image = UIImage.init(named: "lock")!.menuIcon() // TODO: Should cache this image
+            $0.image = UIImage(sfString: SFSymbol.pinFill, overrideString: "lock")!.menuIcon() // TODO: - Should cache this image
             $0.isHidden = true
         }
         
@@ -63,6 +63,7 @@ class SubredditCellView: UITableViewCell {
         }
 
         self.contentView.addSubviews(sideView, title, pin, icon)
+        self.backgroundColor = ColorUtil.theme.backgroundColor
     }
 
     func configureLayout() {
@@ -95,7 +96,7 @@ class SubredditCellView: UITableViewCell {
         pin.isHidden = !shouldShow
     }
 
-    func openFull(_ sender: AnyObject) {
+    @objc func openFull(_ sender: AnyObject) {
         timer!.invalidate()
         if navController != nil {
             if #available(iOS 10.0, *) {
@@ -106,13 +107,14 @@ class SubredditCellView: UITableViewCell {
             if !self.cancelled {
                 if profile.isEmpty() {
                     let vc = SingleSubredditViewController.init(subName: self.subreddit, single: true)
+                    print("Dismissing")
                     navController!.dismiss(animated: true) {
-                        VCPresenter.showVC(viewController: vc, popupIfPossible: true, parentNavigationController: self.navController!.navigationController, parentViewController: self.navController!)
+                        VCPresenter.showVC(viewController: vc, popupIfPossible: true, parentNavigationController: self.navController!.parent?.navigationController, parentViewController: self.navController!)
                     }
                 } else {
                     let vc = ProfileViewController.init(name: self.profile)
                     navController!.dismiss(animated: true) {
-                        VCPresenter.showVC(viewController: vc, popupIfPossible: true, parentNavigationController: self.navController!.navigationController, parentViewController: self.navController!)
+                        VCPresenter.showVC(viewController: vc, popupIfPossible: true, parentNavigationController: self.navController!.parent?.navigationController, parentViewController: self.navController!)
                     }
                 }
             }
@@ -120,8 +122,8 @@ class SubredditCellView: UITableViewCell {
     }
 
     func setSubreddit(subreddit: String, nav: UIViewController?, exists: Bool = true) {
-        title.textColor = ColorUtil.fontColor
-        self.contentView.backgroundColor = ColorUtil.foregroundColor
+        title.textColor = ColorUtil.theme.fontColor
+        self.contentView.backgroundColor = ColorUtil.theme.foregroundColor
         self.navController = nav
         self.subreddit = subreddit
         self.sideView.isHidden = false
@@ -134,13 +136,13 @@ class SubredditCellView: UITableViewCell {
         self.profile = ""
         sideView.backgroundColor = ColorUtil.getColorForSub(sub: subreddit)
         let selectedView = UIView()
-        selectedView.backgroundColor = ColorUtil.backgroundColor
+        selectedView.backgroundColor = ColorUtil.theme.backgroundColor
         selectedBackgroundView = selectedView
     }
     
     func setProfile(profile: String, nav: UIViewController?) {
-        title.textColor = ColorUtil.fontColor
-        self.contentView.backgroundColor = ColorUtil.foregroundColor
+        title.textColor = ColorUtil.theme.fontColor
+        self.contentView.backgroundColor = ColorUtil.theme.foregroundColor
         self.profile = profile
         self.subreddit = ""
         self.search = ""
@@ -148,27 +150,27 @@ class SubredditCellView: UITableViewCell {
         self.sideView.isHidden = true
         self.navController = nav
         title.text = "Go to u/\(profile)'s profile"
-        self.icon.image = UIImage.init(named: "profile")!.menuIcon()
+        self.icon.image = UIImage(sfString: SFSymbol.personFill, overrideString: "profile")!.menuIcon()
         sideView.backgroundColor = ColorUtil.getColorForSub(sub: subreddit)
         let selectedView = UIView()
-        selectedView.backgroundColor = ColorUtil.backgroundColor
+        selectedView.backgroundColor = ColorUtil.theme.backgroundColor
         selectedBackgroundView = selectedView
     }
 
-    func setSearch(string: String, nav: UIViewController?) {
-        title.textColor = ColorUtil.fontColor
-        self.contentView.backgroundColor = ColorUtil.foregroundColor
+    func setSearch(string: String, sub: String?, nav: UIViewController?) {
+        title.textColor = ColorUtil.theme.fontColor
+        self.contentView.backgroundColor = ColorUtil.theme.foregroundColor
         self.search = string
-        self.subreddit = ""
+        self.subreddit = sub ?? "all"
         self.profile = ""
         self.icon.isHidden = false
         self.sideView.isHidden = true
         self.navController = nav
-        title.text = "Search for \(string)"
-        self.icon.image = UIImage.init(named: "search")!.menuIcon()
+        title.text = "Search " + (sub == nil ? "Reddit" : "r/\(self.subreddit)")
+        self.icon.image = UIImage.init(sfString: SFSymbol.magnifyingglass, overrideString: "search")!.menuIcon()
         sideView.backgroundColor = ColorUtil.getColorForSub(sub: subreddit)
         let selectedView = UIView()
-        selectedView.backgroundColor = ColorUtil.backgroundColor
+        selectedView.backgroundColor = ColorUtil.theme.backgroundColor
         selectedBackgroundView = selectedView
     }
 
@@ -177,8 +179,8 @@ class SubredditCellView: UITableViewCell {
 // MARK: Actions
 extension SubredditCellView {
 
-    func handleLongPress(_ sender: UILongPressGestureRecognizer) {
-        if sender.state == UIGestureRecognizerState.began {
+    @objc func handleLongPress(_ sender: UILongPressGestureRecognizer) {
+        if sender.state == UIGestureRecognizer.State.began {
             cancelled = false
             timer = Timer.scheduledTimer(timeInterval: 0.25,
                                          target: self,
@@ -187,7 +189,7 @@ extension SubredditCellView {
                                          repeats: false)
 
         }
-        if sender.state == UIGestureRecognizerState.ended {
+        if sender.state == UIGestureRecognizer.State.ended {
             timer!.invalidate()
             cancelled = true
         }

@@ -9,33 +9,48 @@
 import Foundation
 
 protocol VideoSource {
-    func load(url: String, completion: @escaping (String) -> Void, failure: @escaping () -> Void)
+    func load(url: String, completion: @escaping (String) -> Void, failure: (() -> Void)?) -> URLSessionDataTask?
 }
 
 class DirectVideoSource: VideoSource {
-    func load(url: String, completion: @escaping (String) -> Void, failure: @escaping () -> Void) {
-
+    func load(url: String, completion: @escaping (String) -> Void, failure: (() -> Void)? = nil) -> URLSessionDataTask? {
         var finalURL = url
         if finalURL.contains("imgur.com") {
             finalURL = finalURL.replacingOccurrences(of: ".gifv", with: ".mp4")
             finalURL = finalURL.replacingOccurrences(of: ".gif", with: ".mp4")
         }
         completion(finalURL)
+        return nil
     }
 }
 
 class GfycatVideoSource: VideoSource {
-    func load(url: String, completion: @escaping (String) -> Void, failure: @escaping () -> Void) {
-        let name = url.substring(url.lastIndexOf("/")!, length: url.length - url.lastIndexOf("/")!)
-
-        let finalURL = URL(string: "https://gfycat.com/cajax/get" + name)!
-        URLSession.shared.dataTask(with: finalURL) { (data, _, error) in
+    func load(url: String, completion: @escaping (String) -> Void, failure: (() -> Void)? = nil) -> URLSessionDataTask? {
+        var name = url.substring(url.lastIndexOf("/")!, length: url.length - url.lastIndexOf("/")!)
+        if !(name.startsWith("/")) {
+            name = "/" + name
+        }
+        if name.contains("-") {
+            name = name.split("-")[0]
+        }
+        name = name.split(".")[0]
+        let finalURL = URL(string: "https://api.gfycat.com/v1/gfycats\(name)")!
+        let dataTask = URLSession.shared.dataTask(with: finalURL) { (data, _, error) in
             if error != nil {
                 print(error ?? "Error loading gif...")
-                failure()
+                DispatchQueue.main.async {
+                    failure?()
+                }
             } else {
                 do {
                     guard let json = try JSONSerialization.jsonObject(with: data!, options: []) as? NSDictionary else {
+                        return
+                    }
+                    
+                    if json["errorMessage"] != nil {
+                        DispatchQueue.main.async {
+                            failure?()
+                        }
                         return
                     }
 
@@ -49,27 +64,29 @@ class GfycatVideoSource: VideoSource {
                 }
             }
 
-        }.resume()
-        
+        }
+        dataTask.resume()
+        return dataTask
     }
 }
 
 class RedditVideoSource: VideoSource {
-    func load(url: String, completion: @escaping (String) -> Void, failure: @escaping () -> Void) {
+    func load(url: String, completion: @escaping (String) -> Void, failure: (() -> Void)? = nil) -> URLSessionDataTask? {
         let muxedURL = url
         completion(muxedURL)
+        return nil
     }
 }
 
 class StreamableVideoSource: VideoSource {
-    func load(url: String, completion: @escaping (String) -> Void, failure: @escaping () -> Void) {
+    func load(url: String, completion: @escaping (String) -> Void, failure: (() -> Void)? = nil) -> URLSessionDataTask? {
         let hash = url.substring(url.lastIndexOf("/")! + 1, length: url.length - (url.lastIndexOf("/")! + 1))
 
         let finalURL = URL(string: "https://api.streamable.com/videos/" + hash)!
-        URLSession.shared.dataTask(with: finalURL) { (data, _, error) in
+        let dataTask = URLSession.shared.dataTask(with: finalURL) { (data, _, error) in
             if error != nil {
                 print(error ?? "Error loading gif...")
-                failure()
+                failure?()
             } else {
                 do {
                     guard let json = try JSONSerialization.jsonObject(with: data!, options: []) as? NSDictionary else {
@@ -82,7 +99,9 @@ class StreamableVideoSource: VideoSource {
                         var video = ""
                         if let url = gif?.files?.mp4mobile?.url {
                             video = url
-                        } else {
+                        }
+                        
+                        if video.isEmpty() {
                             video = (gif?.files?.mp4?.url!)!
                         }
                         if video.hasPrefix("//") {
@@ -94,18 +113,19 @@ class StreamableVideoSource: VideoSource {
                     print(error)
                 }
             }
-
-        }.resume()
+        }
+        dataTask.resume()
+        return dataTask
     }
 }
 
 class VidMeVideoSource: VideoSource {
-    func load(url: String, completion: @escaping (String) -> Void, failure: @escaping () -> Void) {
+    func load(url: String, completion: @escaping (String) -> Void, failure: (() -> Void)? = nil) -> URLSessionDataTask? {
         let finalURL = URL(string: "https://api.vid.me/videoByUrl?url=" + url)!
-        URLSession.shared.dataTask(with: finalURL) { (data, _, error) in
+        let dataTask = URLSession.shared.dataTask(with: finalURL) { (data, _, error) in
             if error != nil {
                 print(error ?? "Error loading gif...")
-                failure()
+                failure?()
             } else {
                 do {
                     guard let json = try JSONSerialization.jsonObject(with: data!, options: []) as? NSDictionary else {
@@ -122,6 +142,8 @@ class VidMeVideoSource: VideoSource {
                 }
             }
 
-        }.resume()
+        }
+        dataTask.resume()
+        return dataTask
     }
 }

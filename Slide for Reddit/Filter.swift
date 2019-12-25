@@ -17,20 +17,51 @@ class Filter: UITableViewController {
     var parentVC: SingleSubredditViewController
     
     var image: UITableViewCell = UITableViewCell()
-    var imageSwitch = UISwitch()
+    var imageSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
     var album: UITableViewCell = UITableViewCell()
-    var albumSwitch = UISwitch()
+    var albumSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
     var gif: UITableViewCell = UITableViewCell()
-    var gifSwitch = UISwitch()
+    var gifSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
     var video: UITableViewCell = UITableViewCell()
-    var videoSwitch = UISwitch()
+    var videoSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
     var link: UITableViewCell = UITableViewCell()
-    var linkSwitch = UISwitch()
+    var linkSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
     var selftext: UITableViewCell = UITableViewCell()
-    var selftextSwitch = UISwitch()
+    var selftextSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
     var nsfw: UITableViewCell = UITableViewCell()
-    var nsfwSwitch = UISwitch()
+    var nsfwSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
+
+    var numberOfSections: Int {
+        return AccountController.canShowNSFW ? 7 : 6
+    }
     
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+
+        } else {
+            return .lightContent
+        }
+    }
+
     public init(subreddit: String, parent: SingleSubredditViewController) {
         self.sub = subreddit
         enabled = PostFilter.enabledArray(sub)
@@ -60,11 +91,11 @@ class Filter: UITableViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        preferredContentSize = CGSize.init( width: 275, height: 350)
+        preferredContentSize = CGSize.init( width: 275, height: numberOfSections * 50)
         self.tableView.frame = CGRect.init(x: 30, y: 8, width: 275, height: 420)
     }
 
-    func switchIsChanged(_ changed: UISwitch) {
+    @objc func switchIsChanged(_ changed: UISwitch) {
         if changed == imageSwitch {
             enabled[0] = changed.isOn
         } else if changed == albumSwitch {
@@ -89,61 +120,82 @@ class Filter: UITableViewController {
         self.view.backgroundColor = .clear
         self.tableView.separatorStyle = .none
 
-        imageSwitch = UISwitch()
+        imageSwitch = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+        }
         imageSwitch.isOn = enabled[0]
-        imageSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+        imageSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
         self.image.textLabel?.text = "Images"
+        self.image.textLabel?.textColor = ColorUtil.theme.fontColor
         self.image.accessoryView = imageSwitch
         self.image.backgroundColor = .clear
-        self.image.selectionStyle = UITableViewCellSelectionStyle.none
+        self.image.selectionStyle = UITableViewCell.SelectionStyle.none
 
-        albumSwitch = UISwitch()
+        albumSwitch = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+        }
         albumSwitch.isOn = enabled[1]
-        albumSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+        albumSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
         self.album.textLabel?.text = "Albums"
+        self.album.textLabel?.textColor = ColorUtil.theme.fontColor
         self.album.accessoryView = albumSwitch
         self.album.backgroundColor = .clear
-        self.album.selectionStyle = UITableViewCellSelectionStyle.none
+        self.album.selectionStyle = UITableViewCell.SelectionStyle.none
 
-        gifSwitch = UISwitch()
+        gifSwitch = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+        }
         gifSwitch.isOn = enabled[2]
-        gifSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+        gifSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
         self.gif.textLabel?.text = "Gifs"
+        self.gif.textLabel?.textColor = ColorUtil.theme.fontColor
         self.gif.accessoryView = gifSwitch
         self.gif.backgroundColor = .clear
-        self.gif.selectionStyle = UITableViewCellSelectionStyle.none
+        self.gif.selectionStyle = UITableViewCell.SelectionStyle.none
 
-        videoSwitch = UISwitch()
+        videoSwitch = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+        }
         videoSwitch.isOn = enabled[3]
-        videoSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+        videoSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
         self.video.textLabel?.text = "Videos"
+        self.video.textLabel?.textColor = ColorUtil.theme.fontColor
         self.video.accessoryView = videoSwitch
         self.video.backgroundColor = .clear
-        self.video.selectionStyle = UITableViewCellSelectionStyle.none
+        self.video.selectionStyle = UITableViewCell.SelectionStyle.none
 
-        linkSwitch = UISwitch()
+        linkSwitch = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+        }
         linkSwitch.isOn = enabled[4]
-        linkSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+        linkSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
         self.link.textLabel?.text = "Links"
+        self.link.textLabel?.textColor = ColorUtil.theme.fontColor
         self.link.accessoryView = linkSwitch
         self.link.backgroundColor = .clear
-        self.link.selectionStyle = UITableViewCellSelectionStyle.none
+        self.link.selectionStyle = UITableViewCell.SelectionStyle.none
 
-        selftextSwitch = UISwitch()
+        selftextSwitch = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+        }
         selftextSwitch.isOn = enabled[5]
-        selftextSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+        selftextSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
         self.selftext.textLabel?.text = "Selftext"
+        self.selftext.textLabel?.textColor = ColorUtil.theme.fontColor
         self.selftext.accessoryView = selftextSwitch
         self.selftext.backgroundColor = .clear
-        self.selftext.selectionStyle = UITableViewCellSelectionStyle.none
+        self.selftext.selectionStyle = UITableViewCell.SelectionStyle.none
 
-        nsfwSwitch = UISwitch()
+        nsfwSwitch = UISwitch().then {
+            $0.onTintColor = ColorUtil.baseAccent
+        }
         nsfwSwitch.isOn = enabled[6]
-        nsfwSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+        nsfwSwitch.addTarget(self, action: #selector(Filter.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
         self.nsfw.textLabel?.text = "NSFW Content"
+        self.nsfw.textLabel?.textColor = ColorUtil.theme.fontColor
         self.nsfw.accessoryView = nsfwSwitch
         self.nsfw.backgroundColor = .clear
-        self.nsfw.selectionStyle = UITableViewCellSelectionStyle.none
+        self.nsfw.selectionStyle = UITableViewCell.SelectionStyle.none
 
     }
 
@@ -178,7 +230,7 @@ class Filter: UITableViewController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
-        case 0: return 7
+        case 0: return numberOfSections
         default: fatalError("Unknown number of sections")
         }
     }

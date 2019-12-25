@@ -3,11 +3,13 @@
 // Copyright (c) 2018 Haptic Apps. All rights reserved.
 //
 
-import ActionSheetPicker_3_0
 import Alamofire
+import Anchorage
 import MobileCoreServices
+import OpalImagePicker
 import Photos
 import RLBAlertsPickers
+import SDCAlertView
 import SwiftyJSON
 import UIKit
 
@@ -27,23 +29,23 @@ public class ToolbarTextView: NSObject {
         let scrollView = TouchUIScrollView.init(frame: CGRect.init(x: 0, y: 0, width: text!.frame.size.width, height: 50))
         scrollView.contentSize = CGSize.init(width: 50 * 11, height: 50)
         scrollView.autoresizingMask = .flexibleWidth
-        scrollView.backgroundColor = ColorUtil.backgroundColor
+        scrollView.backgroundColor = ColorUtil.theme.backgroundColor
         var i = 0
         for button in ([
-            generateButtons(image: "save", action: #selector(ToolbarTextView.saveDraft(_:))),
-            generateButtons(image: "folder", action: #selector(ToolbarTextView.openDrafts(_:))),
-            generateButtons(image: "image", action: #selector(ToolbarTextView.uploadImage(_:))),
-            generateButtons(image: "draw", action: #selector(ToolbarTextView.draw(_:))),
-            generateButtons(image: "link", action: #selector(ToolbarTextView.link(_:))),
-            generateButtons(image: "bold", action: #selector(ToolbarTextView.bold(_:))),
-            generateButtons(image: "italic", action: #selector(ToolbarTextView.italics(_:))),
-            generateButtons(image: "list", action: #selector(ToolbarTextView.list(_:))),
-            generateButtons(image: "list_number", action: #selector(ToolbarTextView.numberedList(_:))),
-            generateButtons(image: "size", action: #selector(ToolbarTextView.size(_:))),
-            generateButtons(image: "strikethrough", action: #selector(ToolbarTextView.strike(_:))), ]) {
+            generateButtons(image: "save", sfString: SFSymbol.starFill, action: #selector(ToolbarTextView.saveDraft(_:))),
+            generateButtons(image: "folder", sfString: SFSymbol.folderFill, action: #selector(ToolbarTextView.openDrafts(_:))),
+            generateButtons(image: "image", sfString: SFSymbol.photoFill, action: #selector(ToolbarTextView.uploadImage(_:))),
+            generateButtons(image: "draw", sfString: SFSymbol.scribble, action: #selector(ToolbarTextView.draw(_:))),
+            generateButtons(image: "link", sfString: SFSymbol.link, action: #selector(ToolbarTextView.link(_:))),
+            generateButtons(image: "bold", sfString: SFSymbol.bold, action: #selector(ToolbarTextView.bold(_:))),
+            generateButtons(image: "italic", sfString: SFSymbol.italic, action: #selector(ToolbarTextView.italics(_:))),
+            generateButtons(image: "list", sfString: SFSymbol.listBullet, action: #selector(ToolbarTextView.list(_:))),
+            generateButtons(image: "list_number", sfString: SFSymbol.listNumber, action: #selector(ToolbarTextView.numberedList(_:))),
+            generateButtons(image: "size", sfString: SFSymbol.textformatSize, action: #selector(ToolbarTextView.size(_:))),
+            generateButtons(image: "strikethrough", sfString: SFSymbol.strikethrough, action: #selector(ToolbarTextView.strike(_:))), ]) {
             button.0.frame = CGRect.init(x: i * 50, y: 0, width: 50, height: 50)
             button.0.isUserInteractionEnabled = true
-            button.0.addTarget(self, action: button.1, for: UIControlEvents.touchUpInside)
+            button.0.addTarget(self, action: button.1, for: UIControl.Event.touchUpInside)
             scrollView.addSubview(button.0)
             i += 1
         }
@@ -52,28 +54,38 @@ public class ToolbarTextView: NSObject {
         if !(parent is ReplyViewController) {
             text!.tintColor = .white
         } else {
-            text!.tintColor = ColorUtil.fontColor
+            text!.tintColor = ColorUtil.theme.fontColor
         }
-        if ColorUtil.theme != .LIGHT {
+        if !ColorUtil.theme.isLight {
             text!.keyboardAppearance = .dark
         }
     }
 
-    func generateButtons(image: String, action: Selector) -> (UIButton, Selector) {
+    func generateButtons(image: String, sfString: SFSymbol?, action: Selector) -> (UIButton, Selector) {
         let more = UIButton.init(frame: CGRect.init(x: 0, y: 0, width: 50, height: 50))
-        more.setImage(UIImage.init(named: image)?.menuIcon(), for: UIControlState.normal)
+        if sfString != nil {
+            more.setImage(UIImage(sfString: sfString!, overrideString: image)?.menuIcon(), for: UIControl.State.normal)
+        } else {
+            more.setImage(UIImage(named: image)?.menuIcon(), for: UIControl.State.normal)
+        }
         return (more, action)
     }
 
     func wrapIn(_ value: String) {
-        text!.replace(text!.selectedTextRange!, withText: value + text!.text(in: text!.selectedTextRange!)! + value)
+        let wrapped = value + text!.text(in: text!.selectedTextRange!)! + value
+        text!.replace(text!.selectedTextRange!, withText: wrapped)
+        
+        if wrapped.length == value.length * 2 {
+            let newPosition = text!.position(from: text!.selectedTextRange!.end, offset: -(value.length)) ?? text!.selectedTextRange!.end
+            text!.selectedTextRange = text!.textRange(from: newPosition, to: newPosition)
+        }
     }
 
     func replaceIn(_ value: String, with: String) {
         text!.replace(text!.selectedTextRange!, withText: with + text!.text(in: text!.selectedTextRange!)!.replacingOccurrences(of: value, with: with))
     }
 
-    func saveDraft(_ sender: AnyObject?) {
+    @objc func saveDraft(_ sender: AnyObject?) {
         if let toSave = text!.text {
             if !toSave.isEmpty() {
                 Drafts.addDraft(s: text!.text)
@@ -82,49 +94,103 @@ public class ToolbarTextView: NSObject {
         }
     }
 
-    var picker: ActionSheetStringPicker?
-
-    func openDrafts(_ sender: AnyObject) {
+    @objc func openDrafts(_ sender: AnyObject) {
         print("Opening drafts")
+        parent.view.endEditing(true)
+        let alert = AlertController(title: "Drafts", message: "", preferredStyle: .alert)
+        
+        alert.setupTheme()
+        
+        alert.attributedTitle = NSAttributedString(string: "Drafts", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+        
+        let inner = DraftFindReturnViewController { (_) in
+        }
+        let innerView = inner.view!
+        
+        alert.contentView.addSubview(innerView)
+        
+        innerView.edgeAnchors == alert.contentView.edgeAnchors - 8
+        innerView.heightAnchor == CGFloat(200)
+        
+        alert.addAction(AlertAction(title: "Insert", style: .preferred, handler: { (_) in
+            let selectedData = inner.tableView.indexPathsForSelectedRows?.map { inner.baseDrafts[$0.row] }
+            if selectedData != nil {
+                for draft in selectedData! {
+                    self.text?.insertText(draft)
+                    self.text?.insertText(" ")
+                }
+                self.text?.becomeFirstResponder()
+            }
+        }))
+        alert.addAction(AlertAction(title: "Delete", style: .normal, handler: { (_) in
+            let selectedData = inner.tableView.indexPathsForSelectedRows?.map { inner.baseDrafts[$0.row] }
+            if selectedData != nil {
+                for draft in selectedData! {
+                    Drafts.deleteDraft(s: draft)
+                }
+                BannerUtil.makeBanner(text: "\(selectedData!.count) drafts deleted", color: GMColor.red500Color(), seconds: 2, context: self.parent, top: true, callback: nil)
+                self.text?.becomeFirstResponder()
+            }
+        }))
+        let cancelAction = AlertAction(title: "Close", style: .preferred, handler: { (_) in
+            self.text?.becomeFirstResponder()
+        })
+        alert.addAction(cancelAction)
+
+        alert.addBlurView()
+        
+        parent.present(alert, animated: true, completion: nil)
+        /*
         if Drafts.drafts.isEmpty {
             parent.view.makeToast("No drafts found", duration: 4, position: .top)
         } else {
-            picker = ActionSheetStringPicker(title: "Choose a draft", rows: Drafts.drafts.reversed(), initialSelection: 0, doneBlock: { (_, index, _) in
-                self.text!.insertText(Drafts.drafts[index] as String)
+            var drafts = [NSString]()
+            
+            for arrayIndex in stride(from: Drafts.drafts.count - 1, through: 0, by: -1) {
+                drafts.append(Drafts.drafts[arrayIndex])
+            }
+
+            picker = ActionSheetStringPicker(title: "Choose a draft", rows: drafts, initialSelection: 0, doneBlock: { (_, index, _) in
+                self.text!.insertText(drafts[index] as String)
             }, cancel: { (_) in
                 return
             }, origin: text!)
 
             let doneButton = UIBarButtonItem.init(title: "Insert", style: .done, target: nil, action: nil)
             picker?.setDoneButton(doneButton)
-            //todo  picker?.addCustomButton(withTitle: "Delete", target: self, selector: #selector(ReplyViewController.doDelete(_:)))
+            picker?.addCustomButton(withTitle: "Delete Draft", actionBlock: {
+                if let p = self.picker?.pickerView as? UIPickerView
+                {
+                    var current = drafts[p.selectedRow(inComponent: 0)]
+                    Drafts.deleteDraft(s: current as String)
+                    
+                    self.openDrafts(sender)
+                }
+            })
             picker?.show()
 
-        }
+        }*/
     }
+    
+    @objc func uploadImage(_ sender: UIButton!) {
+        let imagePicker = OpalImagePickerController()
+        imagePicker.allowedMediaTypes = [PHAssetMediaType.image]
+        self.parent.presentOpalImagePickerController(imagePicker, animated: true,
+                                         select: { (assets) in
+                                            imagePicker.dismiss(animated: true, completion: {
+                                                if !assets.isEmpty {
+                                                    let alert = UIAlertController.init(title: "Confirm upload", message: "Would you like to upload \(assets.count) image\(assets.count > 1 ? "s" : "") anonymously to Imgur.com? This cannot be undone", preferredStyle: .alert)
+                                                    alert.addAction(UIAlertAction.init(title: "No", style: .destructive, handler: nil))
+                                                    alert.addAction(UIAlertAction.init(title: "Yes", style: .default) { _ in
+                                                        self.uploadAsync(assets)
+                                                    })
+                                                    self.parent.present(alert, animated: true, completion: nil)
+                                                }
 
-    func doDelete(_ sender: AnyObject) {
-        Drafts.deleteDraft(s: Drafts.drafts[(picker?.selectedIndex)!] as String)
-        self.openDrafts(sender)
-    }
-
-    func uploadImage(_ sender: UIButton!) {
-        let alert = UIAlertController.init(style: .actionSheet)
-        alert.addPhotoLibraryPicker(
-                flow: .vertical,
-                paging: false,
-                selection: .multiple(action: { images in
-                    if !images.isEmpty {
-                        let alert = UIAlertController.init(title: "Confirm upload", message: "Would you like to upload \(images.count) image\(images.count > 1 ? "s" : "") anonymously to Imgur.com? This cannot be undone", preferredStyle: .alert)
-                        alert.addAction(UIAlertAction.init(title: "No", style: .destructive, handler: nil))
-                        alert.addAction(UIAlertAction.init(title: "Yes", style: .default) { _ in
-                            self.uploadAsync(images)
-                        })
-                        self.parent.present(alert, animated: true, completion: nil)
-                    }
-                }))
-        alert.addAction(title: "Cancel", style: .cancel)
-        parent.present(alert, animated: true, completion: nil)
+                                            })
+        }, cancel: {
+            imagePicker.dismiss(animated: true)
+        })
     }
 
     var progressBar = UIProgressView()
@@ -134,7 +200,7 @@ public class ToolbarTextView: NSObject {
 
     func uploadAsync(_ assets: [PHAsset]) {
         alertView = UIAlertController(title: "Uploading...", message: "Your images are uploading to Imgur", preferredStyle: .alert)
-        alertView!.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
+        alertView!.addCancelButton()
 
         parent.present(alertView!, animated: true, completion: {
             //  Add your progressbar after alert is shown (and measured)
@@ -171,18 +237,18 @@ public class ToolbarTextView: NSObject {
                                             if self.parent is ReplyViewController && (self.parent as! ReplyViewController).type == .SUBMIT_IMAGE {
                                                 (self.parent as! ReplyViewController).text!.last!.text = url
                                             } else {
-                                                let alert = UIAlertController(title: "Link text", message: url, preferredStyle: .alert)
+                                                let alert = AlertController(title: "Link text", message: url, preferredStyle: .alert)
 
                                                 let config: TextField.Config = { textField in
                                                     textField.becomeFirstResponder()
-                                                    textField.textColor = .black
-                                                    textField.placeholder = "Caption (optional)"
-                                                    textField.left(image: UIImage.init(named: "link"), color: .black)
+                                                    textField.textColor = ColorUtil.theme.fontColor
+                                                    textField.attributedPlaceholder = NSAttributedString(string: "Caption (optional)", attributes: [NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor.withAlphaComponent(0.3)])
+                                                    textField.left(image: UIImage(sfString: SFSymbol.link, overrideString: "link")?.menuIcon(), color: ColorUtil.theme.fontColor)
+                                                    textField.layer.borderColor = ColorUtil.theme.fontColor.withAlphaComponent(0.3) .cgColor
+                                                    textField.backgroundColor = ColorUtil.theme.foregroundColor
                                                     textField.leftViewPadding = 12
-                                                    textField.borderWidth = 1
-                                                    textField.cornerRadius = 8
-                                                    textField.borderColor = UIColor.lightGray.withAlphaComponent(0.5)
-                                                    textField.backgroundColor = .white
+                                                    textField.layer.borderWidth = 1
+                                                    textField.layer.cornerRadius = 8
                                                     textField.keyboardAppearance = .default
                                                     textField.keyboardType = .default
                                                     textField.returnKeyType = .done
@@ -191,9 +257,18 @@ public class ToolbarTextView: NSObject {
                                                     }
                                                 }
 
-                                                alert.addOneTextField(configuration: config)
+                                                let textField = OneTextFieldViewController(vInset: 12, configuration: config).view!
+                                                
+                                                alert.setupTheme()
+                                                
+                                                alert.attributedTitle = NSAttributedString(string: "Link Text", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+                                                
+                                                alert.contentView.addSubview(textField)
+                                                
+                                                textField.edgeAnchors == alert.contentView.edgeAnchors
+                                                textField.heightAnchor == CGFloat(44 + 12)
 
-                                                alert.addAction(UIAlertAction(title: "Insert", style: .default, handler: { (_) in
+                                                alert.addAction(AlertAction(title: "Insert", style: .preferred, handler: { (_) in
                                                     let text = self.insertText ?? ""
                                                     if text.isEmpty() {
                                                         self.text!.insertText("\(url)")
@@ -202,7 +277,9 @@ public class ToolbarTextView: NSObject {
                                                     }
                                                 }))
 
-                                                alert.addAction(UIAlertAction.init(title: "Cancel", style: .cancel, handler: nil))
+                                                alert.addCancelButton()
+                                                alert.addBlurView()
+
                                                 self.parent.present(alert, animated: true, completion: nil)
                                             }
                                         } else {
@@ -225,18 +302,18 @@ public class ToolbarTextView: NSObject {
                             if self.parent is ReplyViewController && (self.parent as! ReplyViewController).type == .SUBMIT_IMAGE {
                                 (self.parent as! ReplyViewController).text!.last!.text = link
                             } else {
-                                let alert = UIAlertController(title: "Link text", message: link, preferredStyle: .alert)
+                                let alert = AlertController(title: "Link text", message: link, preferredStyle: .alert)
 
                                 let config: TextField.Config = { textField in
                                     textField.becomeFirstResponder()
-                                    textField.textColor = .black
-                                    textField.placeholder = "Caption"
-                                    textField.left(image: UIImage.init(named: "link"), color: .black)
+                                    textField.textColor = ColorUtil.theme.fontColor
+                                    textField.attributedPlaceholder = NSAttributedString(string: "Caption", attributes: [NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor.withAlphaComponent(0.3)])
+                                    textField.left(image: UIImage(sfString: SFSymbol.link, overrideString: "link")?.menuIcon(), color: ColorUtil.theme.fontColor)
+                                    textField.layer.borderColor = ColorUtil.theme.fontColor.withAlphaComponent(0.3) .cgColor
+                                    textField.backgroundColor = ColorUtil.theme.foregroundColor
                                     textField.leftViewPadding = 12
-                                    textField.borderWidth = 1
-                                    textField.cornerRadius = 8
-                                    textField.borderColor = UIColor.lightGray.withAlphaComponent(0.5)
-                                    textField.backgroundColor = .white
+                                    textField.layer.borderWidth = 1
+                                    textField.layer.cornerRadius = 8
                                     textField.keyboardAppearance = .default
                                     textField.keyboardType = .default
                                     textField.returnKeyType = .done
@@ -245,9 +322,18 @@ public class ToolbarTextView: NSObject {
                                     }
                                 }
 
-                                alert.addOneTextField(configuration: config)
-
-                                alert.addAction(UIAlertAction(title: "Insert", style: .default, handler: { (_) in
+                                let textField = OneTextFieldViewController(vInset: 12, configuration: config).view!
+                                
+                                alert.setupTheme()
+                                
+                                alert.attributedTitle = NSAttributedString(string: "Link Text", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+                                
+                                alert.contentView.addSubview(textField)
+                                
+                                textField.edgeAnchors == alert.contentView.edgeAnchors
+                                textField.heightAnchor == CGFloat(44 + 12)
+                                
+                                alert.addAction(AlertAction(title: "Insert", style: .preferred, handler: { (_) in
                                     let text = self.insertText ?? ""
                                     if text.isEmpty() {
                                         self.text!.insertText("\(link)")
@@ -256,7 +342,9 @@ public class ToolbarTextView: NSObject {
                                     }
                                 }))
 
-                                alert.addAction(UIAlertAction.init(title: "Cancel", style: .cancel, handler: nil))
+                                alert.addCancelButton()
+                                alert.addBlurView()
+
                                 self.parent.present(alert, animated: true, completion: nil)
                             }
                         } else {
@@ -275,7 +363,7 @@ public class ToolbarTextView: NSObject {
         var count = 0
         for image in assets {
             count += 1
-            let parameters = [:] as [String: String]//todo albums
+            let parameters = [:] as [String: String] // TODO: - albums
             var name = UUID.init().uuidString
             PHImageManager.default().requestImageData(for: image, options: nil, resultHandler: { (data, uti, _, info) in
                 if let fileName = (info?["PHImageFileURLKey"] as? NSURL)?.lastPathComponent {
@@ -319,25 +407,25 @@ public class ToolbarTextView: NSObject {
 
     }
 
-    func draw(_ sender: UIButton!) {
+    @objc func draw(_ sender: UIButton!) {
 
     }
 
     var insertLink: String?
 
-    func link(_ sender: UIButton!) {
-        let alert = UIAlertController(title: "Insert Link", message: "", preferredStyle: .alert)
+    @objc func link(_ sender: UIButton!) {
+        let alert = AlertController(title: "Insert Link", message: "", preferredStyle: .alert)
 
         let configU: TextField.Config = { textField in
             textField.becomeFirstResponder()
-            textField.textColor = .black
+            textField.textColor = ColorUtil.theme.fontColor
             textField.placeholder = "URL"
-            textField.left(image: UIImage.init(named: "link"), color: .black)
+            textField.left(image: UIImage(sfString: SFSymbol.link, overrideString: "link")?.menuIcon(), color: ColorUtil.theme.fontColor)
             textField.leftViewPadding = 12
-            textField.borderWidth = 1
-            textField.cornerRadius = 8
-            textField.borderColor = UIColor.lightGray.withAlphaComponent(0.5)
-            textField.backgroundColor = .white
+            textField.layer.borderWidth = 1
+            textField.layer.cornerRadius = 8
+            textField.layer.borderColor = ColorUtil.theme.fontColor.withAlphaComponent(0.3) .cgColor
+            textField.backgroundColor = ColorUtil.theme.foregroundColor
             textField.keyboardAppearance = .default
             textField.keyboardType = .default
             textField.returnKeyType = .done
@@ -348,14 +436,14 @@ public class ToolbarTextView: NSObject {
 
         let configT: TextField.Config = { textField in
             textField.becomeFirstResponder()
-            textField.textColor = .black
-            textField.placeholder = "Caption"
-            textField.left(image: UIImage.init(named: "size"), color: .black)
+            textField.textColor = ColorUtil.theme.fontColor
+            textField.placeholder = "Caption (optional)"
+            textField.left(image: UIImage(sfString: SFSymbol.textbox, overrideString: "size")?.menuIcon(), color: ColorUtil.theme.fontColor)
             textField.leftViewPadding = 12
-            textField.borderWidth = 1
-            textField.cornerRadius = 8
-            textField.borderColor = UIColor.lightGray.withAlphaComponent(0.5)
-            textField.backgroundColor = .white
+            textField.layer.borderWidth = 1
+            textField.layer.cornerRadius = 8
+            textField.layer.borderColor = ColorUtil.theme.fontColor.withAlphaComponent(0.3) .cgColor
+            textField.backgroundColor = ColorUtil.theme.foregroundColor
             textField.keyboardAppearance = .default
             textField.keyboardType = .default
             textField.returnKeyType = .done
@@ -364,42 +452,56 @@ public class ToolbarTextView: NSObject {
             }
         }
 
-        alert.addTwoTextFields(height: CGFloat(58), hInset: CGFloat(10), vInset: CGFloat(0), textFieldOne: configU, textFieldTwo: configT)
-
-        alert.addAction(UIAlertAction(title: "Insert", style: .default, handler: { (_) in
+        let textField = TwoTextFieldsViewController(height: 58, hInset: 0, vInset: 0, textFieldOne: configU, textFieldTwo: configT).view!
+        
+        alert.setupTheme()
+        
+        alert.attributedTitle = NSAttributedString(string: "Insert link", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+        
+        alert.contentView.addSubview(textField)
+        
+        textField.edgeAnchors == alert.contentView.edgeAnchors
+        textField.heightAnchor == CGFloat(58 * 2)
+        
+        alert.addAction(AlertAction(title: "Insert", style: .preferred, handler: { (_) in
             let text = self.insertText ?? ""
             let link = self.insertLink ?? ""
-            self.text!.insertText("[\(text)](\(link))")
-
+            if text.isEmpty() {
+                self.text!.insertText("\(link)")
+            } else {
+                self.text!.insertText("[\(text)](\(link))")
+            }
         }))
 
-        alert.addAction(UIAlertAction.init(title: "Cancel", style: .cancel, handler: nil))
+        alert.addCancelButton()
+        alert.addBlurView()
+        
         self.parent.present(alert, animated: true, completion: nil)
 
     }
 
-    func bold(_ sender: UIButton!) {
+    @objc func bold(_ sender: UIButton!) {
         wrapIn("**")
     }
 
-    func italics(_ sender: UIButton!) {
+    @objc func italics(_ sender: UIButton!) {
         wrapIn("*")
     }
 
-    func list(_ sender: UIButton!) {
+    @objc func list(_ sender: UIButton!) {
         replaceIn("\n", with: "\n* ")
     }
 
-    func numberedList(_ sender: UIButton!) {
+    @objc func numberedList(_ sender: UIButton!) {
         replaceIn("\n", with: "\n1. ")
 
     }
 
-    func size(_ sender: UIButton!) {
+    @objc func size(_ sender: UIButton!) {
         replaceIn("\n", with: "\n#")
     }
 
-    func strike(_ sender: UIButton!) {
+    @objc func strike(_ sender: UIButton!) {
         wrapIn("~~")
     }
 }

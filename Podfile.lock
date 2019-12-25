@@ -1,181 +1,247 @@
 PODS:
-  - ActionSheetPicker-3.0 (2.2.0)
-  - Alamofire (4.7.3)
-  - Anchorage (4.3)
-  - BadgeSwift (5.0.1)
-  - BiometricAuthentication (2.1)
-  - DTCoreText (1.6.21):
-    - DTCoreText/Core (= 1.6.21)
+  - Alamofire (4.9.1)
+  - Anchorage (4.3.1)
+  - BadgeSwift (8.0.0)
+  - BiometricAuthentication (3.1.2)
+  - DTCoreText (1.6.23):
+    - DTCoreText/Core (= 1.6.23)
     - DTFoundation/Core (~> 1.7.5)
     - DTFoundation/DTAnimatedGIF (~> 1.7.5)
     - DTFoundation/DTHTMLParser (~> 1.7.5)
     - DTFoundation/UIKit (~> 1.7.5)
-  - DTCoreText/Core (1.6.21):
+  - DTCoreText/Core (1.6.23):
     - DTFoundation/Core (~> 1.7.5)
     - DTFoundation/DTAnimatedGIF (~> 1.7.5)
     - DTFoundation/DTHTMLParser (~> 1.7.5)
     - DTFoundation/UIKit (~> 1.7.5)
-  - DTFoundation/Core (1.7.13)
-  - DTFoundation/DTAnimatedGIF (1.7.13)
-  - DTFoundation/DTHTMLParser (1.7.13):
+  - DTFoundation/Core (1.7.14)
+  - DTFoundation/DTAnimatedGIF (1.7.14)
+  - DTFoundation/DTHTMLParser (1.7.14):
     - DTFoundation/Core
-  - DTFoundation/UIKit (1.7.13):
+  - DTFoundation/UIKit (1.7.14):
     - DTFoundation/Core
-  - Embassy (4.0.8)
-  - LicensesViewController (0.6.5)
-  - MaterialComponents/ActivityIndicator (66.0.0):
+  - Embassy (4.1.0)
+  - HTMLSpecialCharacters (1.3.6)
+  - LicensesViewController (0.7.0)
+  - MaterialComponents/ActivityIndicator (94.4.0):
     - MaterialComponents/Palettes
     - MaterialComponents/private/Application
     - MDFInternationalization
     - MotionAnimator (~> 2.0)
-  - MaterialComponents/AnimationTiming (66.0.0)
-  - MaterialComponents/Ink (66.0.0):
+  - MaterialComponents/AnimationTiming (94.4.0)
+  - MaterialComponents/Elevation (94.4.0):
+    - MaterialComponents/private/Color
     - MaterialComponents/private/Math
-  - MaterialComponents/Palettes (66.0.0)
-  - MaterialComponents/private/Application (66.0.0)
-  - MaterialComponents/private/Math (66.0.0)
-  - MaterialComponents/ProgressView (66.0.0):
+  - MaterialComponents/Ink (94.4.0):
+    - MaterialComponents/private/Color
+    - MaterialComponents/private/Math
+  - MaterialComponents/Palettes (94.4.0)
+  - MaterialComponents/private/Application (94.4.0)
+  - MaterialComponents/private/Color (94.4.0)
+  - MaterialComponents/private/Math (94.4.0)
+  - MaterialComponents/ProgressView (94.4.0):
     - MaterialComponents/Palettes
     - MaterialComponents/private/Math
     - MDFInternationalization
     - MotionAnimator (~> 2.1)
-  - MaterialComponents/ShadowElevations (66.0.0)
-  - MaterialComponents/ShadowLayer (66.0.0):
-    - MaterialComponents/ShadowElevations
-  - MaterialComponents/Tabs (66.0.0):
+  - MaterialComponents/Ripple (94.4.0):
     - MaterialComponents/AnimationTiming
-    - MaterialComponents/Ink
+    - MaterialComponents/private/Color
     - MaterialComponents/private/Math
+  - MaterialComponents/ShadowElevations (94.4.0)
+  - MaterialComponents/ShadowLayer (94.4.0):
+    - MaterialComponents/ShadowElevations
+  - MaterialComponents/Tabs (94.4.0):
+    - MaterialComponents/AnimationTiming
+    - MaterialComponents/Elevation
+    - MaterialComponents/Ink
+    - MaterialComponents/Palettes
+    - MaterialComponents/private/Math
+    - MaterialComponents/Ripple
     - MaterialComponents/ShadowElevations
     - MaterialComponents/ShadowLayer
     - MaterialComponents/Typography
     - MDFInternationalization
-  - MaterialComponents/Typography (66.0.0):
+  - MaterialComponents/Typography (94.4.0):
     - MaterialComponents/private/Application
     - MaterialComponents/private/Math
-  - MDFInternationalization (1.1.0)
+  - MDFInternationalization (2.0.0)
+  - MiniKeychain (1.0.8)
   - MKColorPicker (1.2)
   - MotionAnimator (2.8.1):
     - MotionInterchange (~> 1.6)
   - MotionInterchange (1.6.0)
   - MTColorDistance (0.0.3)
-  - Realm (3.11.0):
-    - Realm/Headers (= 3.11.0)
-  - Realm/Headers (3.11.0)
-  - RealmSwift (3.11.0):
-    - Realm (= 3.11.0)
-  - reddift (2.0.0):
-    - reddift/MiniKeychain (= 2.0.0)
-  - reddift/MiniKeychain (2.0.0)
-  - RLBAlertsPickers (1.0)
-  - SDWebImage (4.1.2):
-    - SDWebImage/Core (= 4.1.2)
-  - SDWebImage/Core (4.1.2)
+  - OpalImagePicker (2.1.0)
+  - QuickLayout (3.0.0)
+  - Realm (4.1.1):
+    - Realm/Headers (= 4.1.1)
+  - Realm/Headers (4.1.1)
+  - RealmSwift (4.1.1):
+    - Realm (= 4.1.1)
+  - reddift (2.0.3):
+    - HTMLSpecialCharacters
+    - MiniKeychain
+  - RLBAlertsPickers (1.1.1)
+  - SDCAlertView (10.0)
+  - SDWebImage (5.3.2):
+    - SDWebImage/Core (= 5.3.2)
+  - SDWebImage/Core (5.3.2)
   - SloppySwiper (0.6)
-  - Starscream (3.0.5)
-  - SubtleVolume (1.0.0)
-  - SwiftLint (0.27.0)
-  - SwiftSpreadsheet (1.2.0)
-  - SwiftyJSON (4.2.0)
-  - Then (2.4.0)
-  - TTTAttributedLabel (2.0.0)
-  - XLActionController (4.0.1):
-    - XLActionController/Core (= 4.0.1)
-  - XLActionController/Core (4.0.1)
+  - Starscream (3.1.1)
+  - SubtleVolume (1.1.0)
+  - SwiftEntryKit (1.2.1):
+    - QuickLayout (= 3.0.0)
+  - SwiftLinkPreview (3.0.1)
+  - SwiftLint (0.37.0)
+  - SwiftSpreadsheet (1.2.1)
+  - SwiftyJSON (5.0.0)
+  - TGPControls (5.1.0)
+  - Then (2.6.0)
+  - YoutubePlayer-in-WKWebView (0.3.4)
+  - YYText (1.0.7)
 
 DEPENDENCIES:
-  - ActionSheetPicker-3.0 (from `https://github.com/ccrama/ActionSheetPicker-3.0`)
   - Alamofire (~> 4.3)
-  - Anchorage
-  - BadgeSwift (~> 5.0)
+  - Anchorage (~> 4.3)
+  - BadgeSwift (~> 8.0)
   - BiometricAuthentication
   - DTCoreText (from `https://github.com/Cocoanetics/DTCoreText`)
-  - Embassy (~> 4.0)
-  - LicensesViewController (~> 0.6.5)
+  - Embassy (~> 4.1.0)
+  - LicensesViewController (~> 0.7.0)
   - MaterialComponents/ActivityIndicator
   - MaterialComponents/ProgressView
   - MaterialComponents/Tabs
-  - MKColorPicker
+  - MKColorPicker (from `https://github.com/ccrama/MKColorPicker`)
   - MTColorDistance
+  - OpalImagePicker
   - RealmSwift
   - reddift (from `https://github.com/ccrama/reddift`)
   - RLBAlertsPickers (from `https://github.com/ccrama/Alerts-Pickers`)
-  - SDWebImage (~> 4.1.2)
-  - SloppySwiper (from `https://github.com/fastred/sloppySwiper`)
-  - Starscream (~> 3.0.2)
+  - SDCAlertView (from `https://github.com/ccrama/SDCAlertView`)
+  - SDWebImage
+  - SloppySwiper (from `https://github.com/ccrama/SloppySwiper`)
+  - Starscream (~> 3.1.1)
   - SubtleVolume
+  - SwiftEntryKit (from `https://github.com/ccrama/SwiftEntryKit`)
+  - SwiftLinkPreview (~> 3.0.1)
   - SwiftLint
   - SwiftSpreadsheet
   - SwiftyJSON
+  - TGPControls
   - Then
-  - TTTAttributedLabel
-  - XLActionController (from `https://github.com/ccrama/XLActionController`)
+  - YoutubePlayer-in-WKWebView (~> 0.3.0)
+  - YYText
+
+SPEC REPOS:
+  trunk:
+    - Alamofire
+    - Anchorage
+    - BadgeSwift
+    - BiometricAuthentication
+    - DTFoundation
+    - Embassy
+    - HTMLSpecialCharacters
+    - LicensesViewController
+    - MaterialComponents
+    - MDFInternationalization
+    - MiniKeychain
+    - MotionAnimator
+    - MotionInterchange
+    - MTColorDistance
+    - OpalImagePicker
+    - QuickLayout
+    - Realm
+    - RealmSwift
+    - SDWebImage
+    - Starscream
+    - SubtleVolume
+    - SwiftLinkPreview
+    - SwiftLint
+    - SwiftSpreadsheet
+    - SwiftyJSON
+    - TGPControls
+    - Then
+    - YoutubePlayer-in-WKWebView
+    - YYText
 
 EXTERNAL SOURCES:
-  ActionSheetPicker-3.0:
-    :git: https://github.com/ccrama/ActionSheetPicker-3.0
   DTCoreText:
     :git: https://github.com/Cocoanetics/DTCoreText
+  MKColorPicker:
+    :git: https://github.com/ccrama/MKColorPicker
   reddift:
     :git: https://github.com/ccrama/reddift
   RLBAlertsPickers:
     :git: https://github.com/ccrama/Alerts-Pickers
+  SDCAlertView:
+    :git: https://github.com/ccrama/SDCAlertView
   SloppySwiper:
-    :git: https://github.com/fastred/sloppySwiper
-  XLActionController:
-    :git: https://github.com/ccrama/XLActionController
+    :git: https://github.com/ccrama/SloppySwiper
+  SwiftEntryKit:
+    :git: https://github.com/ccrama/SwiftEntryKit
 
 CHECKOUT OPTIONS:
-  ActionSheetPicker-3.0:
-    :commit: 752459578d8162c11f6311987bd3463e6d85712b
-    :git: https://github.com/ccrama/ActionSheetPicker-3.0
   DTCoreText:
-    :commit: 04d0c7d878284632d79ced139b3f128c2b33c94c
+    :commit: 9fccb9b0de0b2eb40c6b33067b03f55f3803c153
     :git: https://github.com/Cocoanetics/DTCoreText
+  MKColorPicker:
+    :commit: e76cd225ff60f12f8ec0052e39e5e307a32c0762
+    :git: https://github.com/ccrama/MKColorPicker
   reddift:
-    :commit: 1b0730e3e735791566ea7349065b56df49128d21
+    :commit: 776e1046352855ae5ff24928b579ea7fd66bd33c
     :git: https://github.com/ccrama/reddift
   RLBAlertsPickers:
-    :commit: 583f111c780546a42320c406f1fcf21f9f2caf30
+    :commit: 8a5ecb09650a68bc20f29ba321dad4725482fb56
     :git: https://github.com/ccrama/Alerts-Pickers
+  SDCAlertView:
+    :commit: 644380f73489b1eded3c332335e589e026254486
+    :git: https://github.com/ccrama/SDCAlertView
   SloppySwiper:
-    :commit: 90e1566555734d08a4c72619595f5a2157c104b3
-    :git: https://github.com/fastred/sloppySwiper
-  XLActionController:
-    :commit: d3361823f2359da959a752d36965aaeb3a3fd475
-    :git: https://github.com/ccrama/XLActionController
+    :commit: 4248d9ab7c5b34702564c0daa11760c997c11270
+    :git: https://github.com/ccrama/SloppySwiper
+  SwiftEntryKit:
+    :commit: 4418c7bdda528b850483ea70a786003fce4f4a68
+    :git: https://github.com/ccrama/SwiftEntryKit
 
 SPEC CHECKSUMS:
-  ActionSheetPicker-3.0: d11a4c12c6aaf704b8a3f56d179198c99f3e41e6
-  Alamofire: c7287b6e5d7da964a70935e5db17046b7fde6568
-  Anchorage: 21a98675245188427f0bcea21404d42a824a766f
-  BadgeSwift: 3defa56f504bfb46f2300122c4a565ec9e405c1e
-  BiometricAuthentication: 6928c01583bc707f92c11349f190d5ae052217d3
-  DTCoreText: c07f9d7109a1dd637d7190032261b7c8aff23c92
-  DTFoundation: f03be9fd786f11e505bb8fc44e2a3732bf0917df
-  Embassy: fe6a3f8dd2d705881c172dcb144fb97b9408f4cd
-  LicensesViewController: 1f2982b1bab8402d3f88e23197957038e8abb907
-  MaterialComponents: 2b92bfea789f775ddb5a7060aec9edb8f7bb971b
-  MDFInternationalization: b5b8626628abf026e630e5ebaeee563037712cbb
+  Alamofire: 85e8a02c69d6020a0d734f6054870d7ecb75cf18
+  Anchorage: a187da0bc9b07440637d42c8744b8c82a4490295
+  BadgeSwift: a81547ffde1f462bb5fc02e3fa3fdcbc1b888354
+  BiometricAuthentication: 36445f3ab77699489f91995bed887be89890afac
+  DTCoreText: 67023bb51b26711d5f640c851f4845aea14c24c9
+  DTFoundation: 25aa19bb7c6e225b1dfae195604fb8cf1da0ab4c
+  Embassy: 296c51c4b16b8377b413f48f413a99aa736adc22
+  HTMLSpecialCharacters: edc707cc4bcdc92eb3b9551de8cff94c1e6f9a19
+  LicensesViewController: 2f7bba13b3cec7516d4990e41df297720fdbaaab
+  MaterialComponents: 3ee5327e02dc3f34df48c68205b5fd7dce171744
+  MDFInternationalization: 010097556d6b09d2c4ea38e0820ea6d37be6a314
+  MiniKeychain: 5d424fcd50fb8ab4cc946db2c3415dc391ffffdc
   MKColorPicker: 8998b2ab977e4f240fdf254db27a18b810da3cfc
   MotionAnimator: ee16aa30567c5bae0fb2750c132915829cfaaf8a
   MotionInterchange: ead0e3ae1f3a5fb539e289debbc7ae036160a10d
   MTColorDistance: 5ab8708eb88bc22d4d88e309d09eb912f3a6e27b
-  Realm: 92f09a102692b96a9a10e9617f214f15c5ab85fc
-  RealmSwift: 5f0481cd658bb751c509314b964a35eaa264d2cf
-  reddift: 3066e687c2a934b0f9aca6ee6e2161abc4c93a56
-  RLBAlertsPickers: 60b4bd5afcd92065774ed1b21d836bc89cc79d98
-  SDWebImage: cb6f9f266a9977741efcbc21e618e8be3734c774
+  OpalImagePicker: 40e9d4c27018538a704d8da34b2ff3a2a54a3dc8
+  QuickLayout: 07b45a72b10083fee3f095990cfed1c1e7b27f0a
+  Realm: 25f0a8244cbb1c2271c922963ea8666fc2d8104d
+  RealmSwift: 9e2657b33764f80e4a4dffd6d440e24715782052
+  reddift: 42af05f3d2db6315cdf144be9256de36e86a523a
+  RLBAlertsPickers: c93e83c13526a5840b67eb52f702d3f83eeaac6a
+  SDCAlertView: 5fbc48cae6d7bf9781097e3f27883924ef3b922c
+  SDWebImage: 6ac2eb96571bff96ecde31a987172c5934a0eb7d
   SloppySwiper: 37e38f6da8df5c805914c6f32ec6ec8da63abe7c
-  Starscream: faf918b2f2eff7d5dd21180646bf015a669673bd
-  SubtleVolume: e5320af68833521f22e73529737c3d320f565148
-  SwiftLint: 3207c1faa2240bf8973b191820a116113cd11073
-  SwiftSpreadsheet: fa241abcd0c2e0bdfa641494413c3613d67efbca
-  SwiftyJSON: c4bcba26dd9ec7a027fc8eade48e2c911f229e96
-  Then: 71866660c7af35a7343831f7668e7cd2b62ee0f2
-  TTTAttributedLabel: 8cffe8e127e4e82ff3af1e5386d4cd0ad000b656
-  XLActionController: 007868251c0eed70d649d06c1625259b73b3a600
+  Starscream: 4bb2f9942274833f7b4d296a55504dcfc7edb7b0
+  SubtleVolume: 101038d203018736bcd1df3ac95bcc0f6b8640ce
+  SwiftEntryKit: 1661b766dd22b07679e6ebb326ccfbd81ceb0a20
+  SwiftLinkPreview: 7524438c43bf63a5041615713777c3d8f19a9a31
+  SwiftLint: c078a14d7d7ade75e5507795d185e3da41d844d2
+  SwiftSpreadsheet: b3dc6d89bd5fd18f38fe88c29898fbc481660a04
+  SwiftyJSON: 36413e04c44ee145039d332b4f4e2d3e8d6c4db7
+  TGPControls: 52c0770bee9c9aee364f1559cc627fc01ea5e8b2
+  Then: 90cd104fd951cec1980a03f57704ad8f784d4d79
+  YoutubePlayer-in-WKWebView: af2f5929fc78882d94bfdfeea999b661b78d9717
+  YYText: 5c461d709e24d55a182d1441c41dc639a18a4849
 
-PODFILE CHECKSUM: 5bbd2b0b1d83f438b5954675d442f16de7abc270
+PODFILE CHECKSUM: 3136dc4638d53fea0838f875248f747787ce0da5
 
-COCOAPODS: 1.4.0
+COCOAPODS: 1.8.4

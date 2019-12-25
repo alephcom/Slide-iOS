@@ -22,7 +22,7 @@ final class BannerLinkCellView: LinkCellView {
             bannerImage.isHidden = false
             if SettingValues.postViewMode == .CENTER {
                 // Image goes between title and buttons
-                title.topAnchor == contentView.topAnchor + ctwelve
+                title.topAnchor == contentView.topAnchor + ctwelve - 5
                 if SettingValues.actionBarMode == .SIDE_RIGHT {
                     sideButtons.topAnchor == contentView.topAnchor + ctwelve
                     sideButtons.bottomAnchor <= bannerImage.topAnchor - ceight
@@ -40,7 +40,7 @@ final class BannerLinkCellView: LinkCellView {
 
                 bannerImage.horizontalAnchors == contentView.horizontalAnchors + bannerPadding
                 
-                if SettingValues.actionBarMode == .FULL {
+                if SettingValues.actionBarMode.isFull() {
                     bannerImage.bottomAnchor == box.topAnchor - ctwelve
                 } else {
                     bannerImage.bottomAnchor == contentView.bottomAnchor - ctwelve
@@ -57,7 +57,7 @@ final class BannerLinkCellView: LinkCellView {
                     title.horizontalAnchors == contentView.horizontalAnchors + ctwelve
                 }
                 
-                if SettingValues.actionBarMode != .FULL {
+                if !SettingValues.actionBarMode.isFull() {
                     title.bottomAnchor <= contentView.bottomAnchor - ceight
                 } else {
                     title.bottomAnchor == box.topAnchor - ceight
@@ -68,7 +68,7 @@ final class BannerLinkCellView: LinkCellView {
                 bannerImage.horizontalAnchors == contentView.horizontalAnchors + bannerPadding
                 if SettingValues.actionBarMode.isSide() {
                     sideButtons.topAnchor == bannerImage.bottomAnchor + ceight
-                    sideButtons.setContentCompressionResistancePriority(UILayoutPriorityRequired, for: .vertical)
+                    sideButtons.setContentCompressionResistancePriority(UILayoutPriority.required, for: .vertical)
                     sideButtons.bottomAnchor <= contentView.bottomAnchor - ceight
                 }
             }

@@ -27,6 +27,7 @@ class InterfaceController: WKInterfaceController {
     var last = 0
     var currentSub = ""
     var isPro = false
+    var isNew = false
     
     override func willActivate() {
         // This method is called when watch view controller is about to be visible to user
@@ -43,7 +44,16 @@ class InterfaceController: WKInterfaceController {
         }
     }
     
-    func getSubmissions(_ subreddit: String, reset: Bool) {
+    @IBAction func sortHot() {
+        self.getSubmissions(currentSub, reset: true)
+    }
+    
+    @IBAction func sortNew() {
+        self.getSubmissions(currentSub, reset: true, new: true)
+    }
+    
+    func getSubmissions(_ subreddit: String, reset: Bool, new: Bool = false) {
+        isNew = new
         currentSub = subreddit
         if reset {
             self.page = 1
@@ -51,11 +61,11 @@ class InterfaceController: WKInterfaceController {
             self.loadingImage.setHidden(false)
             self.links.removeAll()
             DispatchQueue.main.async {
-                self.setTitle("r/\(subreddit)")
+                self.setTitle("\(subreddit)")
                 self.table.setNumberOfRows(0, withRowType: "SubmissionRowController")
             }
         }
-        WCSession.default.sendMessage(["links": subreddit, "reset": reset], replyHandler: { (message) in
+        WCSession.default.sendMessage(["links": subreddit, "reset": reset, "new": isNew], replyHandler: { (message) in
             self.loadingImage.setHidden(true)
             if let newLinks = message["links"] as? [NSDictionary] {
                 self.links.append(contentsOf: newLinks)
@@ -96,12 +106,37 @@ class InterfaceController: WKInterfaceController {
                 rowController.progressImage.startAnimatingWithImages(in: NSRange(location: 0, length: 15), duration: 1.0, repeatCount: 0)
                 rowController.loadButton.setTitle("Loading...")
                 if let strongSelf = self {
-                    strongSelf.getSubmissions(strongSelf.currentSub, reset: false)
+                    strongSelf.getSubmissions(strongSelf.currentSub, reset: false, new: strongSelf.isNew)
                 }
             }
         }
     }
+    
+    func loadData(_ session: WCSession) {
+        if session.isReachable && session.activationState == .activated {
+            checkTimer?.invalidate()
+            checkTimer = nil
+        } else if checkTimer == nil {
+            checkTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { (_) in
+                self.loadData(WCSession.default)
+            })
+            return
+        } else {
+            return
+        }
+        session.sendMessage(["sublist": true], replyHandler: { (message) in
+            self.subs = message["subs"] as? [String: String] ?? [String: String]()
+            self.subsOrdered = message["orderedsubs"] as? [String] ?? [String]()
+            self.isPro = message["pro"] as? Bool ?? false
+            if self.subsOrdered.count > 0 {
+                self.getSubmissions(self.subsOrdered[0], reset: true)
+            }
+        }, errorHandler: { (error) in
+            print(error)
+        })
+    }
 
+    var checkTimer: Timer?
 }
 
 extension InterfaceController: WCSessionDelegate {
@@ -118,16 +153,7 @@ extension InterfaceController: WCSessionDelegate {
             loadingImage.setHidden(false)
             loadingImage.setImageNamed("Activity")
             loadingImage.startAnimatingWithImages(in: NSRange(location: 0, length: 15), duration: 1.0, repeatCount: 0)
-            session.sendMessage(["sublist": true], replyHandler: { (message) in
-                self.subs = message["subs"] as? [String: String] ?? [String: String]()
-                self.subsOrdered = message["orderedsubs"] as? [String] ?? [String]()
-                self.isPro = message["pro"] as? Bool ?? false
-                if self.subsOrdered.count > 0 {
-                    self.getSubmissions(self.subsOrdered[0], reset: true)
-                }
-            }, errorHandler: { (error) in
-                print(error)
-            })
+            loadData(session)
         }
     }
 }

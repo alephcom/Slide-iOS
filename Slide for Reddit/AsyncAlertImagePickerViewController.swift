@@ -6,11 +6,13 @@
 //  Copyright © 2018 Haptic Apps. All rights reserved.
 //
 
+import Anchorage
 import RLBAlertsPickers
+import SDCAlertView
 import SDWebImage
 import UIKit
 
-extension UIAlertController {
+extension AlertController {
     
     /// Add Image Picker
     ///
@@ -20,7 +22,7 @@ extension UIAlertController {
     ///   - images: for content to select
     ///   - selection: type and action for selection of image/images
     
-    func addAsyncImagePicker(flow: UICollectionViewScrollDirection, paging: Bool, images: [URL], selection: AsyncImagePickerViewController.SelectionType? = nil) {
+    func addAsyncImagePicker(flow: UICollectionView.ScrollDirection, paging: Bool, images: [URL], selection: AsyncImagePickerViewController.SelectionType? = nil) {
         let vc = AsyncImagePickerViewController(flow: flow, paging: paging, images: images, selection: selection)
         
         if UIDevice.current.userInterfaceIdiom == .pad {
@@ -30,7 +32,32 @@ extension UIAlertController {
             vc.preferredContentSize.height = vc.preferredSize.height
         }
         
-        setValue(vc, forKey: "contentViewController")
+        self.addChild(vc)
+        
+        let vcView = vc.view!
+        self.contentView.addSubview(vcView)
+        vc.didMove(toParent: self)
+        
+        vcView.heightAnchor == vc.preferredContentSize.height
+        vcView.edgeAnchors == self.contentView.edgeAnchors
+    }
+    
+    func addBlurView() {
+        let blurEffect = (NSClassFromString("_UICustomBlurEffect") as! UIBlurEffect.Type).init()
+        let blurView = UIVisualEffectView(frame: UIScreen.main.bounds)
+        blurEffect.setValue(8, forKeyPath: "blurRadius")
+        blurView.effect = blurEffect
+        self.view.subviews[0].insertSubview(blurView, at: 0)
+        blurView.edgeAnchors == self.view.subviews[0].edgeAnchors
+        blurView.layer.cornerRadius = 13
+        blurView.clipsToBounds = true
+    }
+    
+    func setupTheme() {
+        self.visualStyle.backgroundColor = ColorUtil.theme.foregroundColor.withAlphaComponent(0.92)
+        self.visualStyle.normalTextColor = ColorUtil.baseAccent
+        self.visualStyle.textFieldBorderColor = ColorUtil.theme.fontColor
+        self.visualStyle.actionHighlightColor = ColorUtil.theme.navIconColor
     }
 }
 
@@ -70,10 +97,10 @@ final class AsyncImagePickerViewController: UIViewController {
         $0.register(ItemWithImage.self, forCellWithReuseIdentifier: ItemWithImage.identifier)
         $0.showsVerticalScrollIndicator = false
         $0.showsHorizontalScrollIndicator = false
-        $0.decelerationRate = UIScrollViewDecelerationRateFast
+        $0.decelerationRate = UIScrollView.DecelerationRate.fast
         $0.bounces = false
         $0.backgroundColor = .clear
-        $0.maskToBounds = false
+        $0.layer.masksToBounds = false
         $0.clipsToBounds = false
         return $0
         }(UICollectionView(frame: .zero, collectionViewLayout: {
@@ -84,13 +111,13 @@ final class AsyncImagePickerViewController: UIViewController {
             return $0
         }(UICollectionViewFlowLayout())))
     
-    fileprivate var selection: SelectionType?
-    fileprivate var images: [URL] = []
-    fileprivate var selectedImages: [Int] = []
+    private var selection: SelectionType?
+    private var images: [URL] = []
+    private var selectedImages: [Int] = []
     
     // MARK: Initialize
     
-    required init(flow: UICollectionViewScrollDirection, paging: Bool, images: [URL], selection: SelectionType?) {
+    required init(flow: UICollectionView.ScrollDirection, paging: Bool, images: [URL], selection: SelectionType?) {
         super.init(nibName: nil, bundle: nil)
         self.images = images
         self.selection = selection
@@ -161,7 +188,7 @@ extension AsyncImagePickerViewController: UICollectionViewDataSource {
 extension AsyncImagePickerViewController: UICollectionViewDelegateFlowLayout {
     
     public func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
-        Log("view size = \(view.bounds), collectionView = \(collectionView.size), itemSize = \(itemSize)")
+        Log("view size = \(view.bounds), collectionView = \(collectionView.frame.size), itemSize = \(itemSize)")
         return itemSize
     }
 }
@@ -172,25 +199,25 @@ class ItemWithImage: UICollectionViewCell {
     lazy var imageView: UIImageView = {
         $0.backgroundColor = .clear
         $0.contentMode = .scaleAspectFill
-        $0.maskToBounds = true
+        $0.layer.masksToBounds = true
         return $0
     }(UIImageView())
     
     lazy var unselectedCircle: UIView = {
         $0.backgroundColor = .clear
-        $0.borderWidth = 2
-        $0.borderColor = .white
-        $0.maskToBounds = false
+        $0.layer.borderWidth = 2
+        $0.layer.borderColor = UIColor.white.cgColor
+        $0.layer.masksToBounds = false
         $0.isHidden = true
         return $0
     }(UIView())
     
     lazy var selectedCircle: UIView = {
         $0.backgroundColor = .clear
-        $0.borderWidth = 2
+        $0.layer.borderWidth = 2
         $0.isHidden = true
-        $0.borderColor = .white
-        $0.maskToBounds = false
+        $0.layer.borderColor = UIColor.white.cgColor
+        $0.layer.masksToBounds = false
         return $0
     }(UIView())
     
@@ -199,7 +226,7 @@ class ItemWithImage: UICollectionViewCell {
         return $0
     }(UIView())
     
-    fileprivate let inset: CGFloat = 8
+    private let inset: CGFloat = 8
     
     public required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
@@ -211,7 +238,7 @@ class ItemWithImage: UICollectionViewCell {
         setup()
     }
     
-    fileprivate func setup() {
+    private func setup() {
         backgroundColor = .clear
         
         let unselected: UIView = UIView()
@@ -238,7 +265,7 @@ class ItemWithImage: UICollectionViewCell {
     }
     
     override func sizeThatFits(_ size: CGSize) -> CGSize {
-        contentView.size = size
+        contentView.frame.size = size
         layout()
         return size
     }
@@ -247,19 +274,13 @@ class ItemWithImage: UICollectionViewCell {
         view.frame.size = CGSize(width: 28, height: 28)
         view.frame.origin.x = imageView.bounds.width - unselectedCircle.bounds.width - inset
         view.frame.origin.y = inset
-        view.circleCorner = true
-        view.shadowColor = UIColor.black.withAlphaComponent(0.4)
-        view.shadowOffset = .zero
-        view.shadowRadius = 4
-        view.shadowOpacity = 0.2
-        view.shadowPath = UIBezierPath(roundedRect: unselectedCircle.bounds, byRoundingCorners: .allCorners, cornerRadii: CGSize(width: unselectedCircle.bounds.width / 2, height: unselectedCircle.bounds.width / 2)).cgPath
-        view.shadowShouldRasterize = true
-        view.shadowRasterizationScale = UIScreen.main.scale
+        view.layer.shadowRadius = 4
+        view.layer.shadowOpacity = 0.2
+        view.layer.shadowPath = UIBezierPath(roundedRect: unselectedCircle.bounds, byRoundingCorners: .allCorners, cornerRadii: CGSize(width: unselectedCircle.bounds.width / 2, height: unselectedCircle.bounds.width / 2)).cgPath
     }
     
     func updateAppearance(forPoint view: UIView) {
-        view.frame.size = CGSize(width: unselectedCircle.width - unselectedCircle.borderWidth * 2, height: unselectedCircle.height - unselectedCircle.borderWidth * 2)
+        view.frame.size = CGSize(width: unselectedCircle.frame.size.width - unselectedCircle.layer.borderWidth * 2, height: unselectedCircle.frame.size.height - unselectedCircle.layer.borderWidth * 2)
         view.center = selectedCircle.center
-        view.circleCorner = true
     }
 }

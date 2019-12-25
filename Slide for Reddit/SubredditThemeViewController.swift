@@ -18,45 +18,63 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
     var chosenButtons = [UIBarButtonItem]()
     var regularButtons = [UIBarButtonItem]()
 
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+
+        } else {
+            return .lightContent
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         self.tableView.separatorStyle = .none
 
         self.tableView.register(SubredditCellView.classForCoder(), forCellReuseIdentifier: "sub")
         self.tableView.isEditing = true
-        self.tableView.backgroundColor = ColorUtil.backgroundColor
+        self.tableView.backgroundColor = ColorUtil.theme.backgroundColor
         self.tableView.allowsSelectionDuringEditing = true
         self.tableView.allowsMultipleSelectionDuringEditing = true
         subs = Subscriptions.subreddits
         
-        self.subs = self.subs.sorted() {
-            $0.localizedCaseInsensitiveCompare($1) == ComparisonResult.orderedAscending
+        self.subs = self.subs.sorted {
+            if UserDefaults.standard.colorForKey(key: "color+" + $0) != nil && UserDefaults.standard.colorForKey(key: "color+" + $1) == nil {
+                return true
+            } else {
+                return $0.localizedCaseInsensitiveCompare($1) == ComparisonResult.orderedAscending
+            }
         }
+
         tableView.reloadData()
 
         self.title = "Subreddit themes"
 
         let sync = UIButton.init(type: .custom)
-        sync.setImage(UIImage.init(named: "sync")!.navIcon(), for: UIControlState.normal)
-        sync.addTarget(self, action: #selector(self.sync(_:)), for: UIControlEvents.touchUpInside)
+        sync.setImage(UIImage(sfString: SFSymbol.arrow2Circlepath, overrideString: "sync")!.navIcon(), for: UIControl.State.normal)
+        sync.addTarget(self, action: #selector(self.sync(_:)), for: UIControl.Event.touchUpInside)
         sync.frame = CGRect.init(x: -15, y: 0, width: 30, height: 30)
         let syncB = UIBarButtonItem.init(customView: sync)
 
         let add = UIButton.init(type: .custom)
-        add.setImage(UIImage.init(named: "edit")!.navIcon(), for: UIControlState.normal)
-        add.addTarget(self, action: #selector(self.add(_:)), for: UIControlEvents.touchUpInside)
+        add.setImage(UIImage(named: "palette")!.navIcon(), for: UIControl.State.normal)
+        add.addTarget(self, action: #selector(self.add(_:)), for: UIControl.Event.touchUpInside)
         add.frame = CGRect.init(x: -15, y: 0, width: 30, height: 30)
         let addB = UIBarButtonItem.init(customView: add)
 
         let delete = UIButton.init(type: .custom)
-        delete.setImage(UIImage.init(named: "delete")!.navIcon(), for: UIControlState.normal)
-        delete.addTarget(self, action: #selector(self.remove(_:)), for: UIControlEvents.touchUpInside)
+        delete.setImage(UIImage(named: "nocolors")!.navIcon(), for: UIControl.State.normal)
+        delete.addTarget(self, action: #selector(self.remove(_:)), for: UIControl.Event.touchUpInside)
         delete.frame = CGRect.init(x: -15, y: 0, width: 30, height: 30)
         let deleteB = UIBarButtonItem.init(customView: delete)
 
         let all = UIButton.init(type: .custom)
-        all.setImage(UIImage.init(named: "selectall")!.navIcon(), for: UIControlState.normal)
-        all.addTarget(self, action: #selector(self.all(_:)), for: UIControlEvents.touchUpInside)
+        all.setImage(UIImage(named: "selectall")!.navIcon(), for: UIControl.State.normal)
+        all.addTarget(self, action: #selector(self.all(_:)), for: UIControl.Event.touchUpInside)
         all.frame = CGRect.init(x: -15, y: 0, width: 30, height: 30)
         let allB = UIBarButtonItem.init(customView: all)
 
@@ -68,14 +86,14 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
         self.tableView.tableFooterView = UIView()
     }
 
-    public func all(_ selector: AnyObject) {
+    @objc public func all(_ selector: AnyObject) {
         for row in 0..<subs.count {
             tableView.selectRow(at: IndexPath(row: row, section: 0), animated: false, scrollPosition: .none)
         }
         self.navigationItem.setRightBarButtonItems(chosenButtons, animated: true)
     }
     
-    public func add(_ selector: AnyObject) {
+    @objc public func add(_ selector: AnyObject) {
         var selected: [String] = []
         if tableView.indexPathsForSelectedRows != nil {
             for i in tableView.indexPathsForSelectedRows! {
@@ -85,42 +103,43 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
         }
     }
 
-    public func remove(_ selector: AnyObject) {
+    @objc public func remove(_ selector: AnyObject) {
         if tableView.indexPathsForSelectedRows != nil {
             for i in tableView.indexPathsForSelectedRows! {
                 doDelete(subs[i.row])
             }
-            var toRemove = [String]()
-            for i in tableView.indexPathsForSelectedRows! {
-                toRemove.append(subs[i.row])
+            self.subs = self.subs.sorted {
+                if UserDefaults.standard.colorForKey(key: "color+" + $0) != nil && UserDefaults.standard.colorForKey(key: "color+" + $1) == nil {
+                    return true
+                } else {
+                    return $0.localizedCaseInsensitiveCompare($1) == ComparisonResult.orderedAscending
+                }
             }
-            self.subs = self.subs.filter({ (input) -> Bool in
-                return !toRemove.contains(input)
-            })
             self.tableView.reloadData()
+            self.navigationItem.rightBarButtonItems = regularButtons
         }
     }
 
     public static var changed = false
 
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return UITableViewAutomaticDimension
+        return UITableView.automaticDimension
     }
 
     override func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
-        return UITableViewAutomaticDimension
+        return UITableView.automaticDimension
     }
 
     var alertController: UIAlertController?
     var count = 0
 
-    func sync(_ selector: AnyObject) {
+    @objc func sync(_ selector: AnyObject) {
         let defaults = UserDefaults.standard
-        alertController = UIAlertController(title: nil, message: "Syncing colors...\n\n", preferredStyle: .alert)
+        alertController = UIAlertController(title: "Syncing colors...\n\n\n", message: nil, preferredStyle: .alert)
 
-        let spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+        let spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
         spinnerIndicator.center = CGPoint(x: 135.0, y: 65.5)
-        spinnerIndicator.color = UIColor.black
+        spinnerIndicator.color = ColorUtil.theme.fontColor
         spinnerIndicator.startAnimating()
 
         alertController?.view.addSubview(spinnerIndicator)
@@ -136,11 +155,11 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
                     case .failure:
                         print(result.error!)
                     case .success(let listing):
-                        let subs = listing.children.flatMap({ $0 as? Subreddit })
+                        let subs = listing.children.compactMap({ $0 as? Subreddit })
                         for sub in subs {
-                            if !sub.keyColor.isEmpty() {
+                            if sub.keyColor.hexString() != "#FFFFFF" {
                                 toReturn.append(sub.displayName)
-                                let color = ColorUtil.getClosestColor(hex: sub.keyColor)
+                                let color = ColorUtil.getClosestColor(hex: sub.keyColor.hexString())
                                 if UserDefaults.standard.colorForKey(key: "color+" + sub.displayName) == nil && color != .black {
                                     defaults.setColor(color: color, forKey: "color+" + sub.displayName)
                                     self.count += 1
@@ -157,11 +176,10 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
             } else {
                 Subscriptions.getSubscriptionsFully(session: (UIApplication.shared.delegate as! AppDelegate).session!, completion: { (subs, multis) in
                     for sub in subs {
-                        if !sub.keyColor.isEmpty() {
-                            print("Coloring \(sub.displayName)")
+                        if sub.keyColor.hexString() != "#FFFFFF" {
                             toReturn.append(sub.displayName)
-                            let color = ColorUtil.getClosestColor(hex: sub.keyColor)
-                            if UserDefaults.standard.colorForKey(key: "color+" + sub.displayName) == nil && color.hexString != "#000000" {
+                            let color = ColorUtil.getClosestColor(hex: sub.keyColor.hexString())
+                            if UserDefaults.standard.colorForKey(key: "color+" + sub.displayName) == nil && color.hexString() != "#000000" {
                                 defaults.setColor(color: color, forKey: "color+" + sub.displayName)
                                 self.count += 1
                             }
@@ -170,7 +188,7 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
                     for m in multis {
                         toReturn.append("/m/" + m.displayName)
                         let color = (UIColor.init(hexString: m.keyColor))
-                        if UserDefaults.standard.colorForKey(key: "color+" + m.displayName) == nil && color.hexString != "#000000" {
+                        if UserDefaults.standard.colorForKey(key: "color+" + m.displayName) == nil && color.hexString() != "#000000" {
                             defaults.setColor(color: color, forKey: "color+" + m.displayName)
                             self.count += 1
                         }
@@ -197,16 +215,13 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
         alertController!.dismiss(animated: true, completion: nil)
         BannerUtil.makeBanner(text: "\(count) subs colored", seconds: 5, context: self)
         count = 0
-        subs.removeAll()
-        for sub in Subscriptions.subreddits {
-            if UserDefaults.standard.colorForKey(key: "color+" + sub) != nil || UserDefaults.standard.colorForKey(key: "accent+" + sub) != nil {
-                subs.append(sub)
+        self.subs = self.subs.sorted {
+            if UserDefaults.standard.colorForKey(key: "color+" + $0) != nil && UserDefaults.standard.colorForKey(key: "color+" + $1) == nil {
+                return true
+            } else {
+                return $0.localizedCaseInsensitiveCompare($1) == ComparisonResult.orderedAscending
             }
         }
-        self.subs = self.subs.sorted() {
-            $0.localizedCaseInsensitiveCompare($1) == ComparisonResult.orderedAscending
-        }
-
         tableView.reloadData()
     }
 
@@ -231,11 +246,12 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
         let c = tableView.dequeueReusableCell(withIdentifier: "sub", for: indexPath) as! SubredditCellView
         c.setSubreddit(subreddit: thing, nav: nil)
         cell = c
-        cell?.backgroundColor = ColorUtil.foregroundColor
+        cell?.backgroundColor = ColorUtil.theme.foregroundColor
+        cell?.sideView.isHidden = UserDefaults.standard.colorForKey(key: "color+" + thing) == nil
         return cell!
     }
 
-    override func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCellEditingStyle {
+    override func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
         return .delete
     }
 
@@ -277,7 +293,7 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
     func edit(_ sub: [String], sender: UIButton) {
         editSubs = sub
 
-        let alertController = UIAlertController(title: "\n\n\n\n\n\n\n\n", message: nil, preferredStyle: UIAlertControllerStyle.actionSheet)
+        let alertController = UIAlertController(title: "\n\n\n\n\n\n\n\n", message: nil, preferredStyle: UIAlertController.Style.actionSheet)
 
         isAccent = false
         let margin: CGFloat = 10.0
@@ -308,12 +324,10 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
                 }
             }
             self.tableView.reloadData()
+            self.navigationItem.rightBarButtonItems = self.regularButtons
         }
 
-        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel, handler: { (_: UIAlertAction!) in
-        })
-
-        alertController.addAction(cancelAction)
+        alertController.addCancelButton()
         alertController.modalPresentationStyle = .popover
         if let presenter = alertController.popoverPresentationController {
             presenter.sourceView = savedView
@@ -326,7 +340,7 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
     var isAccent = false
     func pickAccent(_ sub: [String], sender: UIButton) {
         isAccent = true
-        let alertController = UIAlertController(title: "\n\n\n\n\n\n\n\n", message: nil, preferredStyle: UIAlertControllerStyle.actionSheet)
+        let alertController = UIAlertController(title: "\n\n\n\n\n\n\n\n", message: nil, preferredStyle: UIAlertController.Style.actionSheet)
 
         let margin: CGFloat = 10.0
         let rect = CGRect(x: margin, y: margin, width: UIScreen.main.traitCollection.userInterfaceIdiom == .pad ? 314 - margin * 4.0: alertController.view.bounds.size.width - margin * 4.0, height: 150)
@@ -358,6 +372,7 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
                 }
             }
             self.tableView.reloadData()
+            self.navigationItem.rightBarButtonItems = self.regularButtons
         }
 
         if let presenter = alertController.popoverPresentationController {
@@ -365,17 +380,14 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
             presenter.sourceRect = savedView.bounds
         }
 
-        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel, handler: { (_: UIAlertAction!) in
-        })
-
-        alertController.addAction(cancelAction)
+        alertController.addCancelButton()
 
         present(alertController, animated: true, completion: nil)
     }
 
     override func tableView(_ tableView: UITableView, willBeginEditingRowAt indexPath: IndexPath) {
         let cell = tableView.cellForRow(at: indexPath)
-        cell?.backgroundColor = ColorUtil.foregroundColor
+        cell?.backgroundColor = ColorUtil.theme.foregroundColor
     }
 
     func doDelete(_ sub: String) {
@@ -384,7 +396,7 @@ class SubredditThemeViewController: UITableViewController, ColorPickerViewDelega
         UserDefaults.standard.synchronize()
     }
 
-    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCellEditingStyle, forRowAt indexPath: IndexPath) {
+    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
         if editingStyle == .delete {
             doDelete(subs[indexPath.row])
         }
@@ -483,7 +495,7 @@ public extension UIView {
      
      @param message The message to be displayed
      */
-    public func makeToast(_ message: String) {
+    func makeToast(_ message: String) {
         self.makeToast(message, duration: ToastManager.shared.duration, position: ToastManager.shared.position)
     }
 
@@ -495,7 +507,7 @@ public extension UIView {
      @param duration The toast duration
      @param position The toast's position
      */
-    public func makeToast(_ message: String, duration: TimeInterval, position: ToastPosition) {
+    func makeToast(_ message: String, duration: TimeInterval, position: ToastPosition) {
         self.makeToast(message, duration: duration, position: position, style: nil)
     }
 
@@ -507,7 +519,7 @@ public extension UIView {
      @param duration The toast duration
      @param position The toast's center point
      */
-    public func makeToast(_ message: String, duration: TimeInterval, position: CGPoint) {
+    func makeToast(_ message: String, duration: TimeInterval, position: CGPoint) {
         self.makeToast(message, duration: duration, position: position, style: nil)
     }
 
@@ -520,7 +532,7 @@ public extension UIView {
      @param position The toast's position
      @param style The style. The shared style will be used when nil
      */
-    public func makeToast(_ message: String, duration: TimeInterval, position: ToastPosition, style: ToastStyle?) {
+    func makeToast(_ message: String, duration: TimeInterval, position: ToastPosition, style: ToastStyle?) {
         self.makeToast(message, duration: duration, position: position, title: nil, image: nil, style: style, completion: nil)
     }
 
@@ -533,7 +545,7 @@ public extension UIView {
      @param position The toast's center point
      @param style The style. The shared style will be used when nil
      */
-    public func makeToast(_ message: String, duration: TimeInterval, position: CGPoint, style: ToastStyle?) {
+    func makeToast(_ message: String, duration: TimeInterval, position: CGPoint, style: ToastStyle?) {
         self.makeToast(message, duration: duration, position: position, title: nil, image: nil, style: style, completion: nil)
     }
 
@@ -552,7 +564,7 @@ public extension UIView {
      @param completion The completion closure, executed after the toast view disappears.
      didTap will be `true` if the toast view was dismissed from a tap.
      */
-    public func makeToast(_ message: String?, duration: TimeInterval, position: ToastPosition, title: String?, image: UIImage?, style: ToastStyle?, completion: ((_ didTap: Bool) -> Void)?) {
+    func makeToast(_ message: String?, duration: TimeInterval, position: ToastPosition, title: String?, image: UIImage?, style: ToastStyle?, completion: ((_ didTap: Bool) -> Void)?) {
         var toastStyle = ToastManager.shared.style
         if let style = style {
             toastStyle = style
@@ -582,7 +594,7 @@ public extension UIView {
      @param completion The completion closure, executed after the toast view disappears.
      didTap will be `true` if the toast view was dismissed from a tap.
      */
-    public func makeToast(_ message: String?, duration: TimeInterval, position: CGPoint, title: String?, image: UIImage?, style: ToastStyle?, completion: ((_ didTap: Bool) -> Void)?) {
+    func makeToast(_ message: String?, duration: TimeInterval, position: CGPoint, title: String?, image: UIImage?, style: ToastStyle?, completion: ((_ didTap: Bool) -> Void)?) {
         var toastStyle = ToastManager.shared.style
         if let style = style {
             toastStyle = style
@@ -604,7 +616,7 @@ public extension UIView {
      
      @param toast The view to be displayed as toast
      */
-    public func showToast(_ toast: UIView) {
+    func showToast(_ toast: UIView) {
         self.showToast(toast, duration: ToastManager.shared.duration, position: ToastManager.shared.position, completion: nil)
     }
 
@@ -619,7 +631,7 @@ public extension UIView {
      @param completion The completion block, executed after the toast view disappears.
      didTap will be `true` if the toast view was dismissed from a tap.
      */
-    public func showToast(_ toast: UIView, duration: TimeInterval, position: ToastPosition, completion: ((_ didTap: Bool) -> Void)?) {
+    func showToast(_ toast: UIView, duration: TimeInterval, position: ToastPosition, completion: ((_ didTap: Bool) -> Void)?) {
         let point = self.centerPointForPosition(position, toast: toast)
         self.showToast(toast, duration: duration, position: point, completion: completion)
     }
@@ -635,7 +647,7 @@ public extension UIView {
      @param completion The completion block, executed after the toast view disappears.
      didTap will be `true` if the toast view was dismissed from a tap.
      */
-    public func showToast(_ toast: UIView, duration: TimeInterval, position: CGPoint, completion: ((_ didTap: Bool) -> Void)?) {
+    func showToast(_ toast: UIView, duration: TimeInterval, position: CGPoint, completion: ((_ didTap: Bool) -> Void)?) {
         objc_setAssociatedObject(toast, &ToastKeys.Completion, ToastCompletionWrapper(completion), .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
 
         if objc_getAssociatedObject(self, &ToastKeys.ActiveToast) as? UIView != nil, ToastManager.shared.queueEnabled {
@@ -662,7 +674,7 @@ public extension UIView {
      
      @param position The toast's position
      */
-    public func makeToastActivity(_ position: ToastPosition) {
+    func makeToastActivity(_ position: ToastPosition) {
         // sanity
         if objc_getAssociatedObject(self, &ToastKeys.ActivityView) as? UIView != nil {
             return
@@ -685,7 +697,7 @@ public extension UIView {
      
      @param position The toast's center point
      */
-    public func makeToastActivity(_ position: CGPoint) {
+    func makeToastActivity(_ position: CGPoint) {
         // sanity
         if objc_getAssociatedObject(self, &ToastKeys.ActivityView) as? UIView != nil {
             return
@@ -698,7 +710,7 @@ public extension UIView {
     /**
      Dismisses the active toast activity indicator view.
      */
-    public func hideToastActivity() {
+    func hideToastActivity() {
         if let toast = objc_getAssociatedObject(self, &ToastKeys.ActivityView) as? UIView {
             UIView.animate(withDuration: ToastManager.shared.style.fadeDuration, delay: 0.0, options: [.curveEaseIn, .beginFromCurrentState], animations: { () -> Void in
                 toast.alpha = 0.0
@@ -739,7 +751,7 @@ public extension UIView {
             activityView.layer.shadowOffset = style.shadowOffset
         }
 
-        let activityIndicatorView = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+        let activityIndicatorView = UIActivityIndicatorView(style: .whiteLarge)
         activityIndicatorView.center = CGPoint(x: activityView.bounds.size.width / 2.0, y: activityView.bounds.size.height / 2.0)
         activityView.addSubview(activityIndicatorView)
         activityIndicatorView.startAnimating()
@@ -768,7 +780,7 @@ public extension UIView {
             toast.alpha = 1.0
         }, completion: { _ in
             let timer = Timer(timeInterval: duration, target: self, selector: #selector(UIView.toastTimerDidFinish(_:)), userInfo: toast, repeats: false)
-            RunLoop.main.add(timer, forMode: RunLoopMode.commonModes)
+            RunLoop.main.add(timer, forMode: RunLoop.Mode.common)
             objc_setAssociatedObject(toast, &ToastKeys.Timer, timer, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         })
     }
@@ -799,14 +811,14 @@ public extension UIView {
 
     // MARK: - Events
 
-    func handleToastTapped(_ recognizer: UITapGestureRecognizer) {
+    @objc func handleToastTapped(_ recognizer: UITapGestureRecognizer) {
         if let toast = recognizer.view, let timer = objc_getAssociatedObject(toast, &ToastKeys.Timer) as? Timer {
             timer.invalidate()
             self.hideToast(toast, fromTap: true)
         }
     }
 
-    func toastTimerDidFinish(_ timer: Timer) {
+    @objc func toastTimerDidFinish(_ timer: Timer) {
         if let toast = timer.userInfo as? UIView {
             self.hideToast(toast)
         }
@@ -830,7 +842,7 @@ public extension UIView {
      @throws `ToastError.InsufficientData` when message, title, and image are all nil
      @return The newly created toast view
      */
-    public func toastViewForMessage(_ message: String?, title: String?, image: UIImage?, style: ToastStyle) throws -> UIView {
+    func toastViewForMessage(_ message: String?, title: String?, image: UIImage?, style: ToastStyle) throws -> UIView {
         // sanity
         if message == nil && title == nil && image == nil {
             throw ToastError.insufficientData

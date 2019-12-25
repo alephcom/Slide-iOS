@@ -7,8 +7,8 @@
 //
 
 import reddift
-import TTTAttributedLabel
 import UIKit
+import YYText
 
 class GalleryCellView: UITableViewCell {
     
@@ -22,10 +22,10 @@ class GalleryCellView: UITableViewCell {
     func setLink(_ link: RSubmission, parent: UIViewController & MediaVCDelegate) {
         self.bannerImage = UIImageView(frame: CGRect(x: 0, y: 8, width: CGFloat.greatestFiniteMagnitude, height: 0))
         bannerImage.clipsToBounds = true
-        bannerImage.contentMode = UIViewContentMode.scaleAspectFit
+        bannerImage.contentMode = UIView.ContentMode.scaleAspectFit
 
         self.commentsImage = UIImageView(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
-        self.commentsImage.image = UIImage.init(named: "comments")?.navIcon(true)
+        self.commentsImage.image = UIImage(sfString: SFSymbol.bubbleLeftAndBubbleRightFill, overrideString: "comments")?.navIcon(true)
 
         self.typeImage = UIImageView(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
 
@@ -41,7 +41,7 @@ class GalleryCellView: UITableViewCell {
             VCPresenter.showVC(viewController: RedditLink.getViewControllerForURL(urlS: URL.init(string: self.link!.permalink)!), popupIfPossible: true, parentNavigationController: self.parentViewController?.navigationController, parentViewController: self.parentViewController)
         }
         bannerImage.addTapGestureRecognizer {
-            parent.setLink(lnk: self.link!, shownURL: nil, lq: false, saveHistory: true, heroView: self.bannerImage, heroVC: parent)
+            parent.setLink(lnk: self.link!, shownURL: nil, lq: false, saveHistory: true, heroView: self.bannerImage, heroVC: parent, upvoteCallbackIn: nil)
         }
 
         self.contentView.backgroundColor = UIColor.black
@@ -57,13 +57,13 @@ class GalleryCellView: UITableViewCell {
         
         switch ContentType.getContentType(submission: link) {
         case .ALBUM:
-            typeImage.image = UIImage.init(named: "image")?.navIcon(true)
+            typeImage.image = UIImage(sfString: SFSymbol.photoOnRectangleFill, overrideString: "image")?.navIcon(true)
         case .EXTERNAL, .LINK, .REDDIT:
-            typeImage.image = UIImage.init(named: "world")?.navIcon(true)
+            typeImage.image = UIImage(named: "world")?.navIcon(true)
         case .SELF:
-            typeImage.image = UIImage.init(named: "size")?.navIcon(true)
+            typeImage.image = UIImage(sfString: SFSymbol.textbox, overrideString: "size")?.navIcon(true)
         case .EMBEDDED, .GIF, .STREAMABLE, .VIDEO, .VID_ME:
-            typeImage.image = UIImage.init(named: "play")?.navIcon(true)
+            typeImage.image = UIImage(sfString: SFSymbol.playFill, overrideString: "play")?.navIcon(true)
         default:
             typeImage.image = UIImage()
 
@@ -74,7 +74,7 @@ class GalleryCellView: UITableViewCell {
         return estimatedHeight
     }
     
-    override init(style: UITableViewCellStyle, reuseIdentifier: String?) {
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
     }
 
@@ -99,25 +99,25 @@ class GalleryCellView: UITableViewCell {
         let views=["banner": bannerImage, "comments": commentsImage, "type": typeImage] as [String: Any]
 
         self.contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "H:|-2-[banner]-2-|",
-                                                          options: NSLayoutFormatOptions(rawValue: 0),
+                                                          options: NSLayoutConstraint.FormatOptions(rawValue: 0),
                                                           metrics: [:],
                                                           views: views))
         
         self.contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "V:|-2-[banner]-2-|",
-                                                                       options: NSLayoutFormatOptions(rawValue: 0),
+                                                                       options: NSLayoutConstraint.FormatOptions(rawValue: 0),
                                                                        metrics: [:],
                                                                        views: views))
         self.contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "V:[comments]-8-|",
-                                                                       options: NSLayoutFormatOptions(rawValue: 0),
+                                                                       options: NSLayoutConstraint.FormatOptions(rawValue: 0),
                                                                        metrics: [:],
                                                                        views: views))
         self.contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "V:[type]-8-|",
-                                                                       options: NSLayoutFormatOptions(rawValue: 0),
+                                                                       options: NSLayoutConstraint.FormatOptions(rawValue: 0),
                                                                        metrics: [:],
                                                                        views: views))
 
         self.contentView.addConstraints(NSLayoutConstraint.constraints(withVisualFormat: "H:[type]-8-[comments]-8-|",
-                                                                       options: NSLayoutFormatOptions(rawValue: 0),
+                                                                       options: NSLayoutConstraint.FormatOptions(rawValue: 0),
                                                                        metrics: [:],
                                                                        views: views))
         

@@ -13,12 +13,110 @@ extension UIImage {
     func getCopy(withSize size: CGSize) -> UIImage {
         let hasAlpha = true
         let scale: CGFloat = 0.0 // Use scale factor of main screen
+        let maxWidth = size.width
+        let maxHeight = size.height
+        
+        let imgWidth = self.size.width
+        let imgHeight = self.size.height
 
-        UIGraphicsBeginImageContextWithOptions(size, !hasAlpha, scale)
-        self.draw(in: CGRect(origin: CGPoint.zero, size: size))
+        let widthRatio = maxWidth / imgWidth
+        
+        let heightRatio = maxHeight / imgHeight
+        
+        let bestRatio = min(widthRatio, heightRatio)
+
+        let newWidth = imgWidth * bestRatio,
+            newHeight = imgHeight * bestRatio
+
+        let biggerSize = CGSize(width: newWidth, height: newHeight)
+
+        UIGraphicsBeginImageContextWithOptions(biggerSize, !hasAlpha, scale)
+        self.draw(in: CGRect(origin: CGPoint(x: 0, y: 0), size: biggerSize))
 
         let scaledImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
         return scaledImage!
+    }
+    func cropImageByAlpha() -> UIImage {
+        let cgImage = self.cgImage
+        let context = createARGBBitmapContextFromImage(inImage: cgImage!)
+        let height = cgImage!.height
+        let width = cgImage!.width
+        
+        var rect: CGRect = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+        context?.draw(cgImage!, in: rect)
+        
+        let pixelData = self.cgImage!.dataProvider!.data
+        let data: UnsafePointer<UInt8> = CFDataGetBytePtr(pixelData)
+        
+        var minX = width
+        var minY = height
+        var maxX: Int = 0
+        var maxY: Int = 0
+        
+        //Filter through data and look for non-transparent pixels.
+        for y in 0..<height {
+            for x in 0..<width {
+                let pixelIndex = (width * y + x) * 4 /* 4 for A, R, G, B */
+                
+                if data[Int(pixelIndex)] != 0 { //Alpha value is not zero pixel is not transparent.
+                    if x < minX {
+                        minX = x
+                    }
+                    if x > maxX {
+                        maxX = x
+                    }
+                    if y < minY {
+                        minY = y
+                    }
+                    if y > maxY {
+                        maxY = y
+                    }
+                }
+            }
+        }
+        
+        rect = CGRect( x: CGFloat(minX), y: CGFloat(minY), width: CGFloat(maxX - minX), height: CGFloat(maxY - minY))
+        let imageScale: CGFloat = self.scale
+        let cgiImage = self.cgImage?.cropping(to: rect)
+        return UIImage(cgImage: cgiImage!, scale: imageScale, orientation: self.imageOrientation)
+    }
+    
+    private func createARGBBitmapContextFromImage(inImage: CGImage) -> CGContext? {
+        
+        let width = cgImage!.width
+        let height = cgImage!.height
+        
+        let bitmapBytesPerRow = width * 4
+        let bitmapByteCount = bitmapBytesPerRow * height
+        
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+
+        let bitmapData = malloc(bitmapByteCount)
+        if bitmapData == nil {
+            return nil
+        }
+        
+        let context = CGContext(data: bitmapData, width: width, height: height, bitsPerComponent: 8, bytesPerRow: bitmapBytesPerRow, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)
+        
+        return context
+    }
+    convenience init?(sfString: SFSymbol, overrideString: String) {
+        if #available(iOS 13, *) {
+            let config = UIImage.SymbolConfiguration(pointSize: 15, weight: UIImage.SymbolWeight.regular, scale: UIImage.SymbolScale.small)
+            self.init(systemName: sfString.rawValue, withConfiguration: config)
+        } else {
+            self.init(named: overrideString)
+        }
+    }
+
+    convenience init?(sfStringHQ: SFSymbol, overrideString: String) {
+        if #available(iOS 13, *) {
+            let config = UIImage.SymbolConfiguration(pointSize: 30, weight: UIImage.SymbolWeight.regular, scale: UIImage.SymbolScale.large)
+            self.init(systemName: sfStringHQ.rawValue, withConfiguration: config)
+        } else {
+            self.init(named: overrideString)
+        }
     }
 
     func getCopy(withColor color: UIColor) -> UIImage {
@@ -35,21 +133,21 @@ extension UIImage {
         return self.getCopy(withSize: size).getCopy(withColor: color)
     }
 
-    // TODO: These should make only one copy and do in-place operations on those
+    // TODO: - These should make only one copy and do in-place operations on those
     func navIcon(_ white: Bool = false) -> UIImage {
-        return self.getCopy(withSize: CGSize(width: 25, height: 25), withColor: SettingValues.reduceColor && !white ? ColorUtil.fontColor : .white)
+        return self.getCopy(withSize: CGSize(width: 25, height: 25), withColor: SettingValues.reduceColor && !white ? ColorUtil.theme.navIconColor : .white)
     }
 
     func smallIcon() -> UIImage {
-        return self.getCopy(withSize: CGSize(width: 12, height: 12), withColor: ColorUtil.fontColor)
+        return self.getCopy(withSize: CGSize(width: 12, height: 12), withColor: ColorUtil.theme.navIconColor)
     }
 
     func toolbarIcon() -> UIImage {
-        return self.getCopy(withSize: CGSize(width: 25, height: 25), withColor: ColorUtil.fontColor)
+        return self.getCopy(withSize: CGSize(width: 25, height: 25), withColor: ColorUtil.theme.navIconColor)
     }
 
     func menuIcon() -> UIImage {
-        return self.getCopy(withSize: CGSize(width: 20, height: 20), withColor: ColorUtil.fontColor)
+        return self.getCopy(withSize: CGSize(width: 20, height: 20), withColor: ColorUtil.theme.navIconColor)
     }
 
     func cropToBounds(image: UIImage, width: Double, height: Double) -> UIImage {
@@ -158,13 +256,13 @@ extension UIImage {
             let inputImage: CIImage = ciImage ?? CoreImage.CIImage(cgImage: cgImage!)
             let extent = inputImage.extent
             let inputExtent = CIVector(x: extent.origin.x, y: extent.origin.y, z: extent.size.width, w: extent.size.height)
-            let filter = CIFilter(name: "CIAreaAverage", withInputParameters: [kCIInputImageKey: inputImage, kCIInputExtentKey: inputExtent])!
+            let filter = CIFilter(name: "CIAreaAverage", parameters: [kCIInputImageKey: inputImage, kCIInputExtentKey: inputExtent])!
             let outputImage = filter.outputImage!
             let outputExtent = outputImage.extent
             assert(outputExtent.size.width == 1 && outputExtent.size.height == 1)
             
             // Render to bitmap.
-            context.render(outputImage, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: kCIFormatRGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
+            context.render(outputImage, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: CIFormat.RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
         } else {
             // Create 1x1 context that interpolates pixels when drawing to it.
             let context = CGContext(data: &bitmap, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!

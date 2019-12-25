@@ -8,7 +8,7 @@
 
 import UIKit
 
-class FiltersViewController: UITableViewController, UISearchBarDelegate {
+class FiltersViewController: BubbleSettingTableViewController, UISearchBarDelegate {
     
     var domainEnter = UISearchBar()
     var selftextEnter = UISearchBar()
@@ -17,6 +17,19 @@ class FiltersViewController: UITableViewController, UISearchBarDelegate {
     var subredditEnter = UISearchBar()
     var flairEnter = UISearchBar()
     
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+
+        } else {
+            return .lightContent
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -28,11 +41,11 @@ class FiltersViewController: UITableViewController, UISearchBarDelegate {
         // Dispose of any resources that can be recreated.
     }
     
-    override func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCellEditingStyle {
+    override func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
         return .delete
     }
     
-    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCellEditingStyle, forRowAt indexPath: IndexPath) {
+    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
         if editingStyle == .delete {
             switch indexPath.section {
             case 0:
@@ -62,86 +75,86 @@ class FiltersViewController: UITableViewController, UISearchBarDelegate {
     override func loadView() {
         super.loadView()
         
-        self.view.backgroundColor = ColorUtil.backgroundColor
+        self.view.backgroundColor = ColorUtil.theme.backgroundColor
         // set the title
         self.title = "Filters"
-        self.tableView.separatorStyle = .none
+        self.headers = ["Submission domain filters", "Submission body text filters", "Submission title filters", "Submission author filters", "Subreddit filters", "Submission flair filters"]
 
-        domainEnter.searchBarStyle = UISearchBarStyle.minimal
+        domainEnter.searchBarStyle = UISearchBar.Style.minimal
         domainEnter.placeholder = "Add a new domain to filter"
         domainEnter.delegate = self
         domainEnter.returnKeyType = .done
-        domainEnter.textColor = ColorUtil.fontColor
+        domainEnter.textColor = ColorUtil.theme.fontColor
         domainEnter.setImage(UIImage(), for: .search, state: .normal)
         domainEnter.autocapitalizationType = .none
         domainEnter.isTranslucent = false
-        domainEnter.backgroundColor = ColorUtil.foregroundColor
-        if ColorUtil.theme != .LIGHT {
+        domainEnter.backgroundColor = ColorUtil.theme.foregroundColor
+        if !ColorUtil.theme.isLight {
             domainEnter.keyboardAppearance = .dark
         }
 
-        selftextEnter.searchBarStyle = UISearchBarStyle.minimal
+        selftextEnter.searchBarStyle = UISearchBar.Style.minimal
         selftextEnter.placeholder = "Add a new subreddit to filter"
         selftextEnter.delegate = self
         selftextEnter.returnKeyType = .done
-        selftextEnter.textColor = ColorUtil.fontColor
+        selftextEnter.textColor = ColorUtil.theme.fontColor
         selftextEnter.setImage(UIImage(), for: .search, state: .normal)
         selftextEnter.autocapitalizationType = .none
         selftextEnter.isTranslucent = false
-        selftextEnter.backgroundColor = ColorUtil.foregroundColor
-        if ColorUtil.theme != .LIGHT {
+        selftextEnter.backgroundColor = ColorUtil.theme.foregroundColor
+        if !ColorUtil.theme.isLight {
             selftextEnter.keyboardAppearance = .dark
         }
 
-        titleEnter.searchBarStyle = UISearchBarStyle.minimal
+        titleEnter.searchBarStyle = UISearchBar.Style.minimal
         titleEnter.placeholder = "Add a new title keyword to filter"
         titleEnter.delegate = self
         titleEnter.returnKeyType = .done
-        titleEnter.textColor = ColorUtil.fontColor
+        titleEnter.textColor = ColorUtil.theme.fontColor
         titleEnter.setImage(UIImage(), for: .search, state: .normal)
         titleEnter.autocapitalizationType = .none
         titleEnter.isTranslucent = false
-        titleEnter.backgroundColor = ColorUtil.foregroundColor
-        if ColorUtil.theme != .LIGHT {
+        titleEnter.backgroundColor = ColorUtil.theme.foregroundColor
+        if !ColorUtil.theme.isLight {
             titleEnter.keyboardAppearance = .dark
         }
 
-        profileEnter.searchBarStyle = UISearchBarStyle.minimal
+        profileEnter.searchBarStyle = UISearchBar.Style.minimal
         profileEnter.placeholder = "Add a new user to filter"
         profileEnter.delegate = self
         profileEnter.returnKeyType = .done
-        profileEnter.textColor = ColorUtil.fontColor
+        profileEnter.textColor = ColorUtil.theme.fontColor
         profileEnter.setImage(UIImage(), for: .search, state: .normal)
         profileEnter.autocapitalizationType = .none
         profileEnter.isTranslucent = false
-        profileEnter.backgroundColor = ColorUtil.foregroundColor
-        if ColorUtil.theme != .LIGHT {
+        profileEnter.backgroundColor = ColorUtil.theme.foregroundColor
+        if !ColorUtil.theme.isLight {
             profileEnter.keyboardAppearance = .dark
         }
 
-        subredditEnter.searchBarStyle = UISearchBarStyle.minimal
+        subredditEnter.searchBarStyle = UISearchBar.Style.minimal
         subredditEnter.placeholder = "Add a new subreddit to filter"
         subredditEnter.delegate = self
         subredditEnter.returnKeyType = .done
-        subredditEnter.textColor = ColorUtil.fontColor
+        subredditEnter.textColor = ColorUtil.theme.fontColor
         subredditEnter.setImage(UIImage(), for: .search, state: .normal)
         subredditEnter.setImage(UIImage(), for: .search, state: .normal)
         subredditEnter.isTranslucent = false
-        subredditEnter.backgroundColor = ColorUtil.foregroundColor
-        if ColorUtil.theme != .LIGHT {
+        subredditEnter.backgroundColor = ColorUtil.theme.foregroundColor
+        if !ColorUtil.theme.isLight {
             subredditEnter.keyboardAppearance = .dark
         }
 
-        flairEnter.searchBarStyle = UISearchBarStyle.minimal
+        flairEnter.searchBarStyle = UISearchBar.Style.minimal
         flairEnter.placeholder = "Add a new flair keyword to filter"
         flairEnter.delegate = self
         flairEnter.returnKeyType = .done
-        flairEnter.textColor = ColorUtil.fontColor
+        flairEnter.textColor = ColorUtil.theme.fontColor
         flairEnter.setImage(UIImage(), for: .search, state: .normal)
         flairEnter.setImage(UIImage(), for: .search, state: .normal)
         flairEnter.isTranslucent = false
-        flairEnter.backgroundColor = ColorUtil.foregroundColor
-        if ColorUtil.theme != .LIGHT {
+        flairEnter.backgroundColor = ColorUtil.theme.foregroundColor
+        if !ColorUtil.theme.isLight {
             flairEnter.keyboardAppearance = .dark
         }
 
@@ -183,17 +196,6 @@ class FiltersViewController: UITableViewController, UISearchBarDelegate {
     override func numberOfSections(in tableView: UITableView) -> Int {
         return 6
     }
-    override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        return 70
-    }
-    
-    override func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
-        return 70
-    }
-    
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 60
-    }
     
     override func tableView(_ tableView: UITableView, viewForFooterInSection section: Int) -> UIView? {
         switch section {
@@ -209,10 +211,10 @@ class FiltersViewController: UITableViewController, UISearchBarDelegate {
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell()
-        cell.backgroundColor = ColorUtil.foregroundColor
+        cell.backgroundColor = ColorUtil.theme.foregroundColor
         cell.accessoryType = .disclosureIndicator
-        cell.backgroundColor = ColorUtil.foregroundColor
-        cell.textLabel?.textColor = ColorUtil.fontColor
+        cell.backgroundColor = ColorUtil.theme.foregroundColor
+        cell.textLabel?.textColor = ColorUtil.theme.fontColor
 
         switch indexPath.section {
         case 0:
@@ -279,22 +281,8 @@ class FiltersViewController: UITableViewController, UISearchBarDelegate {
      
      }*/
     
-    override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        let label: UILabel = UILabel()
-        label.textColor = ColorUtil.baseAccent
-        label.font = FontGenerator.boldFontOfSize(size: 20, submission: true)
-        let toReturn = label.withPadding(padding: UIEdgeInsets.init(top: 0, left: 12, bottom: 0, right: 0))
-        toReturn.backgroundColor = ColorUtil.backgroundColor
-        switch section {
-        case 0: label.text = "Domain filters"
-        case 1: label.text =  "Selftext filters"
-        case 2: label.text = "Title filters"
-        case 3: label.text = "Profile filters"
-        case 4: label.text = "Subreddit filters"
-        case 5: label.text = "Flair filters"
-        default: label.text  = ""
-        }
-        return toReturn
+    override func tableView(_ tableView: UITableView, heightForFooterInSection section: Int) -> CGFloat {
+        return 70
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {

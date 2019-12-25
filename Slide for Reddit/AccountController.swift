@@ -17,13 +17,18 @@ class AccountController {
 
     static func reload() {
         AccountController.names.removeAll(keepingCapacity: false)
-        AccountController.names += OAuth2TokenRepository.savedNames
         AccountController.names += LocalKeystore.savedNames
         print(AccountController.names)
     }
 
     static func switchAccount(name: String) {
         changed = true
+        ActionStates.upVotedFullnames.removeAll()
+        ActionStates.downVotedFullnames.removeAll()
+        ActionStates.savedFullnames.removeAll()
+        ActionStates.unvotedFullnames.removeAll()
+        ActionStates.unSavedFullnames.removeAll()
+        
         UserDefaults.standard.set(name, forKey: "name")
         UserDefaults.standard.synchronize()
         initialize()
@@ -34,12 +39,14 @@ class AccountController {
     static var changed = false
     static var modSubs: [String] = []
 
+    static var current: Account?
+
     static func delete(name: String) {
         do {
             try LocalKeystore.removeToken(of: name)
             try OAuth2TokenRepository.removeToken(of: name)
 
-            names.remove(at: names.index(of: name)!)
+            names.remove(at: names.firstIndex(of: name)!)
             UserDefaults.standard.set(name, forKey: "GUEST")
             UserDefaults.standard.synchronize()
 
@@ -52,16 +59,20 @@ class AccountController {
 
     static func initialize() {
         names.removeAll(keepingCapacity: false)
-        names += OAuth2TokenRepository.savedNames
         names += LocalKeystore.savedNames
+        
+        names = names.unique()
+
         NotificationCenter.default.addObserver(self, selector: #selector(AccountController.didSaveToken(_:)), name: OAuth2TokenRepositoryDidSaveTokenName, object: nil)
         if let name = UserDefaults.standard.string(forKey: "name") {
             print("Name is \(name)")
             if name == "GUEST" {
                 AccountController.isLoggedIn = false
                 AccountController.isGold = false
+                AccountController.current = nil
                 AccountController.currentName = name
                 (UIApplication.shared.delegate as! AppDelegate).session = Session()
+                NotificationCenter.default.post(name: .onAccountChangedToGuest, object: nil)
             } else {
                 do {
                     AccountController.isLoggedIn = true
@@ -81,6 +92,10 @@ class AccountController {
                         case .failure(let error):
                             print(error)
                         case .success(let account):
+                            AccountController.current = account
+                            NotificationCenter.default.post(name: .onAccountChanged, object: nil, userInfo: [
+                                "Account": account,
+                                ])
                             if AccountController.currentName == name {
                                 AccountController.isGold = account.isGold
                             }
@@ -105,16 +120,20 @@ class AccountController {
 
     public static var names: [String] = []
 
-    static func addAccount(context: UIViewController) {
-        try! AccountController.challengeWithAllScopes(context)
+    static func addAccount(context: UIViewController, register: Bool) {
+        try! AccountController.challengeWithAllScopes(context, register: register)
+    }
+
+    public static var canShowNSFW: Bool {
+        return AccountController.isLoggedIn && SettingValues.nsfwEnabled
     }
     
     /**
      Open OAuth2 page to try to authorize with all scopes in Safari.app.
      */
-    public static func challengeWithAllScopes(_ context: UIViewController) throws {
+    public static func challengeWithAllScopes(_ context: UIViewController, register: Bool) throws {
         do {
-            try self.challengeWithScopes(["identity", "edit", "flair", "history", "modconfig", "modflair", "modlog", "modposts", "modwiki", "mysubreddits", "privatemessages", "read", "report", "save", "submit", "subscribe", "vote", "wikiedit", "wikiread"], context)
+            try self.challengeWithScopes(["identity", "edit", "flair", "history", "modconfig", "modflair", "modlog", "modposts", "modwiki", "mysubreddits", "privatemessages", "read", "report", "save", "submit", "subscribe", "vote", "wikiedit", "wikiread"], context, register: register)
         } catch {
             throw error
         }
@@ -125,7 +144,7 @@ class AccountController {
      
      - parameter scopes: Scope you want to get authorizing. You can check all scopes at https://www.reddit.com/dev/api/oauth.
      */
-    public static func challengeWithScopes(_ scopes: [String], _ context: UIViewController) throws {
+    public static func challengeWithScopes(_ scopes: [String], _ context: UIViewController, register: Bool) throws {
         let commaSeparatedScopeString = scopes.joined(separator: ",")
         
         let length = 64
@@ -139,6 +158,7 @@ class AccountController {
                 else { throw ReddiftError.canNotCreateURLRequestForOAuth2Page as NSError }
             let vc: UIViewController
             let web = WebsiteViewController(url: authorizationURL, subreddit: "")
+            web.register = register
             vc = web
             VCPresenter.showVC(viewController: vc, popupIfPossible: false, parentNavigationController: nil, parentViewController: context)
         } else {
@@ -193,7 +213,7 @@ class AccountController {
                     print(result.error!.localizedDescription)
                     completion(toReturn)
                 case .success(let listing):
-                    toReturn += listing.children.flatMap({ $0 as? Subreddit })
+                    toReturn += listing.children.compactMap({ $0 as? Subreddit })
                     paginator = listing.paginator
                     if paginator.hasMore() {
                         getSubscriptionsUntilCompletion(session: session, p: paginator, tR: toReturn, completion: completion)
@@ -214,4 +234,17 @@ class AccountController {
         getSubscriptionsUntilCompletion(session: session, p: paginator, tR: toReturn, completion: completion)
     }
 
+}
+extension Sequence where Iterator.Element: Hashable {
+    func unique() -> [Iterator.Element] {
+        var seen: [Iterator.Element: Bool] = [:]
+        return self.filter { seen.updateValue(true, forKey: $0) == nil }
+    }
+}
+
+extension Notification.Name {
+    static let onAccountChangedToGuest = Notification.Name("on-account-changed-to-guest")
+    static let onAccountChanged = Notification.Name("on-account-changed")
+    static let onAccountMailCountChanged = Notification.Name("on-account-mail-count-changed")
+    static let accountRefreshRequested = Notification.Name("account-refresh-requested")
 }

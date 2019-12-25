@@ -9,14 +9,16 @@
 import Anchorage
 import AudioToolbox
 import AVKit
+import Photos
 import MaterialComponents
 import reddift
 import RLBAlertsPickers
 import SafariServices
+import SDCAlertView
+import SDWebImage
 import Then
-import TTTAttributedLabel
 import UIKit
-import XLActionController
+import YYText
 
 protocol LinkCellViewDelegate: class {
     func upvote(_ cell: LinkCellView)
@@ -35,45 +37,110 @@ enum CurrentType {
     case thumb, banner, text, autoplay, none
 }
 
-class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TTTAttributedLabelDelegate, UIGestureRecognizerDelegate {
+class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, UIGestureRecognizerDelegate, TextDisplayStackViewDelegate {
     
-    func upvote(sender: UITapGestureRecognizer? = nil) {
-        //todo maybe? contentView.blink(color: GMColor.orange500Color())
+    func linkTapped(url: URL, text: String) {
+        if !full {
+            return
+        }
+        linkClicked = true
+        if !text.isEmpty {
+            self.parentViewController?.showSpoiler(text)
+        } else {
+            self.parentViewController?.doShow(url: url, heroView: nil, heroVC: nil)
+        }
+    }
+
+    func linkLongTapped(url: URL) {
+        longBlocking = true
+        
+        let alertController = DragDownAlertMenu(title: "Link options", subtitle: url.absoluteString, icon: url.absoluteString)
+        
+        alertController.addAction(title: "Share URL", icon: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")!.menuIcon()) {
+            let shareItems: Array = [url]
+            let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+            activityViewController.popoverPresentationController?.sourceView = self.contentView
+            self.parentViewController?.present(activityViewController, animated: true, completion: nil)
+        }
+        
+        alertController.addAction(title: "Copy URL", icon: UIImage(sfString: SFSymbol.docOnDocFill, overrideString: "copy")!.menuIcon()) {
+            UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
+            BannerUtil.makeBanner(text: "URL Copied", seconds: 5, context: self.parentViewController)
+        }
+
+        alertController.addAction(title: "Open in default app", icon: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) {
+            if #available(iOS 10.0, *) {
+                UIApplication.shared.open(url, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
+            } else {
+                UIApplication.shared.openURL(url)
+            }
+        }
+
+        let open = OpenInChromeController.init()
+        if open.isChromeInstalled() {
+            alertController.addAction(title: "Open in Chrome", icon: UIImage(named: "world")!.menuIcon()) {
+                _ = open.openInChrome(url, callbackURL: nil, createNewTab: true)
+            }
+        }
+        
+        if #available(iOS 10.0, *) {
+            HapticUtility.hapticActionStrong()
+        } else if SettingValues.hapticFeedback {
+            AudioServicesPlaySystemSound(1519)
+        }
+        
+        if parentViewController != nil {
+            alertController.show(parentViewController!)
+        }
+    }
+    
+    @objc func upvote(sender: UITapGestureRecognizer? = nil) {
+       // TODO: - maybe? contentView.blink(color: GMColor.orange500Color())
         del?.upvote(self)
     }
     
-    func hide(sender: UITapGestureRecognizer? = nil) {
+    @objc func hide(sender: UITapGestureRecognizer? = nil) {
         del?.hide(self)
     }
     
-    func reply(sender: UITapGestureRecognizer? = nil) {
+    @objc func reply(sender: UITapGestureRecognizer? = nil) {
         del?.reply(self)
     }
     
-    func downvote(sender: UITapGestureRecognizer? = nil) {
+    @objc func share(sender: UITapGestureRecognizer? = nil) {
+        let url = self.link!.url ?? URL(string: self.link!.permalink)
+        
+        let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: self is BannerLinkCellView ? [bannerImage?.image] : [url], applicationActivities: nil)
+        activityViewController.popoverPresentationController?.sourceView = self.contentView
+        
+        activityViewController.showWindowless()
+    }
+
+    @objc func downvote(sender: UITapGestureRecognizer? = nil) {
         del?.downvote(self)
     }
     
-    func more(sender: UITapGestureRecognizer? = nil) {
+    @objc func more(sender: UITapGestureRecognizer? = nil) {
         del?.more(self)
     }
     
-    func mod(sender: UITapGestureRecognizer? = nil) {
+    @objc func mod(sender: UITapGestureRecognizer? = nil) {
         del?.mod(self)
     }
     
-    func save(sender: UITapGestureRecognizer? = nil) {
+    @objc func save(sender: UITapGestureRecognizer? = nil) {
         del?.save(self)
     }
 
-    func readLater(sender: UITapGestureRecognizer? = nil) {
+    @objc func readLater(sender: UITapGestureRecognizer? = nil) {
         del?.readLater(self)
     }
     
     var bannerImage: UIImageView!
     var thumbImageContainer: UIView!
     var thumbImage: UIImageView!
-    var title: TTTAttributedLabel!
+    var thumbText: UILabel!
+    var title: YYLabel!
     var score: UILabel!
     var box: UIStackView!
     var sideButtons: UIStackView!
@@ -82,8 +149,10 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     var info: UILabel!
     var textView: TextDisplayStackView!
     var save: UIButton!
+    var menu: UIButton!
     var upvote: UIButton!
     var hide: UIButton!
+    var share: UIButton!
     var edit: UIButton!
     var reply: UIButton!
     var downvote: UIButton!
@@ -99,6 +168,8 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     var sideDownvote: UIButton!
     var sideScore: UILabel!
     
+    var infoBox: UIStackView!
+    
     var videoView: VideoView!
     var topVideoView: UIView!
     var progressDot: UIView!
@@ -106,8 +177,6 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     var updater: CADisplayLink?
     var timeView: UILabel!
     var playView: UIImageView!
-    
-    var avPlayerItem: AVPlayerItem?
     
     var loadedImage: URL?
     var lq = false
@@ -133,42 +202,22 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     var constraintsForContent: [NSLayoutConstraint] = []
     var bannerHeightConstraint: [NSLayoutConstraint] = []
     
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        
-        configureView()
-        configureLayout()
+    var videoID: String = ""
+
+    var accessibilityView: UIView {
+        return full ? contentView : self
     }
     
-    func attributedLabel(_ label: TTTAttributedLabel!, didLongPressLinkWith url: URL!, at point: CGPoint) {
-        if parentViewController != nil {
-            let alertController: BottomSheetActionController = BottomSheetActionController()
-            alertController.headerData = url.host
-            
-            alertController.addAction(Action(ActionData(title: "Copy URL", image: UIImage(named: "copy")!.menuIcon()), style: .default, handler: { _ in
-                UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
-            }))
-            alertController.addAction(Action(ActionData(title: "Open externally", image: UIImage(named: "nav")!.menuIcon()), style: .default, handler: { _ in
-                if #available(iOS 10.0, *) {
-                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                } else {
-                    UIApplication.shared.openURL(url)
-                }
-            }))
-            let open = OpenInChromeController.init()
-            if open.isChromeInstalled() {
-                alertController.addAction(Action(ActionData(title: "Open in Chrome", image: UIImage(named: "world")!.menuIcon()), style: .default, handler: { _ in
-                    _ = open.openInChrome(url, callbackURL: nil, createNewTab: true)
-                }))
-            }
-            parentViewController?.present(alertController, animated: true, completion: nil)
-        }
+    override init(frame: CGRect) {
+        super.init(frame: frame)
     }
     
     func configureView() {
-        
-        self.accessibilityIdentifier = "Link Cell View"
-        self.contentView.accessibilityIdentifier = "Link Cell Content View"
+
+        accessibilityView.accessibilityIdentifier = "Link Cell View"
+        accessibilityView.accessibilityHint = "Opens the post view for this post"
+        accessibilityView.isAccessibilityElement = true
+        accessibilityView.accessibilityTraits = UIAccessibilityTraits.link
         
         self.thumbImageContainer = UIView().then {
             $0.accessibilityIdentifier = "Thumbnail Image Container"
@@ -190,8 +239,32 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.contentMode = .scaleAspectFill
             $0.clipsToBounds = true
         }
+        self.thumbText = UILabel().then {
+            $0.accessibilityIdentifier = "Link Type Label"
+            if !ColorUtil.shouldBeNight() {
+                $0.backgroundColor = ColorUtil.theme.fontColor.withAlphaComponent(0.5)
+                $0.textColor = ColorUtil.theme.foregroundColor
+            } else {
+                $0.backgroundColor = ColorUtil.theme.foregroundColor.withAlphaComponent(0.5)
+                $0.textColor = ColorUtil.theme.fontColor
+            }
+            $0.textAlignment = .center
+            $0.adjustsFontSizeToFitWidth = true
+            $0.isHidden = false
+            
+            $0.font = UIFont.boldSystemFont(ofSize: 10)
+            if #available(iOS 11.0, *) {
+                $0.accessibilityIgnoresInvertColors = true
+            }
+            $0.clipsToBounds = true
+        }
         self.thumbImageContainer.addSubview(self.thumbImage)
+        self.thumbImage.addSubview(self.thumbText)
+        
         self.thumbImage.edgeAnchors == self.thumbImageContainer.edgeAnchors
+        self.thumbText.horizontalAnchors == self.thumbImage.horizontalAnchors - 2
+        self.thumbText.heightAnchor == 20
+        self.thumbText.bottomAnchor == self.thumbImage.bottomAnchor + 2
         
         self.bannerImage = UIImageView().then {
             $0.accessibilityIdentifier = "Banner Image"
@@ -206,13 +279,32 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.backgroundColor = UIColor.white
         }
         
-        self.title = TTTAttributedLabel(frame: CGRect(x: 75, y: 8, width: 0, height: 0)).then {
-            $0.accessibilityIdentifier = "Title"
+        self.title = YYLabel(frame: CGRect(x: 75, y: 8, width: 0, height: 0)).then {
+            $0.accessibilityIdentifier = "Post Title"
+            $0.isOpaque = false
             $0.numberOfLines = 0
             $0.lineBreakMode = .byWordWrapping
-            $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
-            $0.verticalAlignment = .top
+            $0.setContentCompressionResistancePriority(UILayoutPriority.required, for: .vertical)
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
+            $0.textContainerInset = UIEdgeInsets(top: 5, left: 0, bottom: 0, right: 0)
+            $0.highlightTapAction = { (containerView: UIView, text: NSAttributedString, range: NSRange, rect: CGRect) in
+                text.enumerateAttributes(in: range, options: .longestEffectiveRangeNotRequired, using: { (attrs, range, _) in
+                    for attr in attrs {
+                        if attr.value is YYTextHighlight {
+                            if let url = (attr.value as! YYTextHighlight).userInfo?["url"] as? URL {
+                                self.linkTapped(url: url, text: text.attributedSubstring(from: range).string)
+                                return
+                            }
+                        }
+                    }
+                })
+            }
+            $0.isUserInteractionEnabled = true
+        }
+        
+        self.infoBox = UIStackView().then {
+            $0.accessibilityIdentifier = "Extra Info Stack Horizontal"
+            $0.axis = .vertical
         }
         
         self.hide = UIButton(type: .custom).then {
@@ -220,7 +312,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.setImage(LinkCellImageCache.hide, for: .normal)
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.reply = UIButton(type: .custom).then {
@@ -228,7 +320,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.setImage(LinkCellImageCache.reply, for: .normal)
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.edit = UIButton(type: .custom).then {
@@ -236,42 +328,49 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.setImage(LinkCellImageCache.edit, for: .normal)
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.save = UIButton(type: .custom).then {
             $0.accessibilityIdentifier = "Save Button"
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
+        }
+        
+        self.menu = UIButton(type: .custom).then {
+            $0.accessibilityIdentifier = "Post menu"
+            $0.contentMode = .center
+            $0.isOpaque = false
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.upvote = UIButton(type: .custom).then {
             $0.accessibilityIdentifier = "Upvote Button"
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.downvote = UIButton(type: .custom).then {
             $0.accessibilityIdentifier = "Downvote Button"
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.sideUpvote = UIButton(type: .custom).then {
             $0.accessibilityIdentifier = "Upvote Button"
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.sideDownvote = UIButton(type: .custom).then {
             $0.accessibilityIdentifier = "Downvote Button"
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.mod = UIButton(type: .custom).then {
@@ -279,7 +378,15 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.setImage(LinkCellImageCache.mod, for: .normal)
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
+        }
+
+        self.share = UIButton(type: .custom).then {
+            $0.accessibilityIdentifier = "Share Button"
+            $0.contentMode = .center
+            $0.setImage(LinkCellImageCache.share, for: .normal)
+            $0.isOpaque = false
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
 
         self.readLater = UIButton(type: .custom).then {
@@ -287,7 +394,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.setImage(LinkCellImageCache.readLater, for: .normal)
             $0.contentMode = .center
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.commenticon = UIImageView(frame: CGRect(x: 0, y: 0, width: 10, height: 10)).then {
@@ -295,7 +402,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.image = LinkCellImageCache.commentsIcon
             $0.contentMode = .scaleAspectFit
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.submissionicon = UIImageView(frame: CGRect(x: 0, y: 0, width: 10, height: 10)).then {
@@ -303,32 +410,32 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             $0.image = LinkCellImageCache.votesIcon
             $0.contentMode = .scaleAspectFit
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.score = UILabel().then {
             $0.accessibilityIdentifier = "Score Label"
             $0.numberOfLines = 1
-            $0.textColor = ColorUtil.fontColor
+            $0.textColor = ColorUtil.theme.fontColor
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.sideScore = UILabel().then {
             $0.accessibilityIdentifier = "Score Label vertical"
             $0.numberOfLines = 1
             $0.textAlignment = .center
-            $0.textColor = ColorUtil.fontColor
+            $0.textColor = ColorUtil.theme.fontColor
             $0.isOpaque = false
         }
         
         self.comments = UILabel().then {
             $0.accessibilityIdentifier = "Comment Count Label"
             $0.numberOfLines = 1
-            $0.font = FontGenerator.fontOfSize(size: 12, submission: true)
-            $0.textColor = ColorUtil.fontColor
+            $0.font = FontGenerator.boldFontOfSize(size: 12, submission: true)
+            $0.textColor = ColorUtil.theme.fontColor
             $0.isOpaque = false
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
         }
         
         self.taglabel = UILabel().then {
@@ -369,12 +476,13 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             contentView.addSubviews(bannerImage, thumbImageContainer, title, infoContainer, tagbody)
         }
         
-        if self is AutoplayBannerLinkCellView || self is FullLinkCellView {
+        if self is AutoplayBannerLinkCellView || self is FullLinkCellView || self is GalleryLinkCellView {
             self.videoView = VideoView().then {
                 $0.accessibilityIdentifier = "Video view"
                 if !SettingValues.flatMode {
                     $0.layer.cornerRadius = 15
                 }
+                $0.tag = 42
                 $0.backgroundColor = .clear
                 $0.layer.masksToBounds = true
             }
@@ -385,11 +493,16 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             progressDot.backgroundColor = UIColor.black.withAlphaComponent(0.5)
             sound = UIButton(type: .custom)
             sound.isUserInteractionEnabled = true
-            sound.setImage(UIImage(named: "mute")?.getCopy(withSize: CGSize.square(size: 20), withColor: GMColor.red400Color()), for: .normal)
-            
+            if SettingValues.muteInlineVideos {
+                sound.setImage(UIImage(sfString: SFSymbol.volumeSlashFill, overrideString: "mute")?.getCopy(withSize: CGSize.square(size: 20), withColor: GMColor.red400Color()), for: .normal)
+                sound.isHidden = true
+            } else {
+                sound.isHidden = true
+            }
+
             timeView = UILabel().then {
                 $0.textColor = .white
-                $0.font = UIFont.monospacedDigitSystemFont(ofSize: 11, weight: 5)
+                $0.font = UIFont.monospacedDigitSystemFont(ofSize: 11, weight: UIFont.Weight(rawValue: 5))
                 $0.textAlignment = .center
                 $0.alpha = 0.6
                 $0.layer.cornerRadius = 5
@@ -401,11 +514,11 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             topVideoView.addSubviews(progressDot, sound, timeView)
             
             contentView.addSubviews(videoView, topVideoView)
-            contentView.bringSubview(toFront: videoView)
-            contentView.bringSubview(toFront: topVideoView)
+            contentView.bringSubviewToFront(videoView)
+            contentView.bringSubviewToFront(topVideoView)
             
             playView = UIImageView().then {
-                    $0.image = UIImage(named: "play")?.getCopy(withSize: CGSize.square(size: 60), withColor: .white)
+                    $0.image = UIImage(sfString: SFSymbol.playFill, overrideString: "play")?.getCopy(withSize: CGSize.square(size: 30), withColor: .white)
                     $0.contentMode = .center
                     $0.isHidden = true
             }
@@ -414,7 +527,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         
         contentView.layer.masksToBounds = true
         
-        if SettingValues.actionBarMode == .FULL || full {
+        if SettingValues.actionBarMode.isFull() || full {
             self.box = UIStackView().then {
                 $0.accessibilityIdentifier = "Count Info Stack Horizontal"
                 $0.axis = .horizontal
@@ -431,11 +544,19 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 $0.distribution = .fill
                 $0.spacing = 16
             }
-            buttons.addArrangedSubviews(edit, reply, readLater, save, hide, upvote, downvote, mod)
+            if SettingValues.actionBarMode == .FULL_LEFT {
+                buttons.addArrangedSubviews(menu, share, upvote, downvote, edit, reply, readLater, save, hide, mod)
+            } else {
+                buttons.addArrangedSubviews(edit, reply, readLater, save, hide, upvote, downvote, mod, share, menu)
+            }
             self.contentView.addSubview(buttons)
         } else {
             buttons = UIStackView()
             box = UIStackView()
+        }
+        
+        if full {
+            self.contentView.addSubview(infoBox)
         }
         
         if SettingValues.actionBarMode.isSide() && !full {
@@ -466,12 +587,17 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             readLater.addTarget(self, action: #selector(readLater(sender:)), for: .touchUpInside)
             edit.addTarget(self, action: #selector(LinkCellView.edit(sender:)), for: .touchUpInside)
             hide.addTarget(self, action: #selector(LinkCellView.hide(sender:)), for: .touchUpInside)
+            share.addTarget(self, action: #selector(LinkCellView.share(sender:)), for: .touchUpInside)
             sideUpvote.addTarget(self, action: #selector(LinkCellView.upvote(sender:)), for: .touchUpInside)
-            
+            menu.addTarget(self, action: #selector(LinkCellView.more(sender:)), for: .touchUpInside)
+
             addTouch(view: thumbImage, action: #selector(LinkCellView.openLink(sender:)))
-            let tap = UITapGestureRecognizer(target: self, action: #selector(LinkCellView.openLink(sender:)))
-            tap.delegate = self
-            bannerImage.addGestureRecognizer(tap)
+            
+            if !SettingValues.disableBanner || full {
+                let tap = UITapGestureRecognizer(target: self, action: #selector(LinkCellView.openLink(sender:)))
+                tap.delegate = self
+                bannerImage.addGestureRecognizer(tap)
+            }
             
             let tap2 = UITapGestureRecognizer(target: self, action: #selector(LinkCellView.openLink(sender:)))
             tap2.delegate = self
@@ -494,26 +620,57 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             if !full {
                 let comment = UITapGestureRecognizer(target: self, action: #selector(LinkCellView.openComment(sender:)))
                 comment.delegate = self
+                comment.cancelsTouchesInView = false
                 if dtap != nil {
                     comment.require(toFail: dtap!)
                 }
                 self.addGestureRecognizer(comment)
             }
+            
+            if #available(iOS 13, *) {
+                let interaction = UIContextMenuInteraction(delegate: self)
+                self.contentView.addInteraction(interaction)
+            }
+
             if longPress == nil {
                 longPress = UILongPressGestureRecognizer(target: self, action: #selector(LinkCellView.handleLongPress(_:)))
-                longPress?.minimumPressDuration = 0.25
+                longPress?.minimumPressDuration = 0.36
                 longPress?.delegate = self
                 if full {
+                    longPress?.cancelsTouchesInView = false
                     textView.parentLongPress = longPress!
                 }
+                
+                let long2 = UILongPressGestureRecognizer(target: self, action: #selector(LinkCellView.linkMenu(sender:)))
+                long2.delegate = self
+                thumbImageContainer.addGestureRecognizer(long2)
+
+                let long3 = UILongPressGestureRecognizer(target: self, action: #selector(LinkCellView.linkMenu(sender:)))
+                long3.delegate = self
+                topVideoView?.addGestureRecognizer(long3)
+
+                let long4 = UILongPressGestureRecognizer(target: self, action: #selector(LinkCellView.linkMenu(sender:)))
+                long4.delegate = self
+                infoContainer.addGestureRecognizer(long4)
+
+                if #available(iOS 13, *) {} else {
+                    let long = UILongPressGestureRecognizer(target: self, action: #selector(LinkCellView.linkMenu(sender:)))
+                    long.delegate = self
+                    bannerImage.addGestureRecognizer(long)
+                    longPress!.require(toFail: long)
+                }
+
+                longPress!.require(toFail: long2)
+                longPress!.require(toFail: long3)
+                longPress!.require(toFail: long4)
                 self.contentView.addGestureRecognizer(longPress!)
             }
             addTouch = true
         }
         
         sideButtons.isHidden = !SettingValues.actionBarMode.isSide() || full
-        buttons.isHidden = SettingValues.actionBarMode != .FULL && !full
-        buttons.isUserInteractionEnabled = SettingValues.actionBarMode != .FULL || full
+        buttons.isHidden = !SettingValues.actionBarMode.isFull() && !full
+        buttons.isUserInteractionEnabled = !SettingValues.actionBarMode.isFull() || full
     }
     
     var progressBar: ProgressBarView!
@@ -523,7 +680,56 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     var dragCancelled = false
     var direction = 0
     
-    func handlePan(_ sender: UIPanGestureRecognizer) {
+    @objc func linkMenu(sender: AnyObject) {
+        if parentViewController != nil && parentViewController?.presentedViewController == nil {
+            let url = self.link!.url!
+            let alertController = DragDownAlertMenu(title: ContentType.isImage(uri: url) && !bannerImage.isHidden ? "Image options" : "Submission link options", subtitle: url.absoluteString, icon: url.absoluteString)
+            
+            alertController.addAction(title: "Share\(ContentType.isImage(uri: url) && !bannerImage.isHidden ? " image" : "") URL", icon: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")!.menuIcon()) {
+                let shareItems: Array = [url]
+                let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+                activityViewController.popoverPresentationController?.sourceView = self.contentView
+                activityViewController.showWindowless()
+            }
+            
+            if ContentType.isImage(uri: url) && !bannerImage.isHidden {
+                let imageToShare = [bannerImage.image!]
+                let activityViewController = UIActivityViewController(activityItems: imageToShare, applicationActivities: nil)
+                activityViewController.popoverPresentationController?.sourceView = self.contentView
+                alertController.addAction(title: "Share image", icon: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "image")!.menuIcon(), action: {
+                    activityViewController.showWindowless()
+                })
+            }
+
+            alertController.addAction(title: "Copy URL", icon: UIImage(sfString: SFSymbol.docOnDocFill, overrideString: "copy")!.menuIcon()) {
+                UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
+                BannerUtil.makeBanner(text: "URL Copied", seconds: 5, context: self.parentViewController)
+            }
+
+            alertController.addAction(title: "Open in default app", icon: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) {
+                if #available(iOS 10.0, *) {
+                    UIApplication.shared.open(url, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
+                } else {
+                    UIApplication.shared.openURL(url)
+                }
+            }
+
+            let open = OpenInChromeController.init()
+            if open.isChromeInstalled() {
+                alertController.addAction(title: "Open in Chrome", icon: UIImage(named: "world")!.menuIcon()) {
+                    _ = open.openInChrome(url, callbackURL: nil, createNewTab: true)
+                }
+            }
+            if #available(iOS 10.0, *) {
+                HapticUtility.hapticActionStrong()
+            } else if SettingValues.hapticFeedback {
+                AudioServicesPlaySystemSound(1519)
+            }
+            alertController.show(parentViewController!)
+        }
+    }
+    
+    @objc func handlePan(_ sender: UIPanGestureRecognizer) {
         if sender.state == .began || progressBar == nil {
             dragCancelled = false
             direction = 0
@@ -548,7 +754,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             return
         }
         let xVelocity = sender.velocity(in: contentView).x
-        if sender.state != .ended && sender.state != .began {
+        if sender.state != .ended && sender.state != .began && sender.state != .cancelled {
             guard previousProgress != 1 else { return }
             let posx = sender.location(in: contentView).x
             
@@ -572,7 +778,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 return
             } else if progressBar.superview == nil {
                 contentView.addSubviews(typeImage, progressBar)
-                contentView.bringSubview(toFront: typeImage)
+                contentView.bringSubviewToFront(typeImage)
                 typeImage.centerAnchors == self.contentView.centerAnchors
                 typeImage.heightAnchor == 45
                 typeImage.widthAnchor == 45
@@ -619,7 +825,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             })
         }
     
-        if dragCancelled {
+        if dragCancelled || sender.state == .cancelled {
             if self.progressBar.superview == nil {
                 return
             }
@@ -641,7 +847,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         }
         let startAngle = -CGFloat.pi / 2
         
-        let center = CGPoint (x: 20 / 2, y: 20 / 2)
+        let center = CGPoint(x: 20 / 2, y: 20 / 2)
         let radius = CGFloat(20 / 2)
         let arc = CGFloat.pi * CGFloat(2) * percent
         
@@ -668,28 +874,22 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         
         if timeView.isHidden {
             timeView.isHidden = false
+            progressDot.isHidden = false
         }
         timeView.text = "\(total)  "
         
         if oldPercent == -1 || (buffering && progressDot.layer.animation(forKey: "opacity") == nil) {
-            let pulseAnimation = CABasicAnimation(keyPath: "transform.scale")
-            pulseAnimation.duration = 0.5
-            pulseAnimation.toValue = 1.2
-            pulseAnimation.fromValue = 0.2
-            pulseAnimation.timingFunction = CAMediaTimingFunction(name: kCAMediaTimingFunctionEaseInEaseOut)
-            pulseAnimation.autoreverses = false
-            pulseAnimation.repeatCount = Float.greatestFiniteMagnitude
-            
             let fadeAnimation = CABasicAnimation(keyPath: "opacity")
             fadeAnimation.duration = 0.5
             fadeAnimation.toValue = 0
-            fadeAnimation.fromValue = 2.5
-            fadeAnimation.timingFunction = CAMediaTimingFunction(name: kCAMediaTimingFunctionEaseInEaseOut)
+            fadeAnimation.fromValue = 0
+            fadeAnimation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut)
             fadeAnimation.autoreverses = false
             fadeAnimation.repeatCount = Float.greatestFiniteMagnitude
             
-            progressDot.layer.add(pulseAnimation, forKey: "scale")
             progressDot.layer.add(fadeAnimation, forKey: "fade")
+
+            timeView.isHidden = true
         } else if !buffering {
             timeView.isHidden = false
         }
@@ -751,7 +951,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             var rightmargin = 0
             var radius = 0
             
-            if (SettingValues.postViewMode == .CARD || SettingValues.postViewMode == .CENTER) && !full {
+            if (SettingValues.postViewMode == .CARD || SettingValues.postViewMode == .CENTER) && !full && !(self is GalleryLinkCellView) {
                 topmargin = 5
                 bottommargin = 5
                 leftmargin = 5
@@ -766,16 +966,29 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 self.contentView.clipsToBounds = false
             }
             
-            if SettingValues.actionBarMode == .FULL || full {
-                box.leftAnchor == contentView.leftAnchor + ctwelve
-                box.bottomAnchor == contentView.bottomAnchor - ceight
-                box.centerYAnchor == buttons.centerYAnchor // Align vertically with buttons
-                box.setContentCompressionResistancePriority(UILayoutPriorityRequired, for: .vertical)
-                box.heightAnchor == CGFloat(24)
-                buttons.heightAnchor == CGFloat(24)
-                buttons.rightAnchor == contentView.rightAnchor - ctwelve
-                buttons.bottomAnchor == contentView.bottomAnchor - ceight
-                buttons.setContentCompressionResistancePriority(UILayoutPriorityRequired, for: .vertical)
+            if SettingValues.actionBarMode.isFull() || full {
+                
+                if SettingValues.actionBarMode == .FULL_LEFT {
+                    box.rightAnchor == contentView.rightAnchor - ctwelve
+                    box.bottomAnchor == contentView.bottomAnchor - ceight
+                    box.centerYAnchor == buttons.centerYAnchor // Align vertically with buttons
+                    box.setContentCompressionResistancePriority(UILayoutPriority.required, for: .vertical)
+                    box.heightAnchor == CGFloat(24)
+                    buttons.heightAnchor == CGFloat(24)
+                    buttons.leftAnchor == contentView.leftAnchor + ctwelve
+                    buttons.bottomAnchor == contentView.bottomAnchor - ceight
+                } else {
+                    box.leftAnchor == contentView.leftAnchor + ctwelve
+                    box.bottomAnchor == contentView.bottomAnchor - ceight
+                    box.centerYAnchor == buttons.centerYAnchor // Align vertically with buttons
+                    box.setContentCompressionResistancePriority(UILayoutPriority.required, for: .vertical)
+                    box.heightAnchor == CGFloat(24)
+                    buttons.heightAnchor == CGFloat(24)
+                    buttons.rightAnchor == contentView.rightAnchor - ctwelve
+                    buttons.bottomAnchor == contentView.bottomAnchor - ceight
+
+                }
+            buttons.setContentCompressionResistancePriority(UILayoutPriority.required, for: .vertical)
             } else if SettingValues.actionBarMode.isSide() {
                 if SettingValues.actionBarMode == .SIDE_RIGHT {
                     sideButtons.rightAnchor == contentView.rightAnchor - ceight
@@ -786,7 +999,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 sideButtons.widthAnchor == CGFloat(40)
             }
             
-            title.setContentCompressionResistancePriority(UILayoutPriorityRequired, for: .vertical)
+            title.setContentCompressionResistancePriority(UILayoutPriority.required, for: .vertical)
         }
         
         if !full {
@@ -796,16 +1009,13 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     }
     
     internal func layoutForType() {
-        
         thumbImageContainer.isHidden = true
         bannerImage.isHidden = true
         
         // Remove all constraints previously applied by this method
         NSLayoutConstraint.deactivate(constraintsForType)
         constraintsForType = []
-        
         // Deriving classes will populate constraintsForType in the override for this method.
-        
     }
     
     internal func layoutForContent() {
@@ -831,6 +1041,8 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         }
 
         var testedViews: [UIView] = [
+            menu,
+            share,
             upvote,
             downvote,
             mod,
@@ -852,30 +1064,62 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     }
     
     deinit {
-        if videoView != nil {
-            videoView?.player?.currentItem?.asset.cancelLoading()
-            videoView?.player?.currentItem?.cancelPendingSeeks()
-            updater?.invalidate()
+        endVideos()
+    }
+    
+    func endVideos() {
+        if !(self is AutoplayBannerLinkCellView || self is FullLinkCellView || self is GalleryLinkCellView) {
+            return
+        }
+        videoPreloaded = false
+        isLoadingVideo = false
+        videoCompletion = nil
+        if videoView != nil && (AnyModalViewController.linkID.isEmpty && (!full || videoLoaded) || full) && ContentType.displayVideo(t: type) && type != .VIDEO {
+            let wasPlayingAudio = (self.videoView.player?.currentItem?.tracks.count ?? 1) > 1 && !self.videoView.player!.isMuted
+            videoView?.player?.pause()
+            
+            self.videoView!.player?.replaceCurrentItem(with: nil)
+            self.videoView!.player = nil
+
+            self.updater?.invalidate()
+            self.updater = nil
+            self.bannerImage.isHidden = false
+            self.playView.isHidden = self is GalleryLinkCellView || SettingValues.autoPlayMode != .TAP || full
+            videoView?.isHidden = false
+            topVideoView?.isHidden = false
+            sound.isHidden = true
+            self.updateProgress(-1, "", buffering: false)
+            self.contentView.bringSubviewToFront(topVideoView!)
+            self.progressDot.isHidden = true
+            self.timeView.isHidden = true
+            if wasPlayingAudio {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                     if (self.videoView?.player?.currentItem?.tracks.count ?? 1) > 1 {
+                         do {
+                            try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+                             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                         } catch {
+                         }
+                     }
+                }
+             }
         }
     }
     
-    func configure(submission: RSubmission, parent: UIViewController & MediaVCDelegate, nav: UIViewController?, baseSub: String, test: Bool = false, parentWidth: CGFloat = 0) {
+    func configure(submission: RSubmission, parent: UIViewController & MediaVCDelegate, nav: UIViewController?, baseSub: String, test: Bool = false, embedded: Bool = false, parentWidth: CGFloat = 0, np: Bool) {
+        if title == nil {
+            configureView()
+            configureLayout()
+        }
+        if videoTask != nil {
+            videoTask!.cancel()
+        }
         self.link = submission
-        self.setLink(submission: submission, parent: parent, nav: nav, baseSub: baseSub, test: test, parentWidth: parentWidth)
+        self.setLink(submission: submission, parent: parent, nav: nav, baseSub: baseSub, test: test, embedded: embedded, parentWidth: parentWidth, np: np)
         layoutForContent()
     }
     
-    func attributedLabel(_ label: TTTAttributedLabel!, didSelectLinkWith result: NSTextCheckingResult!) {
-        if (parentViewController) != nil {
-            let textClicked = label.attributedText.attributedSubstring(from: result.range).string
-            if textClicked.contains("[[s[") {
-                parentViewController?.showSpoiler(textClicked)
-            } else {
-                let urlClicked = result.url!
-                parentViewController?.doShow(url: urlClicked, heroView: nil, heroVC: nil)
-            }
-        }
-    }
+    var linkClicked = false
     
     func showBody(width: CGFloat) {
         full = true
@@ -900,19 +1144,20 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         let ratio = imageHeight / imageWidth
         return viewWidth * ratio
     }
+    
+    let currentAccountTransitioningDelegate = ProfileInfoPresentationManager()
 
-    func refreshLink(_ submission: RSubmission) {
+    func refreshLink(_ submission: RSubmission, np: Bool) {
         self.link = submission
-        
-        title.setText(CachedTitle.getTitle(submission: submission, full: full, true, false))
-        title.delegate = self
-        
+
         if dtap == nil && SettingValues.submissionActionDoubleTap != .NONE {
             dtap = UIShortTapGestureRecognizer.init(target: self, action: #selector(self.doDTap(_:)))
             dtap!.numberOfTapsRequired = 2
             self.addGestureRecognizer(dtap!)
         }
         
+        refreshTitle(np: np)
+
         if !full {
             let comment = UITapGestureRecognizer(target: self, action: #selector(LinkCellView.openComment(sender:)))
             comment.delegate = self
@@ -922,16 +1167,95 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             self.addGestureRecognizer(comment)
         }
         
-        refresh()
+        refresh(np: np)
         let more = History.commentsSince(s: submission)
         comments.text = " \(submission.commentCount)\(more > 0 ? " (+\(more))" : "")"
     }
     
-    func refreshTitle() {
-        title.setText(CachedTitle.getTitle(submission: self.link!, full: full, true, false))
+   // var titleAttrs: [NSLayoutConstraint] = []
+    var oldBounds = CGSize.zero
+    func refreshTitle(np: Bool = false, force: Bool = false) {
+        guard let link = self.link else {
+            return
+        }
+
+        let attText = CachedTitle.getTitle(submission: link, full: full, force, false, gallery: false)
+        /* Bad test code...
+         if !link.awards.isEmpty {
+            let string = NSMutableAttributedString.init(attributedString: attText)
+            string.enumerateAttributes(in: NSRange.init(location: 0, length: string.length), options: .longestEffectiveRangeNotRequired, using: { (attrs, range, _) in
+                for attr in attrs {
+                    if attr.key == NSAttributedString.Key.strokeWidth {
+                        let url = string.attributedSubstring(from: range).string
+                        string.replaceCharacters(in: range, with: NSAttributedString())
+                        
+                        let flairView = UIImageView(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+                        flairView.sd_setImage(with: URL(string: url), completed: nil)
+                        let flairImage = NSMutableAttributedString.yy_attachmentString(withContent: flairView, contentMode: UIView.ContentMode.center, attachmentSize: CGSize.square(size: 20), alignTo: FontGenerator.boldFontOfSize(size: 12, submission: true), alignment: YYTextVerticalAlignment.center)
+                        
+                        //if count > 1 {
+                        //    let gilded = NSMutableAttributedString.init(string: "\u{00A0}x\(submission.gold) ", attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.font): FontGenerator.boldFontOfSize(size: 12, submission: true), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): colorF]))
+                          //  flairImage.append(gilded)
+                        //}
+                        string.insert(flairImage, at: range.location)
+                    }
+                }
+            })
+        }*/
+        let bounds = self.estimateHeightSingle(full, np: np, attText: attText)
+        if oldBounds.width != bounds.textBoundingSize.width || oldBounds.height != bounds.textBoundingSize.height {
+            oldBounds = bounds.textBoundingSize
+            title.textLayout = bounds
+            title.textContainerInset = UIEdgeInsets(top: 3, left: 0, bottom: 0, right: 0)
+            title.preferredMaxLayoutWidth = bounds.textBoundingSize.width
+        }
+        title.attributedText = attText
+        /*title.removeConstraints(titleAttrs)
+        titleAttrs = batch {
+            title.heightAnchor == bounds.textBoundingSize.height
+        }*/
+        title.textVerticalAlignment = .top
+        title.highlightTapAction = { (containerView: UIView, text: NSAttributedString, range: NSRange, rect: CGRect) in
+            text.enumerateAttributes(in: range, options: .longestEffectiveRangeNotRequired, using: { (attrs, smallRange, _) in
+                for attr in attrs {
+                    if attr.value is YYTextHighlight {
+                        if let url = (attr.value as! YYTextHighlight).userInfo?["url"] as? URL {
+                            self.linkTapped(url: url, text: "")
+                            return
+                        } else if (attr.value as! YYTextHighlight).userInfo?["spoiler"] as? Bool ?? false {
+                            self.linkTapped(url: URL(string: "/s")!, text: text.attributedSubstring(from: smallRange).string)
+                        }
+                    }
+                }
+            })
+        }
+        title.highlightLongPressAction = { (containerView: UIView, text: NSAttributedString, range: NSRange, rect: CGRect) in
+            text.enumerateAttributes(in: range, options: .longestEffectiveRangeNotRequired, using: { (attrs, _, _) in
+                for attr in attrs {
+                    if let value = attr.value as? YYTextHighlight {
+                        if let profile = value.userInfo?["profile"] as? String {
+                            if let parent = UIApplication.shared.keyWindow?.topViewController() {
+                                let vc = ProfileInfoViewController(accountNamed: profile, parent: parent)
+                                vc.modalPresentationStyle = .custom
+                                vc.transitioningDelegate = self.currentAccountTransitioningDelegate
+                                parent.present(vc, animated: true)
+                                if #available(iOS 10.0, *) {
+                                    HapticUtility.hapticActionStrong()
+                                }
+                            }
+                            return
+                        } else if let url = value.userInfo?["url"] as? URL {
+                            self.linkLongTapped(url: url)
+                            return
+                        }
+                    }
+                }
+            })
+        }
+
     }
     
-    func doDTap(_ sender: AnyObject) {
+    @objc func doDTap(_ sender: AnyObject) {
         typeImage = UIImageView().then {
             $0.accessibilityIdentifier = "Action type"
             $0.layer.cornerRadius = 22.5
@@ -949,8 +1273,8 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         typeImage.image = UIImage(named: SettingValues.submissionActionDoubleTap.getPhoto())?.getCopy(withSize: CGSize.square(size: 30), withColor: .white)
         typeImage.backgroundColor = SettingValues.submissionActionDoubleTap.getColor()
         contentView.addSubviews(typeImage, overView)
-        contentView.bringSubview(toFront: overView)
-        contentView.bringSubview(toFront: typeImage)
+        contentView.bringSubviewToFront(overView)
+        contentView.bringSubviewToFront(typeImage)
         overView.backgroundColor = SettingValues.submissionActionDoubleTap.getColor()
         overView.edgeAnchors == self.contentView.edgeAnchors
         typeImage.centerAnchors == self.contentView.centerAnchors
@@ -991,7 +1315,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             self.readLater()
         case .EXTERNAL:
             if #available(iOS 10.0, *) {
-                UIApplication.shared.open(self.link!.url ?? URL(string: self.link!.permalink)!, options: [:], completionHandler: nil)
+                UIApplication.shared.open(self.link!.url ?? URL(string: self.link!.permalink)!, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
             } else {
                 UIApplication.shared.openURL(self.link!.url ?? URL(string: self.link!.permalink)!)
             }
@@ -1001,13 +1325,52 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 presenter.sourceView = self.contentView
                 presenter.sourceRect = self.contentView.bounds
             }
-            let currentViewController: UIViewController = UIApplication.shared.keyWindow!.rootViewController!
-            currentViewController.present(activityViewController, animated: true, completion: nil)
+            activityViewController.showWindowless()
         default:
             break
         }
     }
     
+    @objc func do3dTouch(_ sender: AnyObject) {
+        switch SettingValues.submissionActionForceTouch {
+        case .UPVOTE:
+            self.upvote()
+        case .DOWNVOTE:
+            self.downvote()
+        case .SAVE:
+            self.save()
+        case .MENU:
+            self.more()
+        case .HIDE:
+            if !full {
+                self.hide()
+            }
+        case .SUBREDDIT:
+            let sub = SingleSubredditViewController.init(subName: self.link!.subreddit, single: true)
+            VCPresenter.showVC(viewController: sub, popupIfPossible: false, parentNavigationController: self.parentViewController?.navigationController, parentViewController: self.parentViewController)
+        case .AUTHOR:
+            let profile = ProfileViewController.init(name: self.link!.author)
+            VCPresenter.showVC(viewController: profile, popupIfPossible: false, parentNavigationController: self.parentViewController?.navigationController, parentViewController: self.parentViewController)
+        case .READ_LATER:
+            self.readLater()
+        case .EXTERNAL:
+            if #available(iOS 10.0, *) {
+                UIApplication.shared.open(self.link!.url ?? URL(string: self.link!.permalink)!, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
+            } else {
+                UIApplication.shared.openURL(self.link!.url ?? URL(string: self.link!.permalink)!)
+            }
+        case .SHARE:
+            let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: [self.link!.url ?? URL(string: self.link!.permalink)!], applicationActivities: nil)
+            if let presenter = activityViewController.popoverPresentationController {
+                presenter.sourceView = self.contentView
+                presenter.sourceRect = self.contentView.bounds
+            }
+            activityViewController.showWindowless()
+        default:
+            break
+        }
+    }
+
     var aspect = CGFloat(1)
     var type: ContentType.CType = .NONE
     var activeSet = false
@@ -1016,87 +1379,70 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         return !(touch.view is UIButton)
     }
     
-    private func setLink(submission: RSubmission, parent: UIViewController & MediaVCDelegate, nav: UIViewController?, baseSub: String, test: Bool = false, parentWidth: CGFloat = 0) {
-        loadedImage = nil
-        full = parent is CommentViewController
-        lq = false
-        if true || full { //todo logic for this
-            self.contentView.backgroundColor = ColorUtil.foregroundColor
-            comments.textColor = ColorUtil.fontColor
-            title.textColor = ColorUtil.fontColor
-        } else {
-            self.contentView.backgroundColor = ColorUtil.getColorForSubBackground(sub: submission.subreddit)
-            comments.textColor = .white
-            title.textColor = .white
+    var shouldLoadVideo = false
+    
+    private func setLink(submission: RSubmission, parent: UIViewController & MediaVCDelegate, nav: UIViewController?, baseSub: String, test: Bool = false, embedded: Bool = false, parentWidth: CGFloat = 0, np: Bool) {
+        if self is AutoplayBannerLinkCellView || self is GalleryLinkCellView {
+            self.endVideos()
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            } catch {
+                NSLog(error.localizedDescription)
+            }
         }
         
-        parentViewController = parent
+        self.linkClicked = false
+
+        self.full = self is FullLinkCellView
+        self.parentViewController = parent
         self.link = submission
         if navViewController == nil && nav != nil {
             navViewController = nav
         }
-        
-        let activeLinkAttributes = NSMutableDictionary(dictionary: title.activeLinkAttributes)
-        activeLinkAttributes[kCTForegroundColorAttributeName] = ColorUtil.accentColorForSub(sub: submission.subreddit)
-        title.activeLinkAttributes = activeLinkAttributes as NSDictionary as? [AnyHashable: Any]
-        title.linkAttributes = activeLinkAttributes as NSDictionary as? [AnyHashable: Any]
+
+        self.shouldLoadVideo = false
+        self.loadedImage = nil
+        lq = false
+
+        self.contentView.backgroundColor = ColorUtil.theme.foregroundColor
+        comments.textColor = ColorUtil.theme.navIconColor
+        title.textColor = ColorUtil.theme.navIconColor
+
         activeSet = true
-        
-        title.setText(CachedTitle.getTitle(submission: submission, full: full, false, false))
-        
-        reply.isHidden = true
 
-        hide.isHidden = !SettingValues.hideButton
-        mod.isHidden = true
-        save.isHidden = !SettingValues.saveButton
-        readLater.isHidden = !SettingValues.readLaterButton
+        defer {
+            refreshAccessibility(submission: submission)
+        }
 
-        if submission.archived || !AccountController.isLoggedIn || !LinkCellView.checkInternet() {
-            upvote.isHidden = true
-            downvote.isHidden = true
-            if submission.archived && AccountController.isLoggedIn && LinkCellView.checkInternet() {
-                save.isHidden = false
-            } else {
-                save.isHidden = true
-            }
-            reply.isHidden = true
-            edit.isHidden = true
-            sideUpvote.isHidden = true
-            sideDownvote.isHidden = true
-        } else {
-            upvote.isHidden = false
-            downvote.isHidden = false
-            sideUpvote.isHidden = false
-            sideDownvote.isHidden = false
-            
-            if submission.canMod {
-                mod.isHidden = false
-                if !submission.reports.isEmpty {
-                    mod.setImage(LinkCellImageCache.modTinted, for: .normal)
-                } else {
-                    mod.setImage(LinkCellImageCache.mod, for: .normal)
-                }
-            }
-            
-            if full {
-                reply.isHidden = false
-                hide.isHidden = true
-            }
-            edit.isHidden = true
+        let actions = PostActionsManager(submission: submission)
+
+        func setVisibility(_ view: UIView, _ visible: Bool) {
+            view.isHidden = !visible
+            view.isUserInteractionEnabled = visible
         }
-        
-        full = parent is CommentViewController
-        
-        if !submission.archived && AccountController.isLoggedIn && AccountController.currentName == submission.author && full {
-            edit.isHidden = false
-        }
-        
+
+        setVisibility(upvote, actions.isVotingPossible)
+        setVisibility(downvote, actions.isVotingPossible)
+        setVisibility(hide, actions.isHideEnabled && !full)
+        setVisibility(readLater, actions.isReadLaterEnabled)
+        setVisibility(save, actions.isSaveEnabled && actions.isSavePossible)
+        setVisibility(reply, actions.isReplyPossible && full)
+        setVisibility(menu, actions.isMenuEnabled)
+        setVisibility(share, actions.isShareEnabled)
+        setVisibility(edit, actions.isEditPossible && full)
+        setVisibility(mod, actions.isModPossible)
+
         thumb = submission.thumbnail
         big = submission.banner
         
         submissionHeight = CGFloat(submission.height)
         
-        type = test && SettingValues.linkAlwaysThumbnail ? ContentType.CType.LINK : ContentType.getContentType(baseUrl: submission.url)
+        type = test && SettingValues.linkAlwaysThumbnail && !(self is GalleryLinkCellView) ? ContentType.CType.LINK : ContentType.getContentType(baseUrl: submission.url)
+        
+        if embedded && !submission.isSelf {
+            type = .LINK
+        }
+        
         if submission.isSelf {
             type = .SELF
         }
@@ -1109,15 +1455,15 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         let fullImage = ContentType.fullImage(t: type)
         let shouldAutoplay = SettingValues.shouldAutoPlay()
         
-        let overrideFull = ContentType.displayVideo(t: type) && type != .VIDEO && (self is AutoplayBannerLinkCellView || self is FullLinkCellView) && shouldAutoplay
+        let overrideFull = ContentType.displayVideo(t: type) && type != .VIDEO && (self is AutoplayBannerLinkCellView || self is FullLinkCellView || self is GalleryLinkCellView) && shouldAutoplay
 
-        if !fullImage && submissionHeight < 50 {
+        if !fullImage && submissionHeight < 75 {
             big = false
             thumb = true
         } else if big && ((!full && SettingValues.postImageMode == .CROPPED_IMAGE) || (full && !SettingValues.commentFullScreen)) && !overrideFull {
             submissionHeight = test ? 150 : 200
         } else if big {
-            let h = getHeightFromAspectRatio(imageHeight: submissionHeight, imageWidth: CGFloat(submission.width), viewWidth: parentWidth == 0 ? (contentView.frame.size.width == 0 ? CGFloat(submission.width) : contentView.frame.size.width) : parentWidth)
+            let h = getHeightFromAspectRatio(imageHeight: submissionHeight, imageWidth: CGFloat(submission.width), viewWidth: (parentWidth == 0 ? (contentView.frame.size.width == 0 ? CGFloat(submission.width) : contentView.frame.size.width) : parentWidth) - (full ? 10 : 0))
             if h == 0 {
                 submissionHeight = test ? 150 : 200
             } else {
@@ -1125,17 +1471,17 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             }
         }
         
-        if SettingValues.actionBarMode != .FULL && !full {
+        if !SettingValues.actionBarMode.isFull() && !full {
             buttons.isHidden = true
             box.isHidden = true
         }
         
-        if type == .SELF && SettingValues.hideImageSelftext || SettingValues.hideImageSelftext && !big || type == .SELF && full {
+        if (type == .SELF && SettingValues.hideImageSelftext) || type == .SELF && full {
             big = false
             thumb = false
         }
         
-        if submissionHeight < 50 {
+        if submissionHeight < 75 {
             thumb = true
             big = false
         }
@@ -1156,12 +1502,17 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             thumb = true
         }
         
-        if type == .LINK && SettingValues.linkAlwaysThumbnail {
+        if type == .LINK && SettingValues.linkAlwaysThumbnail && !test {
             thumb = true
             big = false
         }
         
-        if SettingValues.noImages {
+        if embedded {
+            thumb = true
+            big = false
+        }
+        
+        if SettingValues.noImages && SettingValues.dataSavingEnabled && !(SettingValues.dataSavingDisableWiFi && checkWifi) {
             big = false
             thumb = false
         }
@@ -1180,10 +1531,18 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             submissionHeight = getHeightFromAspectRatio(imageHeight: submissionHeight == 200 ? CGFloat(200) : CGFloat(submission.height), imageWidth: CGFloat(submission.width), viewWidth: (parentWidth == 0 ? (contentView.frame.size.width == 0 ? CGFloat(submission.width) : contentView.frame.size.width) : parentWidth) - (bannerPadding * 2))
         }
         
+        if self is GalleryLinkCellView {
+            big = true
+            thumb = false
+        }
+        
         if !big && !thumb && submission.type != .SELF && submission.type != .NONE { //If a submission has a link but no images, still show the web thumbnail
             thumb = true
+            thumbText.isHidden = true
             if submission.nsfw {
-                thumbImage.image = LinkCellImageCache.nsfw
+                thumbImage.image = SettingValues.thumbTag ? LinkCellImageCache.nsfwUp : LinkCellImageCache.nsfw
+                thumbText.isHidden = false
+                thumbText.text = type.rawValue.uppercased()
             } else if submission.spoiler {
                 thumbImage.image = LinkCellImageCache.spoiler
             } else if type == .REDDIT {
@@ -1192,8 +1551,11 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 thumbImage.image = LinkCellImageCache.web
             }
         } else if thumb && !big {
+            thumbText.isHidden = true
             if submission.nsfw && (!SettingValues.nsfwPreviews || SettingValues.hideNSFWCollection && Subscriptions.isCollection(baseSub)) {
-                thumbImage.image = LinkCellImageCache.nsfw
+                thumbImage.image = SettingValues.thumbTag ? LinkCellImageCache.nsfwUp : LinkCellImageCache.nsfw
+                thumbText.isHidden = false
+                thumbText.text = type.rawValue.uppercased()
             } else if submission.thumbnailUrl == "web" || submission.thumbnailUrl.isEmpty || submission.spoiler {
                 if submission.spoiler {
                     thumbImage.image = LinkCellImageCache.spoiler
@@ -1203,52 +1565,67 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                     thumbImage.image = LinkCellImageCache.web
                 }
             } else {
-                let thumbURL = submission.thumbnailUrl
-                DispatchQueue.global(qos: .userInteractive).async {
-                    self.thumbImage.sd_setImage(with: URL.init(string: thumbURL), placeholderImage: LinkCellImageCache.web, options: [.allowInvalidSSLCertificates, .scaleDownLargeImages])
-                }
+                thumbText.isHidden = false
+                thumbText.text = type.rawValue.uppercased()
+                thumbImage.loadImageWithPulsingAnimation(atUrl: URL(string: submission.thumbnailUrl), withPlaceHolderImage: LinkCellImageCache.web)
             }
         } else {
-            thumbImage.sd_setImage(with: URL.init(string: ""))
+            thumbImage.image = nil
+            thumbText.isHidden = true
             self.thumbImage.frame.size.width = 0
+        }
+        
+        if !SettingValues.thumbTag || full {
+            thumbText.isHidden = true
+        }
+        
+        if full {
+            self.thumbText.isHidden = true
         }
         
         if big {
             bannerImage.isHidden = false
-            updater?.invalidate()
+            self.endVideos()
+            bannerImage.alpha = 1
             var videoOverride = false
-            if ContentType.displayVideo(t: type) && type != .VIDEO && (self is AutoplayBannerLinkCellView || (self is FullLinkCellView && shouldAutoplay)) && (SettingValues.autoPlayMode == .ALWAYS || (SettingValues.autoPlayMode == .WIFI && shouldAutoplay)) {
-                videoView?.player?.pause()
+            if ContentType.displayVideo(t: type) && type != .VIDEO && (self is AutoplayBannerLinkCellView || (self is FullLinkCellView && shouldAutoplay) || self is GalleryLinkCellView) && (SettingValues.autoPlayMode == .ALWAYS || (SettingValues.autoPlayMode == .WIFI && shouldAutoplay)) {
                 videoView?.isHidden = false
                 topVideoView?.isHidden = false
                 sound.isHidden = true
                 self.timeView.isHidden = true
                 self.updateProgress(-1, "", buffering: false)
-                self.contentView.bringSubview(toFront: topVideoView!)
-                doLoadVideo()
+                self.contentView.bringSubviewToFront(topVideoView!)
+                self.shouldLoadVideo = true
+                if full {
+                    self.videoCompletion = nil
+                    doLoadVideo()
+                } else {
+                    self.videoCompletion = nil
+                    if let url = (!link!.videoPreview.isEmpty() && !ContentType.isGfycat(uri: link!.url!)) ? URL.init(string: link!.videoPreview) : link!.url {
+                            self.preloadVideo(url)
+                    }
+                }
                 videoOverride = true
-            } else if self is FullLinkCellView {
+            } else if self is FullLinkCellView || self is GalleryLinkCellView {
                 self.videoView.isHidden = true
                 self.topVideoView.isHidden = true
                 self.timeView.isHidden = true
                 self.progressDot.isHidden = true
             }
             
-            if (self is AutoplayBannerLinkCellView || self is FullLinkCellView) && (ContentType.displayVideo(t: type) && type != .VIDEO) && (SettingValues.autoPlayMode == .TAP || (SettingValues.autoPlayMode == .WIFI && !shouldAutoplay)) {
-                videoView?.player?.pause()
+            if (self is AutoplayBannerLinkCellView || self is FullLinkCellView || self is GalleryLinkCellView) && (ContentType.displayVideo(t: type) && type != .VIDEO) && (SettingValues.autoPlayMode == .TAP || (SettingValues.autoPlayMode == .WIFI && !shouldAutoplay)) {
                 videoView?.isHidden = false
                 topVideoView?.isHidden = false
                 sound.isHidden = true
                 self.updateProgress(-1, "", buffering: false)
-                self.contentView.bringSubview(toFront: topVideoView!)
+                self.contentView.bringSubviewToFront(topVideoView!)
                 self.playView.isHidden = false
                 self.progressDot.isHidden = true
                 self.timeView.isHidden = true
                 videoOverride = true
             }
             
-            bannerImage.alpha = 0
-            let imageSize = CGSize.init(width: submission.width, height: ((full && !SettingValues.commentFullScreen) || (!full && SettingValues.postImageMode == .CROPPED_IMAGE)) && !((self is AutoplayBannerLinkCellView || self is FullLinkCellView) && (ContentType.displayVideo(t: type) && type != .VIDEO) && (SettingValues.autoPlayMode == .TAP || (SettingValues.autoPlayMode == .WIFI && !shouldAutoplay))) ? 200 : submission.height)
+            let imageSize = CGSize.init(width: submission.width == 0 ? 400 : submission.width, height: ((full && !SettingValues.commentFullScreen) || (!full && SettingValues.postImageMode == .CROPPED_IMAGE)) && !((self is AutoplayBannerLinkCellView || self is FullLinkCellView || self is GalleryLinkCellView) && (ContentType.displayVideo(t: type) && type != .VIDEO) && (SettingValues.autoPlayMode == .TAP || (SettingValues.autoPlayMode == .WIFI && !shouldAutoplay))) ? 200 : (submission.height == 0 ? 275 : submission.height))
             
             aspect = imageSize.width / imageSize.height
             if aspect == 0 || aspect > 10000 || aspect.isNaN {
@@ -1263,44 +1640,22 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 submissionHeight = test ? 150 : 200
             }
             bannerImage.isUserInteractionEnabled = true
-            if shouldShowLq {
-                lq = true
-                loadedImage = URL.init(string: submission.lqUrl)
-                
-                let lqURL = submission.lqUrl
-                DispatchQueue.global(qos: .userInteractive).async {
-                    self.bannerImage.sd_setImage(with: URL.init(string: lqURL), placeholderImage: nil, options: [.allowInvalidSSLCertificates, .scaleDownLargeImages], completed: { (_, _, cache, _) in
-                        if cache == .none {
-                            UIView.animate(withDuration: 0.3, animations: {
-                                self.bannerImage.alpha = 1
-                            })
-                        } else {
-                            self.bannerImage.alpha = 1
-                        }
-                    })
-                }
+
+            // Pulse the background color of the banner image until it loads
+            lq = shouldShowLq
+            if submission.bannerUrl == "" || submission.width == 0 {
+                bannerImage.image = LinkCellImageCache.webBig
             } else {
-                loadedImage = URL.init(string: submission.bannerUrl)
-                let bannerURL = submission.bannerUrl
-                DispatchQueue.global(qos: .userInteractive).async {
-                    self.bannerImage.sd_setImage(with: URL.init(string: bannerURL), placeholderImage: nil, options: [.allowInvalidSSLCertificates, .scaleDownLargeImages], completed: { (_, _, cache, _) in
-                        if cache == .none {
-                            UIView.animate(withDuration: 0.3, animations: {
-                                self.bannerImage.alpha = 1
-                            })
-                        } else {
-                            self.bannerImage.alpha = 1
-                        }
-                    })
-                }
+                let bannerImageUrl = URL(string: shouldShowLq ? submission.lqUrl : submission.bannerUrl)
+                loadedImage = bannerImageUrl
+                bannerImage.loadImageWithPulsingAnimation(atUrl: bannerImageUrl, withPlaceHolderImage: nil)
             }
-            
             NSLayoutConstraint.deactivate(self.bannerHeightConstraint)
             self.bannerHeightConstraint = batch {
                 self.bannerImage.heightAnchor == self.submissionHeight ~ .low
             }
         } else {
-            bannerImage.sd_setImage(with: URL.init(string: ""))
+            bannerImage.image = nil
             if self is FullLinkCellView {
                 self.videoView.isHidden = true
                 self.topVideoView.isHidden = true
@@ -1309,21 +1664,27 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             }
         }
         
-        if !full && !test {
+        if !full && !test && !embedded {
             aspectWidth = self.contentView.frame.size.width
         }
         
         let mo = History.commentsSince(s: submission)
         comments.text = " \(submission.commentCount)" + (mo > 0 ? "(+\(mo))" : "")
         
-        if !registered && !full {
+        if !registered && !full && SettingValues.submissionActionForceTouch == .NONE {
             parent.registerForPreviewing(with: self, sourceView: self.contentView)
             registered = true
+        } else if SettingValues.submissionActionForceTouch != .NONE {
+            let force = ForceTouchGestureRecognizer()
+            force.addTarget(self, action: #selector(self.do3dTouch(_:)))
+            force.cancelsTouchesInView = false
+            self.contentView.addGestureRecognizer(force)
         }
         
-        refresh()
-        
-        if (type != .IMAGE && type != .SELF && !thumb) || full {
+        refresh(np: np)
+        refreshTitle(np: np)
+
+        if (type != .IMAGE && type != .SELF && !thumb) || (full && (type == .LINK || type == .REDDIT)) || (full && thumb && type != .SELF) {
             infoContainer.isHidden = false
             var text = ""
             switch type {
@@ -1365,48 +1726,9 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 taglabel.text = " \(text.uppercased()) "
             } else {
                 tagbody.isHidden = true
-                if submission.isCrosspost && full {
-                    let colorF = UIColor.white
-                    
-                    let finalText = NSMutableAttributedString.init(string: "Crosspost - " + submission.domain, attributes: [NSForegroundColorAttributeName: UIColor.white, NSFontAttributeName: FontGenerator.boldFontOfSize(size: 14, submission: true)])
-                    
-                    let endString = NSMutableAttributedString(string: "\nOriginal submission by ", attributes: [NSFontAttributeName: FontGenerator.fontOfSize(size: 12, submission: true), NSForegroundColorAttributeName: colorF])
-                    let by = NSMutableAttributedString(string: " in ", attributes: [NSFontAttributeName: FontGenerator.fontOfSize(size: 12, submission: true), NSForegroundColorAttributeName: colorF])
-                    
-                    let authorString = NSMutableAttributedString(string: "\u{00A0}\(AccountController.formatUsername(input: submission.author, small: false))\u{00A0}", attributes: [NSFontAttributeName: FontGenerator.fontOfSize(size: 12, submission: true), NSForegroundColorAttributeName: colorF])
-                    
-                    let userColor = ColorUtil.getColorForUser(name: submission.crosspostAuthor)
-                    if AccountController.currentName == submission.author {
-                        authorString.addAttributes([kTTTBackgroundFillColorAttributeName: UIColor.init(hexString: "#FFB74D"), NSFontAttributeName: FontGenerator.boldFontOfSize(size: 12, submission: false), NSForegroundColorAttributeName: UIColor.white, kTTTBackgroundFillPaddingAttributeName: UIEdgeInsets.init(top: 1, left: 1, bottom: 1, right: 1), kTTTBackgroundCornerRadiusAttributeName: 3], range: NSRange.init(location: 0, length: authorString.length))
-                    } else if userColor != ColorUtil.baseColor {
-                        authorString.addAttributes([kTTTBackgroundFillColorAttributeName: userColor, NSFontAttributeName: FontGenerator.boldFontOfSize(size: 12, submission: false), NSForegroundColorAttributeName: UIColor.white, kTTTBackgroundFillPaddingAttributeName: UIEdgeInsets.init(top: 1, left: 1, bottom: 1, right: 1), kTTTBackgroundCornerRadiusAttributeName: 3], range: NSRange.init(location: 0, length: authorString.length))
-                    }
-                    
-                    endString.append(authorString)
-                    endString.append(by)
-                    
-                    let attrs = [NSFontAttributeName: FontGenerator.boldFontOfSize(size: 12, submission: true), NSForegroundColorAttributeName: colorF] as [String: Any]
-                    
-                    let boldString = NSMutableAttributedString(string: "r/\(submission.crosspostSubreddit)", attributes: attrs)
-                    
-                    let color = ColorUtil.getColorForSub(sub: submission.crosspostSubreddit)
-                    if color != ColorUtil.baseColor {
-                        boldString.addAttribute(NSForegroundColorAttributeName, value: color, range: NSRange.init(location: 0, length: boldString.length))
-                    }
-                    
-                    endString.append(boldString)
-                    finalText.append(endString)
-                    
-                    infoContainer.addTapGestureRecognizer {
-                        VCPresenter.openRedditLink(submission.crosspostPermalink, self.parentViewController?.navigationController, self.parentViewController)
-                    }
-                    info.attributedText = finalText
-                    
-                } else {
-                    let finalText = NSMutableAttributedString.init(string: text, attributes: [NSForegroundColorAttributeName: UIColor.white, NSFontAttributeName: FontGenerator.boldFontOfSize(size: 14, submission: true)])
-                    finalText.append(NSAttributedString.init(string: "\n\(submission.domain)"))
-                    info.attributedText = finalText
-                }
+                let finalText = NSMutableAttributedString.init(string: text, attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): UIColor.white, convertFromNSAttributedStringKey(NSAttributedString.Key.font): FontGenerator.boldFontOfSize(size: 14, submission: true)]))
+                finalText.append(NSAttributedString.init(string: "\n\(submission.domain)"))
+                info.attributedText = finalText
             }
             
         } else {
@@ -1414,72 +1736,271 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             tagbody.isHidden = true
         }
         
-        //todo maybe? self.contentView.backgroundColor = ColorUtil.getColorForSub(sub: submission.subreddit)
+        if submission.isCrosspost && full && !crosspostDone {
+            crosspostDone = true
+            let outer = UILabel.init(frame: CGRect.init(x: 0, y: 0, width: 0, height: 48))
+            let popup = UILabel()
+            outer.backgroundColor = ColorUtil.theme.backgroundColor
+            popup.textAlignment = .left
+            popup.isUserInteractionEnabled = true
+            
+            popup.numberOfLines = 2
+            
+            outer.elevate(elevation: 2)
+            outer.layer.cornerRadius = 5
+            outer.clipsToBounds = true
+            
+            let icon = UIImageView(image: UIImage(named: "crosspost")!.getCopy(withSize: CGSize.square(size: 20), withColor: ColorUtil.theme.fontColor))
+            outer.addSubviews(icon, popup)
+            icon.leftAnchor == outer.leftAnchor + CGFloat(8)
+            icon.centerYAnchor == outer.centerYAnchor
+            icon.widthAnchor == 40
+            icon.contentMode = .center
+
+            popup.leftAnchor == icon.rightAnchor + CGFloat(8)
+            popup.verticalAnchors == outer.verticalAnchors
+            popup.rightAnchor == outer.rightAnchor - CGFloat(8)
+            
+            infoBox.spacing = 4
+            
+            let colorF = ColorUtil.theme.fontColor
+            
+            let attrs = [convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.boldSystemFont(ofSize: 14), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): colorF] as [String: Any]
+            
+            let boldString = NSMutableAttributedString(string: "r/\(submission.crosspostSubreddit)", attributes: convertToOptionalNSAttributedStringKeyDictionary(attrs))
+            let color = ColorUtil.getColorForSub(sub: submission.crosspostSubreddit)
+            if color != ColorUtil.baseColor {
+                boldString.addAttribute(NSAttributedString.Key.foregroundColor, value: color, range: NSRange.init(location: 0, length: boldString.length))
+            }
+            
+            let endString = NSMutableAttributedString(string: "\nCrossposted by", attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.systemFont(ofSize: 12), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): colorF]))
+            
+            let authorString = NSMutableAttributedString(string: "\u{00A0}\(AccountController.formatUsername(input: submission.crosspostAuthor, small: false))\u{00A0}", attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.systemFont(ofSize: 12), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): colorF]))
+            
+            /* Maybe enable this later
+             let userColor = ColorUtil.getColorForUser(name: submission.crosspostAuthor)
+             if AccountController.currentName == submission.author {
+             authorString.addAttributes(convertToNSAttributedStringKeyDictionary([kTTTBackgroundFillColorAttributeName: UIColor.init(hexString: "#FFB74D"), convertFromNSAttributedStringKey(NSAttributedString.Key.font): FontGenerator.fontOfSize(size: 12, submission: false), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): UIColor.white, kTTTBackgroundFillPaddingAttributeName: UIEdgeInsets.init(top: 1, left: 1, bottom: 1, right: 1), kTTTBackgroundCornerRadiusAttributeName: 3]), range: NSRange.init(location: 0, length: authorString.length))
+             } else if userColor != ColorUtil.baseColor {
+             authorString.addAttributes(convertToNSAttributedStringKeyDictionary([kTTTBackgroundFillColorAttributeName: userColor, convertFromNSAttributedStringKey(NSAttributedString.Key.font): FontGenerator.fontOfSize(size: 12, submission: false), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): UIColor.white, kTTTBackgroundFillPaddingAttributeName: UIEdgeInsets.init(top: 1, left: 1, bottom: 1, right: 1), kTTTBackgroundCornerRadiusAttributeName: 3]), range: NSRange.init(location: 0, length: authorString.length))
+             }*/
+            
+            endString.append(authorString)
+            boldString.append(endString)
+            
+            outer.addTapGestureRecognizer {
+                VCPresenter.openRedditLink(submission.crosspostPermalink, self.parentViewController?.navigationController, self.parentViewController)
+            }
+            popup.attributedText = boldString
+            
+            popup.numberOfLines = 0
+            
+            infoBox.spacing = 4
+            infoBox.addArrangedSubview(outer)
+            
+            outer.horizontalAnchors == infoBox.horizontalAnchors
+            outer.heightAnchor == 48
+        }
+
+       // TODO: - maybe? self.contentView.backgroundColor = ColorUtil.getColorForSub(sub: submission.subreddit)
         if full {
             self.setNeedsLayout()
             self.layoutForType()
         }
+
+    }
+
+    private func refreshAccessibility(submission: RSubmission) {
+        //let postTimeAgo = (submission.created as Date).timeAgoString Was causing lag
+        accessibilityView.accessibilityValue = """
+            \(submission.title).
+            Post type is \(submission.type.rawValue).
+            Posted in \(submission.subreddit) by \(submission.author).
+            The score is \(submission.score) and there are \(submission.commentCount) comments.
+            \(full ? "Post body: \(submission.body)" : "")
+        """
+        if full {
+            switch submission.type {
+            case .SELF:
+                accessibilityView.accessibilityHint = nil
+            case .LINK, .UNKNOWN:
+                accessibilityView.accessibilityHint = "Opens the link for this post. Link goes to \(submission.domain)"
+            default:
+                accessibilityView.accessibilityHint = "Opens the media modal with this link. Link is from \(submission.domain)"
+            }
+        } else {
+            accessibilityView.accessibilityHint = "Opens the post view for this post."
+        }
+
+        let actionManager = PostActionsManager(submission: submission)
+
+        let isReadLater = ReadLater.isReadLater(id: submission.getId())
+        let isSaved = ActionStates.isSaved(s: submission)
+
+        var actions: [UIAccessibilityCustomAction] = [
+            UIAccessibilityCustomAction(name: "Menu", target: self, selector: #selector(more(sender:))),
+            UIAccessibilityCustomAction(name: isReadLater ? "Remove from Read Later list" : "Read Later", target: self, selector: #selector(readLater(sender:))),
+            UIAccessibilityCustomAction(name: "Hide", target: self, selector: #selector(hide(sender:))),
+            ]
+
+        if actionManager.isSavePossible {
+            actions.append(UIAccessibilityCustomAction(name: isSaved ? "Unsave" : "Save", target: self, selector: #selector(save(sender:))))
+        }
+
+        if actionManager.isVotingPossible {
+            let downvoteActionString: String
+            let upvoteActionString: String
+
+            switch ActionStates.getVoteDirection(s: submission) {
+            case .down:
+                downvoteActionString = "Remove Downvote"
+                upvoteActionString = "Upvote"
+            case .up:
+                downvoteActionString = "Downvote"
+                upvoteActionString = "Remove Upvote"
+            default:
+                downvoteActionString = "Downvote"
+                upvoteActionString = "Upvote"
+            }
+            
+            actions.append(UIAccessibilityCustomAction(name: upvoteActionString, target: self, selector: #selector(upvote(sender:))))
+            actions.append(UIAccessibilityCustomAction(name: downvoteActionString, target: self, selector: #selector(downvote(sender:))))
+        }
+
+        if actionManager.isEditPossible && full {
+            actions.append(UIAccessibilityCustomAction(name: "Edit", target: self, selector: #selector(edit(sender:))))
+        }
+
+        if actionManager.isReplyPossible && full {
+            actions.append(UIAccessibilityCustomAction(name: "Reply", target: self, selector: #selector(reply(sender:))))
+        }
+
+        if actionManager.isModPossible {
+            actions.append(UIAccessibilityCustomAction(name: "Moderate", target: self, selector: #selector(mod(sender:))))
+        }
+
+        if actionManager.isShareEnabled {
+            actions.append(UIAccessibilityCustomAction(name: "Share", target: self, selector: #selector(share(sender:))))
+        }
+
+        accessibilityView.accessibilityCustomActions = actions
+
+    }
+
+    override func accessibilityActivate() -> Bool {
+        if full {
+            openLink()
+        } else {
+            openComment()
+        }
+        return true
     }
     
     var currentType: CurrentType = .none
+    static var checkedWifi = false
+    static var cachedCheckWifi = false
     
     public static func checkWiFi() -> Bool {
+        if !checkedWifi {
+            checkedWifi = true
+            let networkStatus = Reachability().connectionStatus()
+            switch networkStatus {
+            case .Unknown, .Offline:
+                cachedCheckWifi = false
+            case .Online(.WWAN):
+                cachedCheckWifi = false
+            case .Online(.WiFi):
+                cachedCheckWifi = true
+            }
+        }
+        return cachedCheckWifi
+    }
+    
+    var videoURL: URL?
+    weak var videoTask: URLSessionDataTask?
+    var videoLoaded = false
+    var videoPreloaded = false
+    var isLoadingVideo = false
+    var videoCompletion: (() -> Void)?
+    var lastVideoTried = ""
+    
+    func preloadVideo(_ baseUrl: URL) {
+        self.isLoadingVideo = true
+        self.lastVideoTried = baseUrl.absoluteString
         
-        let networkStatus = Reachability().connectionStatus()
-        switch networkStatus {
-        case .Unknown, .Offline:
-            return false
-        case .Online(.WWAN):
-            return false
-        case .Online(.WiFi):
-            return true
+        self.videoPreloaded = false
+        let url = VideoMediaViewController.format(sS: baseUrl.absoluteString, true)
+        let videoType = VideoMediaViewController.VideoType.fromPath(url)
+        self.videoTask = videoType.getSourceObject().load(url: url, completion: { [weak self] (urlString) in
+            guard let strongSelf = self else { return }
+            let videoURL = URL(string: urlString)
+            if videoURL == nil {
+                DispatchQueue.main.async {[weak self] in
+                    if let strongSelf = self, let url = URL.init(string: strongSelf.link!.videoPreview ?? "") {
+                        if url.absoluteString != strongSelf.lastVideoTried {
+                            strongSelf.preloadVideo(url)
+                        }
+                    }
+                }
+                return
+            }
+            strongSelf.videoURL = videoURL!
+            
+            strongSelf.videoPreloaded = true
+            strongSelf.isLoadingVideo = false
+            DispatchQueue.main.async {
+                strongSelf.videoCompletion?()
+            }
+            }, failure: nil)
+    }
+
+    func doLoadVideo() {
+        if self is AutoplayBannerLinkCellView || self is GalleryLinkCellView || self is FullLinkCellView {
+            if videoPreloaded {
+                playVideo()
+            } else if isLoadingVideo {
+                videoCompletion = {
+                    self.playVideo()
+                }
+            } else {
+                videoCompletion = {
+                    self.playVideo()
+                }
+                if let url = (!link!.videoPreview.isEmpty() && !ContentType.isGfycat(uri: link!.url!)) ? URL.init(string: link!.videoPreview) : link!.url {
+                        self.preloadVideo(url)
+                }
+            }
         }
     }
     
-    func doLoadVideo() {
-        let baseUrl: URL
-        if !link!.videoPreview.isEmpty() && !ContentType.isGfycat(uri: link!.url!) {
-            baseUrl = URL.init(string: link!.videoPreview)!
-        } else {
-            baseUrl = link!.url!
+    func playVideo() {
+        if !shouldLoadVideo || !AnyModalViewController.linkID.isEmpty() {
+            if self.playView != nil {
+                self.playView.isHidden = false
+            }
+            return
         }
-        let url = VideoMediaViewController.format(sS: baseUrl.absoluteString, true)
-        let videoType = VideoMediaViewController.VideoType.fromPath(url)
-        videoType.getSourceObject().load(url: url, completion: { [weak self] (urlString) in
-            guard let strongSelf = self else { return }
-            DispatchQueue.main.async {
-                strongSelf.avPlayerItem = AVPlayerItem(url: URL(string: urlString)!)
-                strongSelf.videoView?.player = AVPlayer(playerItem: strongSelf.avPlayerItem!)
-                strongSelf.videoView?.player?.actionAtItemEnd = AVPlayerActionAtItemEnd.none
-                do {
-                    if SettingValues.matchSilence {
-                        try AVAudioSession.sharedInstance().setCategory(AVAudioSessionCategoryAmbient)
-                    } else {
-                        try AVAudioSession.sharedInstance().setCategory(AVAudioSessionCategoryPlayback)
-                    }
-                } catch {
-                    
-                }
+        
+        let strongSelf = self
+
+        strongSelf.videoView?.player = AVPlayer(playerItem: AVPlayerItem(url: strongSelf.videoURL!))
+        strongSelf.videoView?.player?.actionAtItemEnd = AVPlayer.ActionAtItemEnd.none
 //                Is currently causing issues with not resuming after buffering
 //                if #available(iOS 10.0, *) {
 //                    strongSelf.videoView?.player?.automaticallyWaitsToMinimizeStalling = false
 //                }
-                strongSelf.videoView?.player?.play()
-                strongSelf.videoView?.player?.isMuted = true
-                strongSelf.sound.addTarget(strongSelf, action: #selector(strongSelf.unmute), for: .touchUpInside)
-                strongSelf.updater = CADisplayLink(target: strongSelf, selector: #selector(strongSelf.displayLinkDidUpdate))
-                strongSelf.updater?.add(to: .current, forMode: .defaultRunLoopMode)
-                strongSelf.updater?.isPaused = false
-                UIView.animate(withDuration: 0.3, animations: {
-                    strongSelf.bannerImage.alpha = 0
-                }, completion: { (_) in
-                    strongSelf.bannerImage.isHidden = true
-                    strongSelf.bannerImage.alpha = 1
-                })
-            }
-            }, failure: {
-                
-        })
+        strongSelf.setOnce = false
+        strongSelf.videoView?.player?.play()
+        strongSelf.videoID = strongSelf.link?.getId() ?? ""
+        if SettingValues.muteInlineVideos {
+            strongSelf.videoView?.player?.isMuted = true
+        } else {
+            strongSelf.videoView?.player?.isMuted = false
+        }
+        strongSelf.sound.addTarget(strongSelf, action: #selector(strongSelf.unmute), for: .touchUpInside)
+        strongSelf.updater = CADisplayLink(target: strongSelf, selector: #selector(strongSelf.displayLinkDidUpdate))
+        strongSelf.updater?.add(to: .current, forMode: RunLoop.Mode.default)
+        strongSelf.updater?.isPaused = false
     }
     
     public static var cachedInternet: Bool?
@@ -1499,14 +2020,18 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         return LinkCellView.cachedInternet!
     }
     
-    func showMore() {
+    @objc func showMore() {
         timer!.invalidate()
-        if #available(iOS 10.0, *) {
-            HapticUtility.hapticActionStrong()
-        } else if SettingValues.hapticFeedback {
-            AudioServicesPlaySystemSound(1519)
+        if longBlocking {
+            self.longBlocking = false
+            return
         }
-        if !self.cancelled && LinkCellView.checkInternet() {
+        if !self.cancelled && LinkCellView.checkInternet() && parentViewController?.presentedViewController == nil {
+            if #available(iOS 10.0, *) {
+                HapticUtility.hapticActionStrong()
+            } else if SettingValues.hapticFeedback {
+                AudioServicesPlaySystemSound(1519)
+            }
             self.more()
         }
     }
@@ -1514,7 +2039,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     var handlingPlayerItemDidreachEnd = false
     
     func playerItemDidreachEnd() {
-        self.videoView?.player?.seek(to: CMTimeMake(1, 1000), toleranceBefore: kCMTimeZero, toleranceAfter: kCMTimeZero, completionHandler: { [weak self] (_) in
+        self.videoView?.player?.seek(to: CMTimeMake(value: 1, timescale: 1000), toleranceBefore: CMTime.zero, toleranceAfter: CMTime.zero, completionHandler: { [weak self] (_) in
             guard let strongSelf = self else { return }
             // NOTE: the following is not needed since `strongSelf.videoView.player?.actionAtItemEnd` is set to `AVPlayerActionAtItemEnd.none`
 //            if finished {
@@ -1535,96 +2060,125 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         return h > 0 ? String(format: "%1d:%02d:%02d", h, m, s) : String(format: "%1d:%02d", m, s)
     }
     
-    func displayLinkDidUpdate(displaylink: CADisplayLink) {
-        if sound.isHidden && (self.videoView.player?.isMuted ?? false) && (self.videoView.player?.currentItem?.tracks.count ?? 1) > 1 {
-            sound.isHidden = false
+    var setOnce = false
+    // TODO: - This is problematic. We shouldn't be setting up a display link for individual cells.
+    @objc func displayLinkDidUpdate(displaylink: CADisplayLink) {
+        guard let player = videoView.player else {
+            return
         }
-        if let player = videoView.player {
+
+        let hasAudioTracks = (player.currentItem?.tracks.count ?? 1) > 1
+        
+        if hasAudioTracks {
+            if player.isMuted && sound.isHidden && SettingValues.muteInlineVideos {
+                sound.isHidden = false
+            }
+        }
+
+        if !setOnce {
+            setOnce = true
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            } catch {
+                NSLog(error.localizedDescription)
+            }
+        }
+
+        if let currentItem = player.currentItem {
             let elapsedTime = player.currentTime()
             if CMTIME_IS_INVALID(elapsedTime) {
                 return
             }
-            let duration = Float(CMTimeGetSeconds(player.currentItem!.duration))
+            let duration = Float(CMTimeGetSeconds(currentItem.duration))
             let time = Float(CMTimeGetSeconds(elapsedTime))
-            
+
             if duration.isFinite && duration > 0 {
-                updateProgress(CGFloat(time / duration), "\(getTimeString(Int(floor(1 + duration - time))))", buffering: !(self.videoView.player?.currentItem?.isPlaybackLikelyToKeepUp ?? true))
+                updateProgress(CGFloat(time / duration), "\(getTimeString(Int(floor(1 + duration - time))))",
+                    buffering: !currentItem.isPlaybackLikelyToKeepUp)
             }
-            if !handlingPlayerItemDidreachEnd && (time / duration) >= 0.99 {
+            if !handlingPlayerItemDidreachEnd && (time / duration) >= 0.999 {
                 handlingPlayerItemDidreachEnd = true
                 self.playerItemDidreachEnd()
             }
         }
     }
     
-    func handleLongPress(_ sender: UILongPressGestureRecognizer) {
-        if sender.state == UIGestureRecognizerState.began {
+    var longBlocking = false
+    
+    @objc func handleLongPress(_ sender: UILongPressGestureRecognizer) {
+        if sender.state == UIGestureRecognizer.State.began {
             cancelled = false
-            timer = Timer.scheduledTimer(timeInterval: 0.25,
+            timer = Timer.scheduledTimer(timeInterval: 0.36,
                                          target: self,
                                          selector: #selector(self.showMore),
                                          userInfo: nil,
                                          repeats: false)
             
         }
-        if sender.state == UIGestureRecognizerState.ended {
+        if sender.state == UIGestureRecognizer.State.ended {
             timer!.invalidate()
             cancelled = true
+            longBlocking = false
         }
     }
     
-    func edit(sender: AnyObject) {
+    @objc func edit(sender: AnyObject) {
         let link = self.link!
         
-        let alertController: BottomSheetActionController = BottomSheetActionController()
-        alertController.headerData = "Edit your submission"
+        let alertController = DragDownAlertMenu(title: "Manage your submission", subtitle: link.title, icon: link.thumbnailUrl)
         
         if link.isSelf {
-            alertController.addAction(Action(ActionData(title: "Edit selftext", image: UIImage(named: "edit")!.menuIcon()), style: .default, handler: { _ in
+            alertController.addAction(title: "Edit selftext", icon: UIImage(sfString: SFSymbol.pencil, overrideString: "edit")!.menuIcon()) {
                 self.editSelftext()
-            }))
+            }
+        }
+        alertController.addAction(title: "Set flair", icon: UIImage(sfString: SFSymbol.flagFill, overrideString: "flag")!.menuIcon()) {
+            self.flairSelf()
         }
         
-        alertController.addAction(Action(ActionData(title: "Flair submission", image: UIImage(named: "size")!.menuIcon()), style: .default, handler: { _ in
-            self.flairSelf()
-            
-        }))
-        
-        alertController.addAction(Action(ActionData(title: "Delete submission", image: UIImage(named: "delete")!.menuIcon()), style: .default, handler: { _ in
+        alertController.addAction(title: "Delete submission", icon: UIImage(sfString: SFSymbol.trashFill, overrideString: "delete")!.menuIcon().getCopy(withColor: GMColor.red500Color())) {
             self.deleteSelf(self)
-        }))
-        
-        VCPresenter.presentAlert(alertController, parentVC: parentViewController!)
+        }
+
+        if parentViewController != nil {
+            alertController.show(parentViewController)
+        }
     }
     
     func editSelftext() {
         let reply = ReplyViewController.init(submission: link!, sub: (self.link?.subreddit)!) { (cr) in
             DispatchQueue.main.async(execute: { () -> Void in
-                self.setLink(submission: RealmDataWrapper.linkToRSubmission(submission: cr!), parent: self.parentViewController!, nav: self.navViewController!, baseSub: (self.link?.subreddit)!)
+                self.setLink(submission: RealmDataWrapper.linkToRSubmission(submission: cr!), parent: self.parentViewController!, nav: self.navViewController!, baseSub: (self.link?.subreddit)!, np: false)
                 self.showBody(width: self.contentView.frame.size.width - 24)
             })
         }
         
         let navEditorViewController: UINavigationController = UINavigationController(rootViewController: reply)
         parentViewController?.present(navEditorViewController, animated: true, completion: nil)
-        //todo new implementation
+       // TODO: - new implementation
     }
     
     func deleteSelf(_ cell: LinkCellView) {
-        let alertController: BottomSheetActionController = BottomSheetActionController()
-        alertController.headerData = "Really delete your submission?"
+        let alertController = DragDownAlertMenu(title: "Really delete your submission?", subtitle: "This cannot be undone", icon: link!.thumbnailUrl)
         
-        alertController.addAction(Action(ActionData(title: "Yes", image: UIImage(named: "delete")!.menuIcon()), style: .default, handler: { _ in
+        alertController.addAction(title: "Delete", icon: UIImage(sfString: SFSymbol.trashFill, overrideString: "delete")!.menuIcon().getCopy(withColor: GMColor.red500Color())) {
             if let delegate = self.del {
                 delegate.deleteSelf(self)
             }
-        }))
+        }
         
-        VCPresenter.presentAlert(alertController, parentVC: parentViewController!)
+        alertController.addAction(title: "Cancel", icon: UIImage(sfString: SFSymbol.xmark, overrideString: "close")!.menuIcon()) {
+            alertController.dismiss(animated: true, completion: nil)
+        }
+
+        alertController.show(parentViewController)
     }
     
+    var lockDone = false
+    var crosspostDone = false
+
     func flairSelf() {
-        //todo this
+       // TODO: - this
         var list: [FlairTemplate] = []
         do {
             try (UIApplication.shared.delegate as! AppDelegate).session?.flairList(link!.subreddit, link: link!.id, completion: { (result) in
@@ -1637,23 +2191,14 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                 case .success(let flairs):
                     list.append(contentsOf: flairs)
                     DispatchQueue.main.async {
-                        let sheet = UIAlertController(title: "r/\(self.link!.subreddit) flairs", message: nil, preferredStyle: .actionSheet)
-                        sheet.addAction(
-                            UIAlertAction(title: "Close", style: .cancel) { (_) in
-                                sheet.dismiss(animated: true, completion: nil)
-                            }
-                        )
-                        
+                        let sheet = DragDownAlertMenu(title: "r/\(self.link!.subreddit) flairs", subtitle: "", icon: nil, themeColor: ColorUtil.accentColorForSub(sub: self.link!.subreddit), full: true)
+
                         for flair in flairs {
-                            let somethingAction = UIAlertAction(title: (flair.text.isEmpty) ?flair.name : flair.text, style: .default) { (_) in
-                                sheet.dismiss(animated: true, completion: nil)
+                            sheet.addAction(title: (flair.text.isEmpty) ? flair.name : flair.text, icon: nil, action: {
                                 self.setFlair(flair)
-                            }
-                            
-                            sheet.addAction(somethingAction)
+                            })
                         }
-                        
-                        self.parentViewController?.present(sheet, animated: true)
+                        sheet.show(self.parentViewController)
                     }
                 }
             })
@@ -1665,50 +2210,34 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     
     func setFlair(_ flair: FlairTemplate) {
         if flair.editable {
-            let alert = UIAlertController(title: "Edit flair text", message: "", preferredStyle: .alert)
+            let alert = DragDownAlertMenu(title: "Edit flair text", subtitle: "\(flair.name)", icon: nil)
             
-            let config: TextField.Config = { textField in
-                textField.becomeFirstResponder()
-                textField.textColor = .black
-                textField.placeholder = "Flair text"
-                textField.left(image: UIImage.init(named: "flag"), color: .black)
-                textField.leftViewPadding = 12
-                textField.borderWidth = 1
-                textField.cornerRadius = 8
-                textField.borderColor = UIColor.lightGray.withAlphaComponent(0.5)
-                textField.backgroundColor = .white
-                textField.keyboardAppearance = .default
-                textField.keyboardType = .default
-                textField.returnKeyType = .done
-                textField.text = flair.text
-                textField.action { textField in
-                    self.flairText = textField.text
-                }
-            }
+            alert.addTextInput(title: "Set flair", icon: UIImage(sfString: SFSymbol.flag, overrideString: "save-1")?.menuIcon(), action: {
+                self.submitFlairChange(flair, text: alert.getText() ?? "")
+            }, inputPlaceholder: "Flair text...", inputValue: flair.text, inputIcon: UIImage(sfString: SFSymbol.flagFill, overrideString: "flag")!.menuIcon(), textRequired: true, exitOnAction: true)
             
-            alert.addOneTextField(configuration: config)
-            
-            alert.addAction(UIAlertAction(title: "Set flair", style: .default, handler: { (_) in
-                self.submitFlairChange(flair, text: self.flairText ?? "")
-            }))
-            
-            alert.addAction(UIAlertAction.init(title: "Cancel", style: .cancel, handler: nil))
-            
-            //todo make this work on ipad
-            parentViewController?.present(alert, animated: true, completion: nil)
-            
+            alert.show(parentViewController)
         } else {
             submitFlairChange(flair)
         }
     }
     
-    func unmute() {
-        self.videoView?.player?.isMuted = false
-        UIView.animate(withDuration: 0.5, animations: {
-            self.sound.alpha = 0
-        }, completion: { (_) in
-            self.sound.isHidden = true
-        })
+    @objc func unmute() {
+        if self.videoView?.player?.isMuted ?? true {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, options: [])
+            self.videoView?.player?.isMuted = false
+            
+            UIView.animate(withDuration: 0.5, animations: {
+                self.sound.setImage(UIImage(sfString: SFSymbol.volume2Fill, overrideString: "audio")?.navIcon(), for: UIControl.State.normal)
+            }, completion: nil)
+        } else {
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            self.videoView?.player?.isMuted = true
+            
+            UIView.animate(withDuration: 0.5, animations: {
+                self.sound.setImage(UIImage(sfString: SFSymbol.volumeSlashFill, overrideString: "mute")?.getCopy(withSize: CGSize.square(size: 20), withColor: GMColor.red400Color()), for: .normal)
+            }, completion: nil)
+        }
     }
     
     func submitFlairChange(_ flair: FlairTemplate, text: String? = "") {
@@ -1725,92 +2254,229 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                     DispatchQueue.main.async {
                         BannerUtil.makeBanner(text: "Flair set successfully!", seconds: 3, context: self.parentViewController)
                         self.link!.flair = (text != nil && !text!.isEmpty) ? text! : flair.text
-                        _ = CachedTitle.getTitle(submission: self.link!, full: true, true, false)
-                        self.setLink(submission: self.link!, parent: self.parentViewController!, nav: self.navViewController!, baseSub: (self.link?.subreddit)!)
-                        self.showBody(width: self.contentView.frame.size.width - 24)
+                        _ = CachedTitle.getTitle(submission: self.link!, full: true, true, false, gallery: false)
+                        self.setLink(submission: self.link!, parent: self.parentViewController!, nav: self.navViewController!, baseSub: (self.link?.subreddit)!, np: false)
+                        if self.textView != nil {
+                            self.showBody(width: self.contentView.frame.size.width - 24)
+                        }
                     }
                 }}
         } catch {
         }
     }
     
-    func refresh() {
+    func refresh(np: Bool = false) {
         let link = self.link!
+
         upvote.setImage(LinkCellImageCache.upvote, for: .normal)
-        save.setImage(LinkCellImageCache.save, for: .normal)
-        readLater.setImage(LinkCellImageCache.readLater, for: .normal)
         downvote.setImage(LinkCellImageCache.downvote, for: .normal)
         sideUpvote.setImage(LinkCellImageCache.upvoteSmall, for: .normal)
         sideDownvote.setImage(LinkCellImageCache.downvoteSmall, for: .normal)
+        share.setImage(LinkCellImageCache.share, for: .normal)
+        menu.setImage(LinkCellImageCache.menu, for: .normal)
+
+        save.setImage(ActionStates.isSaved(s: link) ? LinkCellImageCache.saveTinted : LinkCellImageCache.save, for: .normal)
+        mod.setImage(link.reports.isEmpty ? LinkCellImageCache.mod : LinkCellImageCache.modTinted, for: .normal)
+        readLater.setImage(ReadLater.isReadLater(id: link.getId()) ? LinkCellImageCache.readLaterTinted : LinkCellImageCache.readLater, for: .normal)
         
-        var attrs: [String: Any] = [:]
+        var attrs: [NSAttributedString.Key: Any] = [:]
         switch ActionStates.getVoteDirection(s: link) {
         case .down:
             downvote.setImage(LinkCellImageCache.downvoteTinted, for: .normal)
             sideDownvote.setImage(LinkCellImageCache.downvoteTintedSmall, for: .normal)
-            attrs = ([NSForegroundColorAttributeName: ColorUtil.downvoteColor, NSFontAttributeName: FontGenerator.boldFontOfSize(size: 12, submission: true)])
+            attrs = ([NSAttributedString.Key.foregroundColor: ColorUtil.downvoteColor, NSAttributedString.Key.font: FontGenerator.boldFontOfSize(size: 12, submission: true)])
         case .up:
             upvote.setImage(LinkCellImageCache.upvoteTinted, for: .normal)
             sideUpvote.setImage(LinkCellImageCache.upvoteTintedSmall, for: .normal)
-            attrs = ([NSForegroundColorAttributeName: ColorUtil.upvoteColor, NSFontAttributeName: FontGenerator.boldFontOfSize(size: 12, submission: true)])
+            attrs = ([NSAttributedString.Key.foregroundColor: ColorUtil.upvoteColor, NSAttributedString.Key.font: FontGenerator.boldFontOfSize(size: 12, submission: true)])
         default:
-            attrs = ([NSForegroundColorAttributeName: ColorUtil.fontColor, NSFontAttributeName: FontGenerator.fontOfSize(size: 12, submission: true)])
+            attrs = ([NSAttributedString.Key.foregroundColor: ColorUtil.theme.navIconColor, NSAttributedString.Key.font: FontGenerator.boldFontOfSize(size: 12, submission: true)])
         }
         
+        var scoreInt = link.score
+        switch ActionStates.getVoteDirection(s: link) {
+        case .up:
+            if link.likes != .up {
+                if link.likes == .down {
+                    scoreInt += 1
+                }
+                scoreInt += 1
+            }
+        case .down:
+            if link.likes != .down {
+                if link.likes == .up {
+                    scoreInt -= 1
+                }
+                scoreInt -= 1
+            }
+        case .none:
+            if link.likes == .up && link.author == AccountController.currentName {
+                scoreInt -= 1
+            }
+        }
         if full {
-            let subScore = NSMutableAttributedString(string: (link.score >= 10000 && SettingValues.abbreviateScores) ? String(format: " %0.1fk", (Double(link.score) / Double(1000))) : " \(link.score)", attributes: attrs)
+            let subScore = NSMutableAttributedString(string: (scoreInt >= 10000 && SettingValues.abbreviateScores) ? String(format: " %0.1fk", (Double(scoreInt) / Double(1000))) : " \(scoreInt)", attributes: attrs)
             let scoreRatio =
                 NSMutableAttributedString(string: (SettingValues.upvotePercentage && full && link.upvoteRatio > 0) ?
-                    " (\(Int(link.upvoteRatio * 100))%)" : "", attributes: [NSFontAttributeName: comments.font, NSForegroundColorAttributeName: comments.textColor])
+                    " (\(Int(link.upvoteRatio * 100))%)" : "", attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.font): comments.font ?? UIFont.systemFont(ofSize: 14), convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): comments.textColor ?? ColorUtil.theme.fontColor]))
             
             var attrsNew: [String: Any] = [:]
             if scoreRatio.length > 0 {
                 let numb = (link.upvoteRatio)
                 if numb <= 0.5 {
                     if numb <= 0.1 {
-                        attrsNew = [NSForegroundColorAttributeName: GMColor.blue500Color()]
+                        attrsNew = [convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): GMColor.blue500Color()]
                     } else if numb <= 0.3 {
-                        attrsNew = [NSForegroundColorAttributeName: GMColor.blue400Color()]
+                        attrsNew = [convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): GMColor.blue400Color()]
                     } else {
-                        attrsNew = [NSForegroundColorAttributeName: GMColor.blue300Color()]
+                        attrsNew = [convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): GMColor.blue300Color()]
                     }
                 } else {
                     if numb >= 0.9 {
-                        attrsNew = [NSForegroundColorAttributeName: GMColor.orange500Color()]
+                        attrsNew = [convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): GMColor.orange500Color()]
                     } else if numb >= 0.7 {
-                        attrsNew = [NSForegroundColorAttributeName: GMColor.orange400Color()]
+                        attrsNew = [convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): GMColor.orange400Color()]
                     } else {
-                        attrsNew = [NSForegroundColorAttributeName: GMColor.orange300Color()]
+                        attrsNew = [convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): GMColor.orange300Color()]
                     }
                 }
             }
             
-            scoreRatio.addAttributes(attrsNew, range: NSRange.init(location: 0, length: scoreRatio.length))
+            scoreRatio.addAttributes(convertToNSAttributedStringKeyDictionary(attrsNew), range: NSRange.init(location: 0, length: scoreRatio.length))
             
             subScore.append(scoreRatio)
             score.attributedText = subScore
         } else {
-            let scoreString = NSAttributedString(string: (link.score >= 10000 && SettingValues.abbreviateScores) ? String(format: " %0.1fk", (Double(link.score) / Double(1000))) : " \(link.score)", attributes: attrs)
+            let sideText = (scoreInt >= 10000 && SettingValues.abbreviateScores) ? String(format: " %0.1fk", (Double(scoreInt) / Double(1000))) : " \(scoreInt)"
+            var attrsCopy = attrs
+            if !SettingValues.actionBarMode.isFull() && sideText.length > 5 && !full {
+                attrsCopy[NSAttributedString.Key.font] = FontGenerator.boldFontOfSize(size: 10, submission: true)
+            }
+            let scoreString = NSAttributedString(string: sideText, attributes: attrsCopy)
             
-            if SettingValues.actionBarMode == .FULL {
+            if SettingValues.actionBarMode.isFull() {
                 score.attributedText = scoreString
             } else if SettingValues.actionBarMode != .NONE {
                 sideScore.attributedText = scoreString
             }
         }
-        
-        if ActionStates.isSaved(s: link) {
-            save.setImage(LinkCellImageCache.saveTinted, for: .normal)
+        if full && !lockDone {
+            lockDone = true
+            
+            var text = ""
+            var icon = ""
+            if np {
+                text = "This is a no participation link.\nPlease don't vote or comment"
+                icon = "close"
+            }
+            if link.archived {
+                text = "This is an archived post.\nYou won't be able to vote or comment"
+                icon = "multis"
+            } else if link.locked {
+                text = "This is a locked post.\nYou won't be able to comment"
+                icon = "lock"
+            }
+            
+            if type != .IMAGE && type != .SELF && type != .NONE && !thumb {
+                let outer = UILabel.init(frame: CGRect.init(x: 0, y: 0, width: 0, height: 48))
+                let popup = UILabel()
+                outer.backgroundColor = ColorUtil.theme.foregroundColor.add(overlay: ColorUtil.getColorForSub(sub: link.subreddit).withAlphaComponent(0.2))
+                popup.textAlignment = .left
+                popup.isUserInteractionEnabled = true
+                
+                let finalText: NSMutableAttributedString!
+                let firstPart = NSMutableAttributedString.init(string: type.getTitle(link.url), attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): ColorUtil.theme.fontColor, convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.boldSystemFont(ofSize: 14)]))
+                let secondPart = NSMutableAttributedString.init(string: "\n" + link.urlString, attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): ColorUtil.theme.fontColor, convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.systemFont(ofSize: 12)]))
+                firstPart.append(secondPart)
+                finalText = firstPart
+                popup.attributedText = finalText
+                
+                popup.numberOfLines = 2
+                
+                outer.elevate(elevation: 2)
+                outer.layer.cornerRadius = 5
+                outer.clipsToBounds = true
+                
+                let icon = UIImageView(image: UIImage(named: type.getImage())!.getCopy(withSize: CGSize.square(size: 20), withColor: ColorUtil.theme.fontColor))
+                outer.addSubviews(icon, popup)
+                icon.leftAnchor == outer.leftAnchor + CGFloat(8)
+                icon.centerYAnchor == outer.centerYAnchor
+                icon.widthAnchor == 40
+                icon.contentMode = .center
+
+                popup.leftAnchor == icon.rightAnchor + CGFloat(8)
+                popup.verticalAnchors == outer.verticalAnchors
+                popup.rightAnchor == outer.rightAnchor - CGFloat(8)
+                
+                infoBox.spacing = 4
+                infoBox.addArrangedSubview(outer)
+                
+                outer.horizontalAnchors == infoBox.horizontalAnchors
+                outer.heightAnchor == 48
+                
+                outer.addTapGestureRecognizer {
+                    let shareItems: Array = [link.url]
+                    let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems as [Any], applicationActivities: nil)
+                    if let presenter = activityViewController.popoverPresentationController {
+                        presenter.sourceView = outer
+                        presenter.sourceRect = outer.bounds
+                    }
+                    activityViewController.showWindowless()
+                }
+            }
+            
+            if !text.isEmpty {
+                let outer = UILabel.init(frame: CGRect.init(x: 0, y: 0, width: 0, height: 48))
+                let popup = UILabel()
+                outer.backgroundColor = ColorUtil.getColorForSub(sub: link.subreddit)
+                popup.textAlignment = .left
+                popup.isUserInteractionEnabled = true
+
+                let textParts = text.components(separatedBy: "\n")
+                
+                let finalText: NSMutableAttributedString!
+                if textParts.count > 1 {
+                    let firstPart = NSMutableAttributedString.init(string: textParts[0], attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): UIColor.white, convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.boldSystemFont(ofSize: 14)]))
+                    let secondPart = NSMutableAttributedString.init(string: "\n" + textParts[1], attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): UIColor.white, convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.systemFont(ofSize: 12)]))
+                    firstPart.append(secondPart)
+                    finalText = firstPart
+                } else {
+                    finalText = NSMutableAttributedString.init(string: text, attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): UIColor.white, convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.boldSystemFont(ofSize: 14)]))
+                }
+                popup.attributedText = finalText
+                
+                popup.numberOfLines = 2
+                
+                outer.elevate(elevation: 2)
+                outer.layer.cornerRadius = 5
+                outer.clipsToBounds = true
+                
+                let icon = UIImageView(image: UIImage(named: icon)!.getCopy(withSize: CGSize.square(size: 20), withColor: UIColor.white))
+                outer.addSubviews(icon, popup)
+                icon.leftAnchor == outer.leftAnchor + CGFloat(8)
+                icon.centerYAnchor == outer.centerYAnchor
+                icon.widthAnchor == 40
+                icon.contentMode = .center
+                
+                popup.leftAnchor == icon.rightAnchor + CGFloat(8)
+                popup.verticalAnchors == outer.verticalAnchors
+                popup.rightAnchor == outer.rightAnchor - CGFloat(8)
+                
+                infoBox.spacing = 4
+                infoBox.addArrangedSubview(outer)
+                
+                outer.horizontalAnchors == infoBox.horizontalAnchors
+                outer.heightAnchor == 48
+            }
         }
-        if History.getSeen(s: link) && !full {
-            self.title.alpha = 0.7
+
+        if History.getSeen(s: link) && !full && !SettingValues.newIndicator {
+            self.title.alpha = 0.3
         } else {
             self.title.alpha = 1
         }
 
-        if ReadLater.isReadLater(id: link.getId()) {
-            readLater.setImage(LinkCellImageCache.readLaterTinted, for: .normal)
-        }
+        refreshAccessibility(submission: link)
     }
     
     override func layoutSubviews() {
@@ -1820,7 +2486,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         var leftmargin = 0
         var rightmargin = 0
         
-        if (SettingValues.postViewMode == .CARD || SettingValues.postViewMode == .CENTER) && !full {
+        if (SettingValues.postViewMode == .CARD || SettingValues.postViewMode == .CENTER) && !full && !(self is GalleryLinkCellView){
             topmargin = 5
             bottommargin = 5
             leftmargin = 5
@@ -1831,7 +2497,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
         }
         
         let f = self.contentView.frame
-        let fr = UIEdgeInsetsInsetRect(f, UIEdgeInsets(top: CGFloat(topmargin), left: CGFloat(leftmargin), bottom: CGFloat(bottommargin), right: CGFloat(rightmargin)))
+        let fr = f.inset(by: UIEdgeInsets(top: CGFloat(topmargin), left: CGFloat(leftmargin), bottom: CGFloat(bottommargin), right: CGFloat(rightmargin)))
         self.contentView.frame = fr
     }
     
@@ -1839,7 +2505,8 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     
     func previewingContext(_ previewingContext: UIViewControllerPreviewing,
                            viewControllerForLocation location: CGPoint) -> UIViewController? {
-        if full {
+        // TODO: - this
+        /* if full {
             let locationInTextView = textView.convert(location, to: textView)
             
             if let (url, rect) = getInfo(locationInTextView: locationInTextView) {
@@ -1848,36 +2515,36 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                     return controller
                 }
             }
-        } else {
+        } else {*/
             History.addSeen(s: link!)
-            if History.getSeen(s: link!) {
-                self.title.alpha = 0.7
+            if History.getSeen(s: link!) && !SettingValues.newIndicator {
+                self.title.alpha = 0.3
             } else {
                 self.title.alpha = 1
             }
-            if let controller = parentViewController?.getControllerForUrl(baseUrl: (link?.url)!) {
+        if let url = link?.url, let controller = parentViewController?.getControllerForUrl(baseUrl: url) {
                 return controller
             }
-        }
+        //}
         return nil
     }
     
-    func estimateHeight(_ full: Bool, _ reset: Bool = false) -> CGFloat {
+    func estimateHeight(_ full: Bool, _ reset: Bool = false, np: Bool) -> CGFloat {
         if estimatedHeight == 0 || reset {
             var paddingTop = CGFloat(0)
             var paddingBottom = CGFloat(2)
             var paddingLeft = CGFloat(0)
             var paddingRight = CGFloat(0)
             var innerPadding = CGFloat(0)
-            if (SettingValues.postViewMode == .CARD || SettingValues.postViewMode == .CENTER) && !full {
+            if (SettingValues.postViewMode == .CARD || SettingValues.postViewMode == .CENTER) && !full && !(self is GalleryLinkCellView) {
                 paddingTop = 5
                 paddingBottom = 5
                 paddingLeft = 5
                 paddingRight = 5
             }
             
-            let actionbar = CGFloat(!full && SettingValues.actionBarMode != .FULL ? 0 : 24)
-            
+            let actionbar = CGFloat(!full && !SettingValues.actionBarMode.isFull() ? 0 : 24)
+
             var imageHeight = big && !thumb ? CGFloat(submissionHeight) : CGFloat(0)
             let thumbheight = (full || SettingValues.largerThumbnail ? CGFloat(75) : CGFloat(50)) - (!full && SettingValues.postViewMode == .COMPACT ? 15 : 0)
             
@@ -1885,7 +2552,7 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
             
             if thumb {
                 imageHeight = thumbheight
-                innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between top and thumbnail
+                innerPadding += (SettingValues.postViewMode == .COMPACT ? 8 : 12) //between top and thumbnail
                 innerPadding += 18 - (SettingValues.postViewMode == .COMPACT && !full ? 4 : 0) //between label and bottom box
                 innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between box and end
             } else if big {
@@ -1896,7 +2563,6 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                     innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between banner and label
                     innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 8 : 12) //between label and box
                 }
-                
                 innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between box and end
             } else {
                 innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8)
@@ -1913,45 +2579,142 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
                     estimatedUsableWidth -= thumbheight //is the same as the width
                     estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT && !full ? 16 : 24) //between edge and thumb
                     estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between thumb and label
-                } else {
+                } else if SettingValues.actionBarMode.isFull() || SettingValues.actionBarMode == .NONE {
                     estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT && !full ? 16 : 24) //12 padding on either side
                 }
             } else {
-                fullHeightExtras += 12
                 estimatedUsableWidth -= (24) //12 padding on either side
                 if thumb {
                     fullHeightExtras += 45 + 12 + 12
                 } else {
                     fullHeightExtras += imageHeight
                 }
+                
+                if link!.archived || link!.locked || np {
+                    fullHeightExtras += 56
+                }
+                
+                if type != .IMAGE && type != .SELF && type != .NONE && !thumb {
+                    fullHeightExtras += 56
+                }
+        
+                if link!.isCrosspost {
+                    fullHeightExtras += 56
+                    if link!.archived || link!.locked || np {
+                        fullHeightExtras += 8
+                    }
+                }
             }
             
             if SettingValues.actionBarMode.isSide() && !full {
-                estimatedUsableWidth -= 36
-                estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT && !full ? 16 : 24) //buttons horizontal margins
+                estimatedUsableWidth -= 40
+                estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT && !full ? 8 : 16) //buttons horizontal margins
             }
             
-            let framesetter = CTFramesetterCreateWithAttributedString(title.attributedText)
-            let textSize = CTFramesetterSuggestFrameSizeWithConstraints(framesetter, CFRange(), nil, CGSize.init(width: estimatedUsableWidth, height: CGFloat.greatestFiniteMagnitude), nil)
+            let size = CGSize(width: estimatedUsableWidth, height: CGFloat.greatestFiniteMagnitude)
+            let layout = YYTextLayout(containerSize: size, text: title.attributedText!)!
+            title.textLayout = layout
+            let textSize = layout.textBoundingSize
             
-            let totalHeight = paddingTop + paddingBottom + (full ? ceil(textSize.height) : (thumb && !full ? max((!full && SettingValues.actionBarMode.isSide() ? max(ceil(textSize.height), 72) : ceil(textSize.height)), imageHeight) : (!full && SettingValues.actionBarMode.isSide() ? max(ceil(textSize.height), 72) : ceil(textSize.height)) + imageHeight)) + innerPadding + actionbar + textHeight + fullHeightExtras
+            let totalHeight = paddingTop + paddingBottom + (full ? ceil(textSize.height) : (thumb && !full ? max((!full && SettingValues.actionBarMode.isSide() ? max(ceil(textSize.height), 72) : ceil(textSize.height)), imageHeight) : (!full && SettingValues.actionBarMode.isSide() ? max(ceil(textSize.height), 72) : ceil(textSize.height)) + imageHeight)) + innerPadding + actionbar + textHeight + fullHeightExtras + CGFloat(5)
             estimatedHeight = totalHeight
         }
         return estimatedHeight
     }
     
+    func estimateHeightSingle(_ full: Bool, np: Bool, attText: NSAttributedString) -> YYTextLayout {
+        var paddingLeft = CGFloat(0)
+        var paddingRight = CGFloat(0)
+        var innerPadding = CGFloat(0)
+        if (SettingValues.postViewMode == .CARD || SettingValues.postViewMode == .CENTER) && !full && !(self is GalleryLinkCellView) {
+            paddingLeft = 5
+            paddingRight = 5
+        }
+        var imageHeight = big && !thumb ? CGFloat(submissionHeight) : CGFloat(0)
+        let thumbheight = (full || SettingValues.largerThumbnail ? CGFloat(75) : CGFloat(50)) - (!full && SettingValues.postViewMode == .COMPACT ? 15 : 0)
+        
+        if thumb {
+            imageHeight = thumbheight
+            innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 8 : 12) //between top and thumbnail
+            innerPadding += 18 - (SettingValues.postViewMode == .COMPACT && !full ? 4 : 0) //between label and bottom box
+            innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between box and end
+        } else if big {
+            if SettingValues.postViewMode == .CENTER || full {
+                innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 8 : 16) //between label
+                innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 8 : 12) //between banner and box
+            } else {
+                innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between banner and label
+                innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 8 : 12) //between label and box
+            }
+            
+            innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between box and end
+        } else {
+            innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8)
+            innerPadding += 5 //between label and body
+            innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 8 : 12) //between body and box
+            innerPadding += (SettingValues.postViewMode == .COMPACT && !full ? 4 : 8) //between box and end
+        }
+        
+        var estimatedUsableWidth = aspectWidth - paddingLeft - paddingRight
+        var fullHeightExtras = CGFloat(0)
+        
+        if !full {
+            if thumb {
+                estimatedUsableWidth -= thumbheight //is the same as the width
+                estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT && !full ? 16 : 24) //between edge and thumb
+                estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT && !full ? 8 : 12) //between thumb and label
+            } else {
+                estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT && !full ? 16 : 24) //12 padding on either side
+            }
+        } else {
+            fullHeightExtras += 12
+            estimatedUsableWidth -= (24) //12 padding on either side
+            if thumb {
+                fullHeightExtras += 45 + 12 + 12
+            } else {
+                fullHeightExtras += imageHeight
+            }
+            
+            if link!.archived || link!.locked || np {
+                fullHeightExtras += 56
+            }
+            
+            fullHeightExtras += 8
+            
+            if link!.isCrosspost {
+                fullHeightExtras += 56
+            }
+        }
+        
+        if SettingValues.actionBarMode.isSide() && !full {
+            estimatedUsableWidth -= 40
+            estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT ? 8 : 16) //buttons horizontal margins
+            if thumb {
+                estimatedUsableWidth += (SettingValues.postViewMode == .COMPACT ? 16 : 24) //between edge and thumb no longer exists
+                estimatedUsableWidth -= (SettingValues.postViewMode == .COMPACT ? 4 : 8) //buttons buttons and thumb
+            }
+        }
+        
+        let size = CGSize(width: estimatedUsableWidth, height: CGFloat.greatestFiniteMagnitude)
+        let layout = YYTextLayout(containerSize: size, text: attText)!
+        return layout
+    }
+    
+    // TODO: - this
+    /*
     func getInfo(locationInTextView: CGPoint) -> (URL, CGRect)? {
         if let attr = textView.firstTextView.link(at: locationInTextView) {
             return (attr.result.url!, attr.accessibilityFrame)
         }
         return nil
     }
+    */
     
     func previewingContext(_ previewingContext: UIViewControllerPreviewing, commit viewControllerToCommit: UIViewController) {
         if viewControllerToCommit is AlbumViewController {
             viewControllerToCommit.modalPresentationStyle = .overFullScreen
             parentViewController?.present(viewControllerToCommit, animated: true, completion: nil)
-        } else if viewControllerToCommit is ModalMediaViewController {
+        } else if viewControllerToCommit is ModalMediaViewController || viewControllerToCommit is AnyModalViewController {
             viewControllerToCommit.modalPresentationStyle = .overFullScreen
             parentViewController?.present(viewControllerToCommit, animated: true, completion: nil)
         } else {
@@ -1964,44 +2727,68 @@ class LinkCellView: UICollectionViewCell, UIViewControllerPreviewingDelegate, TT
     }
     
     public var parentViewController: (UIViewController & MediaVCDelegate)?
+    weak var previewedVC: UIViewController?
+    var previewedImage = false
+    var previewedVideo = false
+    var previewedURL: URL?
     public var navViewController: UIViewController?
     
-    func openLink(sender: UITapGestureRecognizer? = nil) {
+    @objc func openLink(sender: UITapGestureRecognizer? = nil) {
         if let link = link {
-            (parentViewController)?.setLink(lnk: link, shownURL: loadedImage, lq: lq, saveHistory: true, heroView: big ? bannerImage : thumbImage, heroVC: parentViewController) //todo check this
-            if History.getSeen(s: link) && !full {
-                self.title.alpha = 0.7
+            (parentViewController)?.setLink(lnk: link, shownURL: loadedImage, lq: lq, saveHistory: true, heroView: big ? bannerImage : thumbImage, heroVC: parentViewController, upvoteCallbackIn: {[weak self] in
+                if let strongSelf = self {
+                    strongSelf.upvote()
+                }
+            })// TODO: - check this
+            if History.getSeen(s: link) && !full && !SettingValues.newIndicator {
+                self.title.alpha = 0.3
             } else {
                 self.title.alpha = 1
             }
         }
     }
     
-    func openLinkVideo(sender: UITapGestureRecognizer? = nil) {
+    @objc func openLinkVideo(sender: UITapGestureRecognizer? = nil) {
         if !playView.isHidden {
+            shouldLoadVideo = true
             doLoadVideo()
             playView.isHidden = true
             self.progressDot.isHidden = false
         } else if self.videoView.player != nil && self.videoView.player?.currentItem != nil && self.videoView.player!.currentItem!.presentationSize.width != 0 {
-            let controller = AnyModalViewController(cellView: self)
+            let upvoted = ActionStates.getVoteDirection(s: link!) == VoteDirection.up
+            let controller = AnyModalViewController(cellView: self, full ? nil : {[weak self] in
+                if let strongSelf = self {
+                    strongSelf.doOpenComment()
+                }
+            }, upvoteCallback: {[weak self] in
+                if let strongSelf = self {
+                    strongSelf.upvote()
+                }
+            }, isUpvoted: upvoted, failure: nil)
             let postContentTransitioningDelegate = PostContentPresentationManager()
             postContentTransitioningDelegate.sourceImageView = self.videoView
             controller.transitioningDelegate = postContentTransitioningDelegate
             controller.modalPresentationStyle = .custom
+            controller.forceStartUnmuted = !self.videoView.player!.isMuted
             
             parentViewController?.present(controller, animated: true, completion: nil)
         }
     }
     
-    func openComment(sender: UITapGestureRecognizer? = nil) {
+    @objc func openComment(sender: UITapGestureRecognizer? = nil) {
+        doOpenComment()
+    }
+    
+    @objc public func doOpenComment() {
         if !full {
             if let delegate = self.del {
                 if videoView != nil {
                     videoView?.player?.pause()
                 }
+                History.addSeen(s: link!, skipDuplicates: true)
                 delegate.openComments(id: link!.getId(), subreddit: link!.subreddit)
-                if History.getSeen(s: link!) {
-                    self.title.alpha = 0.7
+                if History.getSeen(s: link!) && !SettingValues.newIndicator {
+                    self.title.alpha = 0.3
                 } else {
                     self.title.alpha = 1
                 }
@@ -2041,7 +2828,7 @@ extension UILabel {
             textAttachment.image = image as? UIImage
         } else {
             
-            let img = UIImage(named: imageName)?.getCopy(withSize: .square(size: self.font.pointSize), withColor: ColorUtil.fontColor)
+            let img = UIImage(named: imageName)?.getCopy(withSize: .square(size: self.font.pointSize), withColor: ColorUtil.theme.navIconColor)
             textAttachment.image = img
             LinkCellView.imageDictionary.setObject(img!, forKey: imageName as NSCopying)
         }
@@ -2061,7 +2848,7 @@ protocol MaterialView {
     func elevate(elevation: Double)
 }
 
-// TODO: This function will be on every UIView, not just those that conform to MaterialView.
+// TODO: - This function will be on every UIView, not just those that conform to MaterialView.
 extension UIView: MaterialView {
     func elevate(elevation: Double) {
         self.layer.masksToBounds = false
@@ -2077,3 +2864,465 @@ extension UIGestureRecognizer {
         isEnabled = true
     }
 }
+
+private extension UIView {
+
+    func startPulsingAnimation() {
+        self.alpha = 0.025
+        UIView.animateKeyframes(withDuration: 1.6, delay: 0, options: [.allowUserInteraction, .repeat, .calculationModeCubicPaced], animations: {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.5) {
+                self.alpha = 0.09
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.5, relativeDuration: 0.5) {
+                self.alpha = 0.025
+            }
+        })
+    }
+
+}
+
+public extension UIImageView {
+    func loadImageWithPulsingAnimation(atUrl url: URL?, withPlaceHolderImage placeholderImage: UIImage?) {
+        let oldBackgroundColor: UIColor? = self.backgroundColor
+        self.backgroundColor = ColorUtil.theme.fontColor
+
+        startPulsingAnimation()
+
+        DispatchQueue.global(qos: .userInteractive).async {
+            self.sd_setImage(with: url, placeholderImage: placeholderImage, options: [.allowInvalidSSLCertificates, .scaleDownLargeImages]) { (_, _, cacheType, _) in
+                self.layer.removeAllAnimations() // Stop the pulsing animation
+                self.backgroundColor = oldBackgroundColor
+
+                if cacheType == .none {
+                    UIView.animate(withDuration: 0.3, delay: 0, options: .allowUserInteraction, animations: {
+                        self.alpha = 1
+                    })
+                } else {
+                    self.alpha = 1
+                }
+            }
+        }
+    }
+}
+
+class PostActionsManager {
+    var submission: RSubmission
+
+    private lazy var networkActionsArePossible: Bool = {
+        return AccountController.isLoggedIn && LinkCellView.checkInternet()
+    }()
+
+    var isSaveEnabled: Bool {
+        return SettingValues.saveButton
+    }
+
+    var isHideEnabled: Bool {
+        return SettingValues.hideButton
+    }
+    
+    var isMenuEnabled: Bool {
+        return SettingValues.menuButton
+    }
+    
+    var isShareEnabled: Bool {
+        return SettingValues.shareButton
+    }
+
+    var isReadLaterEnabled: Bool {
+        return SettingValues.readLaterButton
+    }
+
+    var isVotingPossible: Bool {
+        return networkActionsArePossible && !submission.archived
+    }
+
+    var isSavePossible: Bool {
+        return networkActionsArePossible
+    }
+
+    var isEditPossible: Bool {
+        return networkActionsArePossible && !submission.archived && AccountController.currentName == submission.author
+    }
+
+    var isReplyPossible: Bool {
+        return networkActionsArePossible && !submission.archived
+    }
+
+    var isModPossible: Bool {
+        return networkActionsArePossible && submission.canMod
+    }
+
+    init(submission: RSubmission) {
+        self.submission = submission
+    }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToUIApplicationOpenExternalURLOptionsKeyDictionary(_ input: [String: Any]) -> [UIApplication.OpenExternalURLOptionsKey: Any] {
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (UIApplication.OpenExternalURLOptionsKey(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringKey(_ input: NSAttributedString.Key) -> String {
+	return input.rawValue
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromAVAudioSessionCategory(_ input: AVAudioSession.Category) -> String {
+	return input.rawValue
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
+	guard let input = input else { return nil }
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToNSAttributedStringKeyDictionary(_ input: [String: Any]) -> [NSAttributedString.Key: Any] {
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
+}
+
+@available(iOS 13.0, *)
+extension LinkCellView: UIContextMenuInteractionDelegate {
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating) {
+        animator.addCompletion {
+            if let vc = self.previewedVC {
+                if self.previewedVideo && vc is AnyModalViewController {
+                    //TODO check for memory leaks here
+                    let postContentTransitioningDelegate = PostContentPresentationManager()
+                    postContentTransitioningDelegate.sourceImageView = self.videoView
+                    vc.transitioningDelegate = postContentTransitioningDelegate
+                    vc.modalPresentationStyle = .custom
+                    (vc as! AnyModalViewController).forceStartUnmuted = !self.videoView.player!.isMuted
+                    
+                    self.parentViewController?.present(vc, animated: true, completion: nil)
+                } else {
+                    if vc is WebsiteViewController || vc is SFHideSafariViewController {
+                        self.previewedVC = nil
+                        if let url = self.previewedURL {
+                            self.parentViewController?.doShow(url: url, heroView: nil, heroVC: nil)
+                        }
+                    } else {
+                        if self.parentViewController != nil && (vc is AlbumViewController || vc is ModalMediaViewController) {
+                            vc.modalPresentationStyle = .overFullScreen
+                            self.parentViewController?.present(vc, animated: true)
+                        } else {
+                            VCPresenter.showVC(viewController: vc, popupIfPossible: true, parentNavigationController: nil, parentViewController: self.parentViewController)
+                        }
+                    }
+                }
+            } else if self.previewedImage {
+                self.openLink()
+            } else if self.previewedVideo {
+                self.openLinkVideo()
+            }
+        }
+    }
+    
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = .clear
+        
+        if full && self.textView != nil && !self.textView.isHidden && self.textView.frame.contains(interaction.location(in: self.contentView)) {
+            let location = interaction.location(in: self.textView)
+            
+            if self.textView.firstTextView.frame.contains(location) {
+                return UITargetedPreview(view: self.textView, parameters: self.getLocationForPreviewedText(self.textView.firstTextView, location, self.previewedURL?.absoluteString) ?? parameters)
+            } else if self.textView.overflow.frame.contains(location) {
+                let innerLocation = self.textView.convert(location, to: self.textView.overflow)
+                for view in self.textView.overflow.subviews {
+                    if view.frame.contains(innerLocation) && view is YYLabel {
+                        return UITargetedPreview(view: self.textView, parameters: self.getLocationForPreviewedText(view as! YYLabel, innerLocation, self.previewedURL?.absoluteString, self.textView) ?? parameters)
+                    }
+                }
+            }
+            return UITargetedPreview(view: self.textView, parameters: parameters)
+        } else if videoView != nil && !videoView.isHidden && videoView.frame.contains(interaction.location(in: self.contentView)) {
+            return UITargetedPreview(view: self.videoView, parameters: parameters)
+        } else if bannerImage != nil && !bannerImage.isHidden && bannerImage.frame.contains(interaction.location(in: self.contentView)) {
+            return UITargetedPreview(view: self.bannerImage, parameters: parameters)
+        } else if thumbImageContainer != nil && thumbImageContainer.frame.contains(interaction.location(in: self.contentView)) {
+            return UITargetedPreview(view: self.thumbImageContainer, parameters: parameters)
+        } else {
+            return UITargetedPreview(view: self.save, parameters: parameters)
+        }
+    }
+    
+    func getLocationForPreviewedText(_ label: YYLabel, _ location: CGPoint, _ inputURL: String?, _ changeRectTo: UIView? = nil) -> UIPreviewParameters? {
+        if inputURL == nil {
+            return nil
+        }
+        let point = label.superview?.convert(location, to: label) ?? location
+        var params: UIPreviewParameters?
+        if let attributedText = label.attributedText, let layoutManager = YYTextLayout(containerSize: label.frame.size, text: attributedText) {
+            let locationFinal = layoutManager.textPosition(for: point, lineIndex: layoutManager.lineIndex(for: point))
+            if locationFinal < 1000000 {
+                attributedText.enumerateAttribute(
+                    .link,
+                    in: NSRange(location: 0, length: attributedText.length)
+                ) { (value, range, _) in
+                    if let url = value as? NSURL {
+                        if url.absoluteString == inputURL! {
+                            let baseRects = layoutManager.selectionRects(for: YYTextRange(range: range))
+                            var cgs = [NSValue]()
+                            for rect in baseRects {
+                                if changeRectTo != nil {
+                                    cgs.append(NSValue(cgRect: changeRectTo!.convert(rect.rect, from: label)))
+                                } else {
+                                    cgs.append(NSValue(cgRect: rect.rect))
+                                }
+                            }
+                            params = UIPreviewParameters(textLineRects: cgs)
+                            params?.backgroundColor = .clear
+                        }
+                    }
+                }
+            }
+        }
+        return params
+    }
+    
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        let saveArea = self.contentView.convert(location, to: self.buttons)
+        if full && self.textView != nil && !self.textView.isHidden && self.textView.frame.contains(location) {
+            let innerPoint = self.contentView.convert(location, to: self.textView)
+            if self.textView.firstTextView.frame.contains(innerPoint) {
+                return getConfigurationForTextView(self.textView.firstTextView, innerPoint)
+            } else if self.textView.overflow.frame.contains(innerPoint) {
+                let innerLocation = self.contentView.convert(innerPoint, to: self.textView.overflow)
+                print(innerLocation)
+                for view in self.textView.overflow.subviews {
+                    if view.frame.contains(innerLocation) && view is YYLabel {
+                        return getConfigurationForTextView(view as! YYLabel, innerLocation)
+                    }
+                }
+            }
+        } else if let url = self.link?.url, videoView != nil && !videoView.isHidden && videoView.frame.contains(location) {
+            self.previewedVideo = true
+            return getConfigurationForVideo(url: url)
+        } else if let url = self.link?.url, bannerImage != nil && bannerImage.isHidden == false && (videoView == nil || videoView.isHidden) && bannerImage.frame.contains(location) {
+            self.previewedImage = true
+            return getConfigurationForImage(url: url)
+        } else if let url = self.link?.url, thumbImageContainer != nil && thumbImageContainer.frame.contains(location) {
+            return getConfigurationFor(url: url)
+        } else if save.frame.contains(saveArea) {
+            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil, actionProvider: { _ in
+                return self.makeContextMenu()
+            })
+        }
+        return nil
+    }
+    
+    func getConfigurationForTextView(_ label: YYLabel, _ location: CGPoint) -> UIContextMenuConfiguration? {
+        let point = label.superview?.convert(location, to: label) ?? location
+                if let attributedText = label.attributedText, let layoutManager = YYTextLayout(containerSize: label.frame.size, text: attributedText) {
+            let locationFinal = layoutManager.textPosition(for: point, lineIndex: layoutManager.lineIndex(for: point))
+            if locationFinal < 1000000 {
+                let attributes = attributedText.attributes(at: Int(locationFinal), effectiveRange: nil)
+                for attribute in attributes {
+                    if attribute.value is NSURL {
+                        if let url = (attribute.value as! NSURL).absoluteURL {
+                            return getConfigurationFor(url: url)
+                        }
+                    }
+                }
+            }
+        }
+        return nil
+    }
+    
+    func contextMenuInteractionDidEnd(_ interaction: UIContextMenuInteraction) {
+        self.previewedVC = nil
+        self.previewedImage = false
+        self.previewedVideo = false
+    }
+    
+    func getConfigurationFor(url: URL) -> UIContextMenuConfiguration {
+        self.previewedURL = url
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: { () -> UIViewController? in
+            if let vc = self.parentViewController?.getControllerForUrl(baseUrl: url) {
+                self.previewedVC = vc
+                if vc is SingleSubredditViewController || vc is CommentViewController || vc is WebsiteViewController || vc is SFHideSafariViewController || vc is SearchViewController {
+                    return UINavigationController(rootViewController: vc)
+                } else {
+                    return vc
+                }
+            }
+            return nil
+        }, actionProvider: { (_) -> UIMenu? in
+            var children = [UIMenuElement]()
+            
+            children.append(UIAction(title: "Share URL", image: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")!.menuIcon()) { _ in
+                let shareItems: Array = [url]
+                let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+                activityViewController.popoverPresentationController?.sourceView = self.contentView
+                activityViewController.showWindowless()
+            })
+            children.append(UIAction(title: "Copy URL", image: UIImage(sfString: SFSymbol.docOnDocFill, overrideString: "copy")!.menuIcon()) { _ in
+                UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
+                BannerUtil.makeBanner(text: "URL Copied", seconds: 5, context: self.parentViewController)
+            })
+
+            children.append(UIAction(title: "Open in default app", image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) { _ in
+                UIApplication.shared.open(url, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
+            })
+            
+            let open = OpenInChromeController.init()
+            if open.isChromeInstalled() {
+                children.append(UIAction(title: "Open in Chrome", image: UIImage(named: "world")!.menuIcon()) { _ in
+                    _ = open.openInChrome(url, callbackURL: nil, createNewTab: true)
+                })
+            }
+
+            return UIMenu(title: "Link Options", image: nil, identifier: nil, children: children)
+        })
+    }
+
+    func getConfigurationForImage(url: URL) -> UIContextMenuConfiguration {
+        self.previewedURL = url
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: { () -> UIViewController? in
+            let vc = UIViewController()
+            let image = UIImageView()
+            vc.view.addSubview(image)
+            image.image = self.bannerImage.image
+            let ratio = image.image!.size.width / image.image!.size.height
+            if vc.view.frame.width > vc.view.frame.height {
+                let newHeight = vc.view.frame.width / ratio
+                image.frame.size = CGSize(width: vc.view.frame.width, height: newHeight)
+            } else {
+                let newWidth = vc.view.frame.height * ratio
+                image.frame.size = CGSize(width: newWidth, height: vc.view.frame.height)
+            }
+            vc.preferredContentSize = image.frame.size
+            image.edgeAnchors == vc.view.edgeAnchors
+            return vc
+        }, actionProvider: { (_) -> UIMenu? in
+            var children = [UIMenuElement]()
+            
+            if ContentType.isImage(uri: url) && !self.bannerImage.isHidden {
+                let imageToShare = [self.bannerImage.image!]
+                let activityViewController = UIActivityViewController(activityItems: imageToShare, applicationActivities: nil)
+                children.append(UIAction(title: "Save Image", image: UIImage(sfString: SFSymbol.squareAndArrowDown, overrideString: "save")!.menuIcon()) { _ in
+                    CustomAlbum.shared.save(image: imageToShare[0], parent: self.parentViewController)
+                })
+                children.append(UIAction(title: "Share Image", image: UIImage(sfString: SFSymbol.cameraFill, overrideString: "share")!.menuIcon()) { _ in
+                    activityViewController.showWindowless()
+                })
+            }
+
+            children.append(UIAction(title: "Share Image URL", image: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")!.menuIcon()) { _ in
+                let shareItems: Array = [url]
+                let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+                activityViewController.popoverPresentationController?.sourceView = self.contentView
+                activityViewController.showWindowless()
+            })
+            children.append(UIAction(title: "Copy URL", image: UIImage(sfString: SFSymbol.docOnDocFill, overrideString: "copy")!.menuIcon()) { _ in
+                UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
+                BannerUtil.makeBanner(text: "URL Copied", seconds: 5, context: self.parentViewController)
+            })
+
+            children.append(UIAction(title: "Open in default app", image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) { _ in
+                UIApplication.shared.open(url, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
+            })
+            
+            return UIMenu(title: "Image Options", image: nil, identifier: nil, children: children)
+        })
+    }
+
+    func getConfigurationForVideo(url: URL) -> UIContextMenuConfiguration {
+        self.previewedURL = url
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: { () -> UIViewController? in
+            let upvoted = ActionStates.getVoteDirection(s: self.link!) == VoteDirection.up
+            let controller = AnyModalViewController(cellView: self, self.full ? nil : {[weak self] in
+                if let strongSelf = self {
+                    strongSelf.doOpenComment()
+                }
+            }, upvoteCallback: {[weak self] in
+                if let strongSelf = self {
+                    strongSelf.upvote()
+                }
+            }, isUpvoted: upvoted, failure: nil)
+            self.previewedVC = controller
+
+            return controller
+        }, actionProvider: { (_) -> UIMenu? in
+            var children = [UIMenuElement]()
+            
+            if let baseUrl = self.videoURL ?? self.link?.url, let parent = self.parentViewController { //todo enable this
+                var finalUrl = baseUrl
+                if VideoMediaViewController.VideoType.fromPath(baseUrl.absoluteString) == .REDDIT {
+                    finalUrl = URL(string: self.link!.videoPreview) ?? baseUrl
+                }
+                children.append(UIAction(title: "Save Video", image: UIImage(sfString: SFSymbol.squareAndArrowDown, overrideString: "save")!.menuIcon()) { _ in
+                    VideoMediaDownloader(urlToLoad: finalUrl).getVideoWithCompletion(completion: { (fileURL) in
+                        if fileURL != nil {
+                            CustomAlbum.shared.saveMovieToLibrary(movieURL: fileURL!, parent: parent)
+                        } else {
+                            BannerUtil.makeBanner(text: "Error downloading video", color: GMColor.red500Color(), seconds: 5, context: parent, top: false, callback: nil)
+                        }
+                    }, parent: parent)
+                })
+                children.append(UIAction(title: "Share Video", image: UIImage(sfString: SFSymbol.cameraFill, overrideString: "share")!.menuIcon()) { _ in
+                    VideoMediaDownloader.init(urlToLoad: finalUrl).getVideoWithCompletion(completion: { (fileURL) in
+                        DispatchQueue.main.async {
+                            if fileURL != nil {
+                                let shareItems: [Any] = [fileURL!]
+                                let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+                                if let presenter = activityViewController.popoverPresentationController {
+                                    presenter.sourceView = self.videoView!
+                                    presenter.sourceRect = self.videoView!.bounds
+                                }
+                                activityViewController.showWindowless()
+                            }
+                        }
+                    }, parent: parent)
+                })
+            }
+
+            children.append(UIAction(title: "Share Video URL", image: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")!.menuIcon()) { _ in
+                let shareItems: Array = [url]
+                let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+                activityViewController.popoverPresentationController?.sourceView = self.contentView
+                activityViewController.showWindowless()
+            })
+            children.append(UIAction(title: "Copy URL", image: UIImage(sfString: SFSymbol.docOnDocFill, overrideString: "copy")!.menuIcon()) { _ in
+                UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
+                BannerUtil.makeBanner(text: "URL Copied", seconds: 5, context: self.parentViewController)
+            })
+
+            children.append(UIAction(title: "Open in default app", image: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) { _ in
+                UIApplication.shared.open(url, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
+            })
+            
+            return UIMenu(title: "Video Options", image: nil, identifier: nil, children: children)
+        })
+    }
+
+    func makeContextMenu() -> UIMenu {
+
+        // Create a UIAction for sharing
+        var buttons = [UIAction]()
+        let create = UIAction(title: "Create a collection", image: UIImage(sfString: SFSymbol.folderBadgePlusFill, overrideString: "add")) { _ in
+            let bottom = DragDownAlertMenu(title: "Create a collection", subtitle: "", icon: nil)
+            bottom.addTextInput(title: "Save", icon: nil, action: {
+                if let title = bottom.getText() {
+                    Collections.addToCollectionCreate(id: self.link!.getId(), title: title)
+                    BannerUtil.makeBanner(text: "Saved to \(title)", seconds: 3, context: self.parentViewController)
+                }
+            }, inputPlaceholder: "", inputIcon: UIImage(sfString: SFSymbol.textbox, overrideString: "size")!, textRequired: true, exitOnAction: true)
+            bottom.show(self.parentViewController)
+        }
+        buttons.append(create)
+        for item in Collections.getAllCollections() {
+            buttons.append(UIAction(title: item, image: nil, handler: { (_) in
+                Collections.addToCollection(link: self.link!, title: item)
+                BannerUtil.makeBanner(text: "Saved to \(item)", seconds: 3, context: self.parentViewController)
+            }))
+        }
+
+        // Create and return a UIMenu with the share action
+        return UIMenu(title: "Save into a Collection", children: buttons)
+    }
+}
+

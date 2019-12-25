@@ -12,33 +12,91 @@ import SafariServices
 import SDWebImage
 import UIKit
 
-class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewControllerTransitioningDelegate {
+class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewControllerTransitioningDelegate, UIPopoverPresentationControllerDelegate {
+    
+    func adaptivePresentationStyle(for controller: UIPresentationController, traitCollection: UITraitCollection) -> UIModalPresentationStyle {
+        // Return no adaptive presentation style, use default presentation behavior
+        return .none
+    }
+    
+    func popoverPresentationControllerDidDismissPopover(_ popoverPresentationController: UIPopoverPresentationController) {
+        setAlphaOfBackgroundViews(alpha: 1)
+    }
+    
+    func prepareForPopoverPresentation(_ popoverPresentationController: UIPopoverPresentationController) {
+        setAlphaOfBackgroundViews(alpha: 0.25)
+    }
+    
+    func setAlphaOfBackgroundViews(alpha: CGFloat) {
+        /*let statusBarWindow = UIApplication.shared.value(forKey: "statusBarWindow") as? UIWindow
+        UIView.animate(withDuration: 0.2) {
+            statusBarWindow?.alpha = alpha
+            self.navigationController?.view.alpha = alpha
+        }*/
+    }
+    
+    override var prefersStatusBarHidden: Bool {
+        return false
+    }
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+            if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+        } else {
+            return .lightContent
+        }
+    }
 
     var subChanged = false
 
     var link: RSubmission!
     var commentCallback: (() -> Void)?
+    var upvoteCallback: (() -> Void)?
+    var isUpvoted = false
     var failureCallback: ((_ url: URL) -> Void)?
 
-    public func setLink(lnk: RSubmission, shownURL: URL?, lq: Bool, saveHistory: Bool, heroView: UIView?, heroVC: UIViewController?) { //lq is should load lq and did load lq
+    public func setLink(lnk: RSubmission, shownURL: URL?, lq: Bool, saveHistory: Bool, heroView: UIView?, heroVC: UIViewController?, upvoteCallbackIn: (() -> Void)? = nil) { //lq is should load lq and did load lq
         if saveHistory {
-            History.addSeen(s: lnk)
+            History.addSeen(s: lnk, skipDuplicates: true)
         }
         self.link = lnk
         let url = link.url!
-        
+        let type = ContentType.getContentType(submission: link)
+
         commentCallback = { () in
             let comment = CommentViewController.init(submission: self.link, single: true)
             VCPresenter.showVC(viewController: comment, popupIfPossible: true, parentNavigationController: self.navigationController, parentViewController: self)
         }
-        
+        isUpvoted = ActionStates.getVoteDirection(s: lnk) == VoteDirection.up
+        upvoteCallback = { () in
+            do {
+                try (UIApplication.shared.delegate as? AppDelegate)?.session?.setVote(ActionStates.getVoteDirection(s: lnk) == .up ? .none : .up, name: (lnk.getId()), completion: { (_) in
+                    
+                })
+                ActionStates.setVoteDirection(s: lnk, direction: ActionStates.getVoteDirection(s: lnk) == .up ? .none : .up)
+                History.addSeen(s: lnk)
+            } catch {
+                
+            }
+        }
+        if link.archived || !AccountController.isLoggedIn {
+            upvoteCallback = nil
+        }
+        if self is CommentViewController {
+            commentCallback = nil
+            upvoteCallback = nil
+        }
         failureCallback = { (url: URL) in
             let vc: UIViewController
             if SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL || SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY {
                 let safariVC = SFHideSafariViewController(url: url, entersReaderIfAvailable: SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY)
                 if #available(iOS 10.0, *) {
-                    safariVC.preferredBarTintColor = ColorUtil.backgroundColor
-                    safariVC.preferredControlTintColor = ColorUtil.fontColor
+                    safariVC.preferredBarTintColor = ColorUtil.theme.backgroundColor
+                    safariVC.preferredControlTintColor = ColorUtil.theme.fontColor
                     vc = safariVC
                 } else {
                     let web = WebsiteViewController(url: url, subreddit: "")
@@ -51,11 +109,9 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
             VCPresenter.showVC(viewController: vc, popupIfPossible: false, parentNavigationController: self.navigationController, parentViewController: self)
         }
         
-        let type = ContentType.getContentType(submission: lnk)
-        
         if type == .EXTERNAL {
             if #available(iOS 10.0, *) {
-                UIApplication.shared.open(lnk.url!, options: [:], completionHandler: nil)
+                UIApplication.shared.open(lnk.url!, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
             } else {
                 UIApplication.shared.openURL(lnk.url!)
             }
@@ -80,9 +136,10 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
     
     func getControllerForUrl(baseUrl: URL, lq: URL? = nil) -> UIViewController? {
         contentUrl = baseUrl.absoluteString.startsWith("//") ? URL(string: "https:\(baseUrl.absoluteString)") ?? baseUrl : baseUrl
+
         if shouldTruncate(url: contentUrl!) {
             let content = contentUrl?.absoluteString
-            contentUrl = URL.init(string: (content?.substring(to: content!.index(of: ".")!))!)
+            contentUrl = URL.init(string: (String(content?[..<content!.firstIndex(of: ".")!] ?? "")))
         }
 
         let type = ContentType.getContentType(baseUrl: contentUrl)
@@ -90,13 +147,15 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
         if type == ContentType.CType.ALBUM && SettingValues.internalAlbumView {
             print("Showing album")
             return AlbumViewController.init(urlB: contentUrl!)
-        } else if contentUrl != nil && ContentType.displayImage(t: type) && SettingValues.internalImageView || (type == .GIF && SettingValues.internalGifView) || type == .STREAMABLE || type == .VID_ME || (type == ContentType.CType.VIDEO && SettingValues.internalYouTube) {
+        } else if contentUrl != nil && ContentType.displayImage(t: type) && SettingValues.internalImageView || (type == ContentType.CType.VIDEO && SettingValues.internalYouTube) {
+            return ModalMediaViewController.init(url: contentUrl!, lq: lq, commentCallback, upvoteCallback: upvoteCallback, isUpvoted: isUpvoted, failureCallback)
+        } else if type == .GIF && SettingValues.internalGifView || type == .STREAMABLE || type == .VID_ME {
             if !ContentType.isGifLoadInstantly(uri: contentUrl!) && type == .GIF {
                 if SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL || SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY {
                     let safariVC = SFHideSafariViewController(url: contentUrl!, entersReaderIfAvailable: SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY)
                     if #available(iOS 10.0, *) {
-                        safariVC.preferredBarTintColor = ColorUtil.backgroundColor
-                        safariVC.preferredControlTintColor = ColorUtil.fontColor
+                        safariVC.preferredBarTintColor = ColorUtil.theme.backgroundColor
+                        safariVC.preferredControlTintColor = ColorUtil.theme.fontColor
                     } else {
                         // Fallback on earlier versions
                     }
@@ -104,13 +163,13 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
                 }
                 return WebsiteViewController(url: contentUrl!, subreddit: link == nil ? "" : link.subreddit)
             }
-            return ModalMediaViewController.init(url: contentUrl!, lq: lq, commentCallback, failureCallback)
+            return ModalMediaViewController.init(url: contentUrl!, lq: lq, commentCallback, upvoteCallback: upvoteCallback, isUpvoted: isUpvoted, failureCallback)
         } else if type == ContentType.CType.LINK || type == ContentType.CType.NONE {
             if SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL || SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY {
                 let safariVC = SFHideSafariViewController(url: contentUrl!, entersReaderIfAvailable: SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY)
                 if #available(iOS 10.0, *) {
-                    safariVC.preferredBarTintColor = ColorUtil.backgroundColor
-                    safariVC.preferredControlTintColor = ColorUtil.fontColor
+                    safariVC.preferredBarTintColor = ColorUtil.theme.backgroundColor
+                    safariVC.preferredControlTintColor = ColorUtil.theme.fontColor
                 } else {
                     // Fallback on earlier versions
                 }
@@ -124,8 +183,8 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
         if SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL || SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY {
             let safariVC = SFHideSafariViewController(url: contentUrl!, entersReaderIfAvailable: SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY)
             if #available(iOS 10.0, *) {
-                safariVC.preferredBarTintColor = ColorUtil.backgroundColor
-                safariVC.preferredControlTintColor = ColorUtil.fontColor
+                safariVC.preferredBarTintColor = ColorUtil.theme.backgroundColor
+                safariVC.preferredControlTintColor = ColorUtil.theme.fontColor
             } else {
                 // Fallback on earlier versions
             }
@@ -137,14 +196,13 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
     var contentUrl: URL?
 
     public func shouldTruncate(url: URL) -> Bool {
-        return false //Todo: figure out what this does
+        return false // TODO: - figure out what this does
         let path = url.path
         return !ContentType.isGif(uri: url) && !ContentType.isImage(uri: url) && path.contains(".")
     }
 
     func showSpoiler(_ string: String) {
-        let m = string.capturedGroups(withRegex: "\\[\\[s\\[(.*?)\\]s\\]\\]")
-        let controller = UIAlertController.init(title: "Spoiler", message: m[0][1], preferredStyle: .alert)
+        let controller = UIAlertController.init(title: "Spoiler", message: string, preferredStyle: .alert)
         controller.addAction(UIAlertAction.init(title: "Close", style: .cancel, handler: nil))
         present(controller, animated: true, completion: nil)
     }
@@ -160,8 +218,8 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
             if SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL || SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY {
                 let safariVC = SFHideSafariViewController(url: url, entersReaderIfAvailable: SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY)
                 if #available(iOS 10.0, *) {
-                    safariVC.preferredBarTintColor = ColorUtil.backgroundColor
-                    safariVC.preferredControlTintColor = ColorUtil.fontColor
+                    safariVC.preferredBarTintColor = ColorUtil.theme.backgroundColor
+                    safariVC.preferredControlTintColor = ColorUtil.theme.fontColor
                     vc = safariVC
                 } else {
                     let web = WebsiteViewController(url: url, subreddit: "")
@@ -182,25 +240,39 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
             if browser == SettingValues.BROWSER_SAFARI {
             } else if browser == SettingValues.BROWSER_CHROME {
                 newUrl = URL(string: "googlechrome://" + sanitized) ?? oldUrl
+            } else if browser == SettingValues.BROWSER_DDG {
+                newUrl = URL(string: "ddgQuickLink://" + sanitized) ?? oldUrl
+            } else if browser == SettingValues.BROWSER_BRAVE {
+                newUrl = URL(string: "brave://open-url?url=" + (oldUrl.absoluteString.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? oldUrl.absoluteString)) ?? oldUrl
             } else if browser == SettingValues.BROWSER_OPERA {
                 newUrl = URL(string: "opera-http://" + sanitized) ?? oldUrl
             } else if browser == SettingValues.BROWSER_FIREFOX {
                 newUrl = URL(string: "firefox://open-url?url=" + oldUrl.absoluteString) ?? oldUrl
             } else if browser == SettingValues.BROWSER_FOCUS {
                 newUrl = URL(string: "firefox-focus://open-url?url=" + oldUrl.absoluteString) ?? oldUrl
+            } else if browser == SettingValues.BROWSER_FOCUS_KLAR {
+                newUrl = URL(string: "firefox-klar://open-url?url=" + oldUrl.absoluteString) ?? oldUrl
             }
-            
+
+            // If it's a youtube video, always use safari so the app will open
+            let type = ContentType.getContentType(baseUrl: url)
+            if type == ContentType.CType.VIDEO && !SettingValues.internalYouTube {
+                newUrl = oldUrl
+            }
+
             if #available(iOS 10.0, *) {
-                UIApplication.shared.open(newUrl, options: [:], completionHandler: nil)
+                UIApplication.shared.open(newUrl, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
             } else {
                 UIApplication.shared.openURL(newUrl)
             }
+        } else if url.scheme == "slide" {
+            UIApplication.shared.openURL(url)
         } else {
             var urlString = url.absoluteString
             if urlString.startsWith("//") {
                 urlString = "https:" + urlString
             }
-            contentUrl = URL.init(string: String.init(htmlEncodedString: urlString))!
+            contentUrl = URL.init(string: urlString)!
             
             if ContentType.isSpoiler(uri: url) {
                 let controller = UIAlertController.init(title: "Spoiler", message: url.absoluteString, preferredStyle: .alert)
@@ -211,7 +283,7 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
                 if controller is AlbumViewController {
                     controller.modalPresentationStyle = .overFullScreen
                     present(controller, animated: true, completion: nil)
-                } else if controller is ModalMediaViewController {
+                } else if controller is ModalMediaViewController || controller is AnyModalViewController {
                     controller.modalPresentationStyle = .overFullScreen
                     present(controller, animated: true, completion: nil)
                 } else {
@@ -226,7 +298,7 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
     func setBarColors(color: UIColor) {
         self.color = color
         if SettingValues.reduceColor {
-            self.color = self is CommentViewController ? ColorUtil.foregroundColor : ColorUtil.backgroundColor
+            self.color = self is CommentViewController ? ColorUtil.theme.foregroundColor : ColorUtil.theme.backgroundColor
         }
         setNavColors()
     }
@@ -248,4 +320,9 @@ class MediaTableViewController: UITableViewController, MediaVCDelegate, UIViewCo
         return SmallerPresentationController(presentedViewController: presented,
                                              presenting: presenting)
     }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToUIApplicationOpenExternalURLOptionsKeyDictionary(_ input: [String: Any]) -> [UIApplication.OpenExternalURLOptionsKey: Any] {
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (UIApplication.OpenExternalURLOptionsKey(rawValue: key), value) })
 }

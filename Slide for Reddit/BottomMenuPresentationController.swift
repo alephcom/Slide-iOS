@@ -11,12 +11,12 @@ import UIKit
 
 class BottomMenuPresentationController: UIPresentationController, UIViewControllerTransitioningDelegate {
 
-    fileprivate var interactive = false
-    fileprivate var dismissInteractionController: PanGestureInteractionController?
+    private var interactive = false
+    private var dismissInteractionController: PanGestureInteractionController?
     weak var tableView: UITableView?
     weak var scrollView: UIScrollView?
 
-    lazy fileprivate var backgroundView = UIView()
+    lazy private var backgroundView = UIView()
 
     init(presentedViewController: UIViewController, presenting: UIViewController) {
         super.init(presentedViewController: presentedViewController, presenting: presenting)
@@ -26,7 +26,7 @@ class BottomMenuPresentationController: UIPresentationController, UIViewControll
 
 extension BottomMenuPresentationController {
 
-    func backgroundViewTapped(_ sender: AnyObject) {
+    @objc func backgroundViewTapped(_ sender: AnyObject) {
         presentingViewController.dismiss(animated: true, completion: nil)
     }
 
@@ -42,7 +42,7 @@ extension BottomMenuPresentationController {
         if #available(iOS 11, *) {
             let blurEffect = (NSClassFromString("_UICustomBlurEffect") as! UIBlurEffect.Type).init()
             let blurView = UIVisualEffectView(frame: backgroundView.frame)
-            blurEffect.setValue(3, forKeyPath: "blurRadius")
+            blurEffect.setValue(5, forKeyPath: "blurRadius")
             blurView.effect = blurEffect
             backgroundView.insertSubview(blurView, at: 0)
             blurView.horizontalAnchors == backgroundView.horizontalAnchors
@@ -160,7 +160,7 @@ class SlideInTransition: NSObject, UIViewControllerAnimatedTransitioning {
             viewToAnimate.frame = offsetFrame
         }
         
-        let options: UIViewAnimationOptions = interactive ? [.curveLinear] : [.curveEaseInOut]
+        let options: UIView.AnimationOptions = interactive ? [.curveLinear] : [.curveEaseInOut]
         let animateBlock = { [weak self] in
             if self!.reverse {
                 viewToAnimate.frame = offsetFrame
@@ -174,11 +174,11 @@ class SlideInTransition: NSObject, UIViewControllerAnimatedTransitioning {
         }
 
         if interactive {
-            UIView.animate(withDuration: duration, delay: 0, options: options,
+            UIView.animate(withDuration: duration, delay: 0.001, options: options,
                            animations: animateBlock, completion: completionBlock)
         } else {
             UIView.animate(withDuration: duration,
-                           delay: 0,
+                           delay: 0.001,
                            usingSpringWithDamping: 0.8,
                            initialSpringVelocity: 0.45,
                            options: .curveEaseInOut,
@@ -192,7 +192,7 @@ class SlideInTransition: NSObject, UIViewControllerAnimatedTransitioning {
     }
 }
 
-private class PanGestureInteractionController: UIPercentDrivenInteractiveTransition {
+public class PanGestureInteractionController: UIPercentDrivenInteractiveTransition {
     struct Callbacks {
         var didBeginPanning: (() -> Void)?
     }
@@ -211,13 +211,14 @@ private class PanGestureInteractionController: UIPercentDrivenInteractiveTransit
             self.gestureRecognizer.delegate = self
         }
     }
-    
+        
     // MARK: Initialization
     init(view: UIView) {
         gestureRecognizer = UIPanGestureRecognizer()
         view.addGestureRecognizer(gestureRecognizer)
 
         super.init()
+        self.completionCurve = .easeInOut
         gestureRecognizer.delegate = self
         gestureRecognizer.addTarget(self, action: #selector(viewPanned(sender:)))
     }
@@ -234,7 +235,7 @@ private class PanGestureInteractionController: UIPercentDrivenInteractiveTransit
             update(percentCompleteForTranslation(translation: sender.translation(in: sender.view)))
         case .ended:
             let velocity = sender.velocity(in: sender.view).y
-            if sender.shouldRecognizeForDirection() && (percentComplete > 0.25 || velocity > 350) {
+            if sender.shouldRecognizeForDirection(.down) && (percentComplete > 0.25 || velocity > 350) {
                 finish()
             } else {
                 cancel()
@@ -253,15 +254,15 @@ private class PanGestureInteractionController: UIPercentDrivenInteractiveTransit
 }
 
 extension PanGestureInteractionController: UIGestureRecognizerDelegate {
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         return scrollView == nil ? tableView?.contentOffset.y ?? 0 == 0 : scrollView?.contentOffset.y ?? 0 == 0
     }
     
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
         return otherGestureRecognizer is UIPanGestureRecognizer && (scrollView == nil ? tableView?.contentOffset.y ?? 0 == 0 : scrollView?.contentOffset.y ?? 0 == 0)
     }
     
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         return (gestureRecognizer is UIPanGestureRecognizer && (gestureRecognizer as! UIPanGestureRecognizer).velocity(in: scrollView ?? tableView!).y < 0) ? false : true
     }
 
@@ -269,12 +270,12 @@ extension PanGestureInteractionController: UIGestureRecognizerDelegate {
 
 extension UIPanGestureRecognizer {
 
-    fileprivate func angle(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+    private func angle(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
         // TODO | - Not sure if this is correct
         return atan2(a.y, a.x) - atan2(b.y, b.x)
     }
 
-    fileprivate func shouldRecognizeForDirection() -> Bool {
+    private func shouldRecognizeForDirection() -> Bool {
         guard let view = view else {
             return false
         }

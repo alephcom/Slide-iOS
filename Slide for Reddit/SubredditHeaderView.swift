@@ -7,24 +7,25 @@
 //
 
 import Anchorage
+import AudioToolbox
 import reddift
-import TTTAttributedLabel
+import RLBAlertsPickers
+import SDCAlertView
 import UIKit
+import YYText
 
-class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
+class SubredditHeaderView: UIView {
 
-    var back: UILabel = UILabel()
     var subscribers: UILabel = UILabel()
     var here: UILabel = UILabel()
-    var info = TextDisplayStackView()
+    var info: TextDisplayStackView!
     
     var submit = UITableViewCell()
     var sorting = UITableViewCell()
     var mods = UITableViewCell()
+    var flair = UITableViewCell()
 
-    var subbed = UISwitch()
-
-    func mods(_ sender: UITableViewCell) {
+    @objc func mods(_ sender: UITableViewCell) {
         var list: [User] = []
         do {
             try (UIApplication.shared.delegate as! AppDelegate).session?.about(subreddit!, aboutWhere: SubredditAbout.moderators, completion: { (result) in
@@ -36,38 +37,20 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
                 case .success(let users):
                     list.append(contentsOf: users)
                     DispatchQueue.main.async {
-                        let sheet = UIAlertController(title: "r/\(self.subreddit!.displayName) mods", message: nil, preferredStyle: .actionSheet)
-                        sheet.addAction(
-                                UIAlertAction(title: "Close", style: .cancel) { (_) in
-                                    sheet.dismiss(animated: true, completion: nil)
-                                }
-                        )
-                        sheet.addAction(
-                                UIAlertAction(title: "Message r/\(self.subreddit!.displayName) moderators", style: .default) { (_) in
-                                    sheet.dismiss(animated: true, completion: nil)
-                                    //todo this
-                                }
-                        )
+                        let sheet = DragDownAlertMenu(title: "Moderators", subtitle: "r/\(self.subreddit!.displayName)", icon: nil, themeColor: ColorUtil.accentColorForSub(sub: self.subreddit!.displayName), full: false)
+
+                        sheet.addAction(title: "Message r/\(self.subreddit!.displayName) moderators", icon: UIImage(sfString: SFSymbol.shieldLefthalfFill, overrideString: "mod")?.menuIcon(), action: {
+                            VCPresenter.openRedditLink("https://www.reddit.com/message/compose?to=/r/\(self.subreddit!.displayName)", self.parentController?.navigationController, self.parentController)
+                        })
 
                         for user in users {
-                            let somethingAction = UIAlertAction(title: "u/\(user.name)", style: .default) { (_) in
-                                sheet.dismiss(animated: true, completion: nil)
+                            sheet.addAction(title: "u/\(user.name)", icon: nil, action: {
                                 VCPresenter.showVC(viewController: ProfileViewController.init(name: user.name), popupIfPossible: false, parentNavigationController: self.parentController?.navigationController, parentViewController: self.parentController)
-                            }
-
-                            let color = ColorUtil.getColorForUser(name: user.name)
-                            if color != ColorUtil.baseColor {
-                                somethingAction.setValue(color, forKey: "titleTextColor")
-
-                            }
-                            sheet.addAction(somethingAction)
+                            })
+                           // TODO: - maybe tags or colors?
                         }
-                        if let presenter = sheet.popoverPresentationController {
-                            presenter.sourceView = self.mods
-                            presenter.sourceRect = self.mods.bounds
-                        }
-
-                        self.parentController?.present(sheet, animated: true)
+                        
+                        sheet.show(self.parentController)
                     }
                 }
             })
@@ -100,32 +83,41 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
 
         self.submit.textLabel?.text = "New post"
         self.submit.accessoryType = .none
-        self.submit.backgroundColor = ColorUtil.foregroundColor
-        self.submit.textLabel?.textColor = ColorUtil.fontColor
-        self.submit.imageView?.image = UIImage.init(named: "edit")?.menuIcon()
-        self.submit.imageView?.tintColor = ColorUtil.fontColor
+        self.submit.backgroundColor = ColorUtil.theme.foregroundColor
+        self.submit.textLabel?.textColor = ColorUtil.theme.fontColor
+        self.submit.imageView?.image = UIImage(sfString: SFSymbol.pencil, overrideString: "edit")?.menuIcon()
+        self.submit.imageView?.tintColor = ColorUtil.theme.fontColor
         self.submit.layer.cornerRadius = 5
         self.submit.clipsToBounds = true
 
         self.sorting.textLabel?.text = "Default subreddit sorting"
         self.sorting.accessoryType = .none
-        self.sorting.backgroundColor = ColorUtil.foregroundColor
-        self.sorting.textLabel?.textColor = ColorUtil.fontColor
-        self.sorting.imageView?.image = UIImage.init(named: "ic_sort_white")?.menuIcon()
-        self.sorting.imageView?.tintColor = ColorUtil.fontColor
+        self.sorting.backgroundColor = ColorUtil.theme.foregroundColor
+        self.sorting.textLabel?.textColor = ColorUtil.theme.fontColor
+        self.sorting.imageView?.image = UIImage(sfString: SFSymbol.arrowUpArrowDownCircle, overrideString: "ic_sort_white")?.menuIcon()
+        self.sorting.imageView?.tintColor = ColorUtil.theme.fontColor
         self.sorting.layer.cornerRadius = 5
         self.sorting.clipsToBounds = true
 
         self.mods.textLabel?.text = "Subreddit moderators"
         self.mods.accessoryType = .none
-        self.mods.backgroundColor = ColorUtil.foregroundColor
-        self.mods.textLabel?.textColor = ColorUtil.fontColor
-        self.mods.imageView?.image = UIImage.init(named: "mod")?.menuIcon()
-        self.mods.imageView?.tintColor = ColorUtil.fontColor
+        self.mods.backgroundColor = ColorUtil.theme.foregroundColor
+        self.mods.textLabel?.textColor = ColorUtil.theme.fontColor
+        self.mods.imageView?.image = UIImage(sfString: SFSymbol.shieldLefthalfFill, overrideString: "mod")?.menuIcon()
+        self.mods.imageView?.tintColor = ColorUtil.theme.fontColor
         self.mods.layer.cornerRadius = 5
         self.mods.clipsToBounds = true
 
-        self.info = TextDisplayStackView.init(fontSize: 16, submission: false, color: .blue, delegate: self, width: width - 24)
+        self.flair.accessoryType = .none
+        self.flair.backgroundColor = ColorUtil.theme.foregroundColor
+        self.flair.textLabel?.textColor = ColorUtil.theme.fontColor
+        self.flair.imageView?.image = UIImage(sfString: SFSymbol.flagFill, overrideString: "flag")?.menuIcon()
+        self.flair.imageView?.tintColor = ColorUtil.theme.fontColor
+        self.flair.layer.cornerRadius = 5
+        self.flair.clipsToBounds = true
+
+        self.info = TextDisplayStackView.init(fontSize: 16, submission: false, color: .blue, width: self.frame.size.width - 24, delegate: self)
+        self.info.isUserInteractionEnabled = true
         
         self.subscribers = UILabel(frame: CGRect(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
         subscribers.numberOfLines = 1
@@ -137,15 +129,13 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
         here.font = UIFont.systemFont(ofSize: 16)
         here.textColor = UIColor.white
 
-        self.back = UILabel(frame: CGRect(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 56))
-
-        addSubviews(submit, back, info, subscribers, here, sorting, mods)
-
+        if AccountController.isLoggedIn {
+            addSubviews(submit, info, subscribers, here, sorting, mods, flair)
+        } else {
+            addSubviews(submit, info, subscribers, here, sorting, mods)
+        }
+        
         self.clipsToBounds = true
-
-        back.addSubview(subbed)
-        subbed.leftAnchor == back.leftAnchor + CGFloat(24)
-        subbed.centerYAnchor == back.centerYAnchor
         
         setupAnchors()
 
@@ -160,76 +150,91 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
         let nTap = UITapGestureRecognizer(target: self, action: #selector(self.new(_:)))
         submit.addGestureRecognizer(nTap)
         submit.isUserInteractionEnabled = true
-
+        
+        let fTap = UITapGestureRecognizer(target: self, action: #selector(self.flair(_:)))
+        flair.addGestureRecognizer(fTap)
+        flair.isUserInteractionEnabled = true
+        
     }
     
-    func doSub(_ changed: UISwitch) {
-        if !changed.isOn {
-            Subscriptions.unsubscribe(subreddit!.displayName, session: (UIApplication.shared.delegate as! AppDelegate).session!)
-            BannerUtil.makeBanner(text: "Unsubscribed from r/\(subreddit!.displayName)", color: ColorUtil.accentColorForSub(sub: subreddit!.displayName), seconds: 3, context: parentController, top: true)
-
-        } else {
-            let alrController = UIAlertController.init(title: "Follow \(subreddit!.displayName)", message: nil, preferredStyle: .actionSheet)
-            if AccountController.isLoggedIn {
-                let somethingAction = UIAlertAction(title: "Subscribe", style: UIAlertActionStyle.default, handler: { (_: UIAlertAction!) in
-                    Subscriptions.subscribe(self.subreddit!.displayName, true, session: (UIApplication.shared.delegate as! AppDelegate).session!)
-                    BannerUtil.makeBanner(text: "Subscribed to r/\(self.subreddit!.displayName)", color: ColorUtil.accentColorForSub(sub: self.subreddit!.displayName), seconds: 3, context: self.parentController, top: true)
-                })
-                alrController.addAction(somethingAction)
-            }
-            
-            let somethingAction = UIAlertAction(title: "Casually subscribe", style: UIAlertActionStyle.default, handler: { (_: UIAlertAction!) in
-                Subscriptions.subscribe(self.subreddit!.displayName, false, session: (UIApplication.shared.delegate as! AppDelegate).session!)
-                BannerUtil.makeBanner(text: "r/\(self.subreddit!.displayName) added to your subreddit list", color: ColorUtil.accentColorForSub(sub: self.subreddit!.displayName), seconds: 3, context: self.parentController, top: true)
-            })
-            alrController.addAction(somethingAction)
-            
-            let cancelAction = UIAlertAction(title: "Cancel", style: UIAlertActionStyle.cancel, handler: { (_: UIAlertAction!) in print("cancel") })
-            
-            alrController.addAction(cancelAction)
-            
-            alrController.modalPresentationStyle = .fullScreen
-            if let presenter = alrController.popoverPresentationController {
-                presenter.sourceView = changed
-                presenter.sourceRect = changed.bounds
-            }
-            
-            parentController?.present(alrController, animated: true, completion: {})
-        }
-    }
-
-    func new(_ selector: UITableViewCell) {
+    @objc func new(_ selector: UITableViewCell) {
         PostActions.showPostMenu(parentController!, sub: self.subreddit!.displayName)
     }
     
-    func sort(_ selector: UITableViewCell) {
-        let actionSheetController: UIAlertController = UIAlertController(title: "Sorting", message: "", preferredStyle: .actionSheet)
-
-        let cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-            print("Cancel")
+    @objc func flair(_ selector: UITableViewCell) {
+        do {
+            try (UIApplication.shared.delegate as! AppDelegate).session?.userFlairList(subreddit!.displayName, completion: { (result) in
+                switch result {
+                case .success(let flairList):
+                    DispatchQueue.main.async {
+                        let alert = DragDownAlertMenu(title: "Available flairs", subtitle: "r/\(self.subreddit!.displayName)", icon: nil)
+                        
+                        for item in flairList {
+                            alert.addAction(title: item.text.isEmpty ? item.name : item.text, icon: nil, action: {
+                                self.setFlair(item)
+                            })
+                        }
+                        
+                        alert.show(self.parentController)
+                    }
+                case .failure(let error):
+                    print(error)
+                    
+                }
+            })
+        } catch {
+            
         }
-        actionSheetController.addAction(cancelActionButton)
-        let selected = UIImage.init(named: "selected")!.getCopy(withSize: .square(size: 20), withColor: .blue)
+    }
+    
+    var flairText: String?
+    
+    func setFlair(_ flair: FlairTemplate) {
+        if flair.editable {
+            let alert = DragDownAlertMenu(title: "Edit flair text", subtitle: "\(flair.name)", icon: nil)
+            
+            alert.addTextInput(title: "Set flair", icon: UIImage(sfString: SFSymbol.flagFill, overrideString: "save-1")?.menuIcon(), action: {
+                self.submitFlairChange(flair, text: alert.getText() ?? "")
+            }, inputPlaceholder: "Flair text...", inputValue: flair.text, inputIcon: UIImage(sfString: SFSymbol.flagFill, overrideString: "flag")!.menuIcon(), textRequired: true, exitOnAction: true)
+            
+            alert.show(parentController)
+        } else {
+            submitFlairChange(flair)
+        }
+    }
+    
+    func submitFlairChange(_ flair: FlairTemplate, text: String? = "") {
+        do {
+            try (UIApplication.shared.delegate as! AppDelegate).session?.flairUser(self.subreddit!.displayName, flairId: flair.id, username: AccountController.currentName, text: text ?? "") { result in
+                switch result {
+                case .failure(let error):
+                    print(error)
+                    DispatchQueue.main.async {
+                        BannerUtil.makeBanner(text: "Flair not set", color: GMColor.red500Color(), seconds: 3, context: self.parentController)
+                    }
+                case .success(let success):
+                    print(success)
+                    DispatchQueue.main.async {
+                        BannerUtil.makeBanner(text: "Flair set successfully!", seconds: 3, context: self.parentController)
+                        self.flair.textLabel?.text = text?.isEmpty ?? true ? flair.name : text
+                    }
+                }}
+        } catch {
+        }
+    }
+
+    @objc func sort(_ selector: UITableViewCell) {
+        let actionSheetController = DragDownAlertMenu(title: "Default sorting for r/\(self.subreddit!.displayName)", subtitle: "Overrides the default in Settings > General", icon: nil, themeColor: ColorUtil.accentColorForSub(sub: self.subreddit!.displayName), full: true)
+
+        let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.menuIcon()
 
         for link in LinkSortType.cases {
-            let saveActionButton: UIAlertAction = UIAlertAction(title: link.description, style: .default) { _ -> Void in
+            actionSheetController.addAction(title: link.description, icon: SettingValues.getLinkSorting(forSubreddit: self.subreddit!.displayName) == link ? selected : nil) {
                 self.showTimeMenu(s: link, selector: selector)
             }
-            
-            if SettingValues.getLinkSorting(forSubreddit: self.subreddit!.displayName) == link {
-                saveActionButton.setValue(selected, forKey: "image")
-            }
-
-            actionSheetController.addAction(saveActionButton)
         }
 
-        if let presenter = actionSheetController.popoverPresentationController {
-            presenter.sourceView = self.sorting
-            presenter.sourceRect = self.sorting.bounds
-        }
-
-        self.parentController?.present(actionSheetController, animated: true, completion: nil)
-
+        actionSheetController.show(self.parentController)
     }
 
     func showTimeMenu(s: LinkSortType, selector: UITableViewCell) {
@@ -239,34 +244,19 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
             UserDefaults.standard.synchronize()
             return
         } else {
-            let actionSheetController: UIAlertController = UIAlertController(title: "Sorting", message: "", preferredStyle: .actionSheet)
+            let actionSheetController = DragDownAlertMenu(title: "Select a time period", subtitle: "", icon: nil, themeColor: ColorUtil.accentColorForSub(sub: self.subreddit!.displayName), full: true)
 
-            let cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-                print("Cancel")
-            }
-            actionSheetController.addAction(cancelActionButton)
-            let selected = UIImage.init(named: "selected")!.getCopy(withSize: .square(size: 20), withColor: .blue)
+            let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.getCopy(withSize: .square(size: 20), withColor: .blue)
 
             for t in TimeFilterWithin.cases {
-                let saveActionButton: UIAlertAction = UIAlertAction(title: t.param, style: .default) { _ -> Void in
+                actionSheetController.addAction(title: t.param, icon: SettingValues.getTimePeriod(forSubreddit: self.subreddit!.displayName) == t ? selected : nil) {
                     UserDefaults.standard.set(s.path, forKey: self.subreddit!.displayName.lowercased() + "Sorting")
                     UserDefaults.standard.set(t.param, forKey: self.subreddit!.displayName.lowercased() + "Time")
                     UserDefaults.standard.synchronize()
                 }
-                
-                if SettingValues.getTimePeriod(forSubreddit: self.subreddit!.displayName) == t {
-                    saveActionButton.setValue(selected, forKey: "image")
-                }
-
-                actionSheetController.addAction(saveActionButton)
             }
 
-            if let presenter = actionSheetController.popoverPresentationController {
-                presenter.sourceView = selector
-                presenter.sourceRect = selector.bounds
-            }
-
-            self.parentController?.present(actionSheetController, animated: true, completion: nil)
+            actionSheetController.show(self.parentController)
         }
     }
 
@@ -278,14 +268,14 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func subscribe(_ sender: AnyObject) {
+    @objc func subscribe(_ sender: AnyObject) {
     }
 
-    func theme(_ sender: AnyObject) {
+    @objc func theme(_ sender: AnyObject) {
 
     }
 
-    func submit(_ sender: AnyObject) {
+    @objc func submit(_ sender: AnyObject) {
 
     }
 
@@ -298,18 +288,6 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
         self.subreddit = subreddit
         self.setWidth = width
         self.parentController = parent
-        back.backgroundColor = ColorUtil.getColorForSub(sub: subreddit.displayName)
-        back.text = subreddit.displayName
-        back.textColor = .white
-        back.font = FontGenerator.boldFontOfSize(size: 24, submission: true)
-        back.textAlignment = .center
-        
-        subbed.isOn = Subscriptions.isSubscriber(subreddit.displayName)
-        subbed.onTintColor = ColorUtil.accentColorForSub(sub: subreddit.displayName)
-        subbed.addTarget(self, action: #selector(doSub(_:)), for: .valueChanged)
-        subbed.isUserInteractionEnabled = true
-        
-        back.isUserInteractionEnabled = true
         
         here.numberOfLines = 0
         subscribers.numberOfLines = 0
@@ -317,24 +295,21 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
         here.font = subscribers.font
         here.textAlignment = .center
         subscribers.textAlignment = .center
-        here.textColor = ColorUtil.fontColor
-        subscribers.textColor = ColorUtil.fontColor
+        here.textColor = ColorUtil.theme.fontColor
+        subscribers.textColor = ColorUtil.theme.fontColor
 
-        let attrs = [NSFontAttributeName: FontGenerator.boldFontOfSize(size: 20, submission: true)]
-        var attributedString = NSMutableAttributedString(string: "\(subreddit.subscribers.delimiter)", attributes: attrs)
+        let attrs = [convertFromNSAttributedStringKey(NSAttributedString.Key.font): FontGenerator.boldFontOfSize(size: 20, submission: true)]
+        var attributedString = NSMutableAttributedString(string: "\(subreddit.subscribers.delimiter)", attributes: convertToOptionalNSAttributedStringKeyDictionary(attrs))
         var subt = NSMutableAttributedString(string: "\nSUBSCRIBERS")
         attributedString.append(subt)
         subscribers.attributedText = attributedString
         
-        attributedString = NSMutableAttributedString(string: "\(subreddit.accountsActive.delimiter)", attributes: attrs)
+        attributedString = NSMutableAttributedString(string: "\(subreddit.accountsActive.delimiter)", attributes: convertToOptionalNSAttributedStringKeyDictionary(attrs))
         subt = NSMutableAttributedString(string: "\nHERE")
         attributedString.append(subt)
         here.attributedText = attributedString
 
-        var width = UIScreen.main.bounds.width * (UIDevice.current.userInterfaceIdiom == .pad ? 0.75 : 0.95)
-        if width < 250 {
-            width = UIScreen.main.bounds.width * 0.95
-        }
+        let width = UIScreen.main.bounds.width
 
         info.estimatedWidth = width - 24
         if !subreddit.descriptionHtml.isEmpty() {
@@ -342,22 +317,23 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
             info.setTextWithTitleHTML(NSMutableAttributedString(), htmlString: subreddit.descriptionHtml)
             descHeight = info.estimatedHeight
         }
+        
+        self.flair.textLabel?.text = "Your flair on r/\(subreddit.displayName)"
     }
 
     var subreddit: Subreddit?
     var setWidth: CGFloat = 0
 
     func setupAnchors() {
-        var width = UIScreen.main.bounds.width * (UIDevice.current.userInterfaceIdiom == .pad ? 0.75 : 0.95)
-        if width < 250 {
-            width = UIScreen.main.bounds.width * 0.95
-        }
-        self.widthAnchor == width
+    
+        self.widthAnchor == UIScreen.main.bounds.width
 
-        back.horizontalAnchors == horizontalAnchors
         submit.horizontalAnchors == horizontalAnchors + CGFloat(12)
         sorting.horizontalAnchors == horizontalAnchors + CGFloat(12)
         mods.horizontalAnchors == horizontalAnchors + CGFloat(12)
+        if AccountController.isLoggedIn {
+            flair.horizontalAnchors == horizontalAnchors + CGFloat(12)
+        }
         info.horizontalAnchors == horizontalAnchors + CGFloat(12)
         subscribers.leftAnchor == leftAnchor + CGFloat(12)
         subscribers.rightAnchor == here.leftAnchor - CGFloat(4)
@@ -366,13 +342,17 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
         here.rightAnchor == rightAnchor - CGFloat(12)
         here.centerYAnchor == subscribers.centerYAnchor
         
-        back.heightAnchor == CGFloat(86)
-        back.topAnchor == topAnchor
-        subscribers.topAnchor == back.bottomAnchor + CGFloat(6)
+        subscribers.topAnchor == topAnchor + CGFloat(16)
         submit.topAnchor == subscribers.bottomAnchor + CGFloat(8)
         mods.topAnchor == submit.bottomAnchor + CGFloat(2)
         sorting.topAnchor == mods.bottomAnchor + CGFloat(2)
-        info.topAnchor == sorting.bottomAnchor + CGFloat(16)
+        if AccountController.isLoggedIn {
+            flair.heightAnchor == CGFloat(50)
+            flair.topAnchor == sorting.bottomAnchor + CGFloat(2)
+            info.topAnchor == flair.bottomAnchor + CGFloat(16)
+        } else {
+            info.topAnchor == sorting.bottomAnchor + CGFloat(16)
+        }
         info.bottomAnchor == bottomAnchor - CGFloat(16)
         subscribers.heightAnchor == CGFloat(50)
         submit.heightAnchor == CGFloat(50)
@@ -381,11 +361,59 @@ class SubredditHeaderView: UIView, TTTAttributedLabelDelegate {
     }
 
     func getEstHeight() -> CGFloat {
-        return CGFloat(320) + (descHeight)
+        return CGFloat(340) + (descHeight)
+    }
+}
+
+extension SubredditHeaderView: TextDisplayStackViewDelegate {
+    func linkTapped(url: URL, text: String) {
+        if !text.isEmpty {
+            self.parentController?.showSpoiler(text)
+        } else {
+            self.parentController?.doShow(url: url, heroView: nil, heroVC: nil)
+        }
     }
     
-    func attributedLabel(_ label: TTTAttributedLabel!, didSelectLinkWith url: URL!) {
-        parentController?.doShow(url: url, heroView: nil, heroVC: nil)
+    func linkLongTapped(url: URL) {
+        
+        let alertController = DragDownAlertMenu(title: "Link options", subtitle: url.absoluteString, icon: url.absoluteString)
+        
+        alertController.addAction(title: "Share URL", icon: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")!.menuIcon()) {
+            let shareItems: Array = [url]
+            let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+            activityViewController.popoverPresentationController?.sourceView = self
+            self.parentController?.present(activityViewController, animated: true, completion: nil)
+        }
+        
+        alertController.addAction(title: "Copy URL", icon: UIImage(sfString: SFSymbol.docOnDocFill, overrideString: "copy")!.menuIcon()) {
+            UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
+            BannerUtil.makeBanner(text: "URL Copied", seconds: 5, context: self.parentController)
+        }
+        
+        alertController.addAction(title: "Open in default app", icon: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) {
+            if #available(iOS 10.0, *) {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            } else {
+                UIApplication.shared.openURL(url)
+            }
+        }
+        
+        let open = OpenInChromeController.init()
+        if open.isChromeInstalled() {
+            alertController.addAction(title: "Open in Chrome", icon: UIImage(named: "world")!.menuIcon()) {
+                _ = open.openInChrome(url, callbackURL: nil, createNewTab: true)
+            }
+        }
+        
+        if #available(iOS 10.0, *) {
+            HapticUtility.hapticActionStrong()
+        } else if SettingValues.hapticFeedback {
+            AudioServicesPlaySystemSound(1519)
+        }
+        
+        if parentController != nil {
+            alertController.show(parentController!)
+        }
     }
 }
 
@@ -412,16 +440,17 @@ extension UIView {
 
     // In order to create computed properties for extensions, we need a key to
     // store and access the stored property
-    fileprivate struct AssociatedObjectKeys {
+    private struct AssociatedObjectKeys {
         static var tapGestureRecognizer = "tapGR"
         static var longTapGestureRecognizer = "longTapGR"
-
+        static var longTapGestureTimer = "longTapTimer"
+        static var longTapGestureCancelled = "longTapCancelled"
     }
 
-    fileprivate typealias Action = (() -> Void)?
+    private typealias Action = (() -> Void)?
 
     // Set our computed property type to a closure
-    fileprivate var tapGestureRecognizerAction: Action? {
+    private var tapGestureRecognizerAction: Action? {
         set {
             if let newValue = newValue {
                 // Computed properties get stored as associated objects
@@ -434,7 +463,7 @@ extension UIView {
         }
     }
 
-    fileprivate var longTapGestureRecognizerAction: Action? {
+    private var longTapGestureRecognizerAction: Action? {
         set {
             if let newValue = newValue {
                 // Computed properties get stored as associated objects
@@ -443,6 +472,32 @@ extension UIView {
         }
         get {
             let tapGestureRecognizerActionInstance = objc_getAssociatedObject(self, &AssociatedObjectKeys.longTapGestureRecognizer) as? Action
+            return tapGestureRecognizerActionInstance
+        }
+    }
+
+    private var timer: Timer? {
+        set {
+            if let newValue = newValue {
+                // Computed properties get stored as associated objects
+                objc_setAssociatedObject(self, &AssociatedObjectKeys.longTapGestureTimer, newValue, objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN)
+            }
+        }
+        get {
+            let tapGestureRecognizerActionInstance = objc_getAssociatedObject(self, &AssociatedObjectKeys.longTapGestureTimer) as? Timer
+            return tapGestureRecognizerActionInstance
+        }
+    }
+
+    private var cancelled: Bool? {
+        set {
+            if let newValue = newValue {
+                // Computed properties get stored as associated objects
+                objc_setAssociatedObject(self, &AssociatedObjectKeys.longTapGestureCancelled, newValue, objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN)
+            }
+        }
+        get {
+            let tapGestureRecognizerActionInstance = objc_getAssociatedObject(self, &AssociatedObjectKeys.longTapGestureCancelled) as? Bool
             return tapGestureRecognizerActionInstance
         }
     }
@@ -460,20 +515,48 @@ extension UIView {
         self.isUserInteractionEnabled = true
         self.longTapGestureRecognizerAction = action
         let tapGestureRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleLongTapGesture))
+        tapGestureRecognizer.minimumPressDuration = 0.36
         self.addGestureRecognizer(tapGestureRecognizer)
     }
 
     // Every time the user taps on the UIImageView, this function gets called,
     // which triggers the closure we stored
-    @objc fileprivate func handleTapGesture(sender: UITapGestureRecognizer) {
+    @objc private func handleTapGesture(sender: UITapGestureRecognizer) {
         if let action = self.tapGestureRecognizerAction {
             action?()
         }
     }
-
-    @objc fileprivate func handleLongTapGesture(sender: UITapGestureRecognizer) {
+    
+    @objc private func doLongGesture() {
+        timer?.invalidate()
+        if cancelled ?? false {
+            return
+        }
         if let action = self.longTapGestureRecognizerAction {
+            if #available(iOS 10.0, *) {
+                HapticUtility.hapticActionStrong()
+            } else if SettingValues.hapticFeedback {
+                AudioServicesPlaySystemSound(1519)
+            }
             action?()
+        }
+    }
+
+    @objc private func handleLongTapGesture(sender: UITapGestureRecognizer) {
+        if sender.state == UIGestureRecognizer.State.began {
+            if sender.state == UIGestureRecognizer.State.began {
+                cancelled = false
+                timer = Timer.scheduledTimer(timeInterval: 0.36,
+                                             target: self,
+                                             selector: #selector(self.doLongGesture),
+                                             userInfo: nil,
+                                             repeats: false)
+                
+            }
+            if sender.state == UIGestureRecognizer.State.ended {
+                timer?.invalidate()
+                cancelled? = true
+            }
         }
     }
 }
@@ -488,4 +571,15 @@ extension Int {
     var delimiter: String {
         return Int.numberFormatter.string(from: NSNumber(value: self)) ?? ""
     }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringKey(_ input: NSAttributedString.Key) -> String {
+	return input.rawValue
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
+	guard let input = input else { return nil }
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
 }

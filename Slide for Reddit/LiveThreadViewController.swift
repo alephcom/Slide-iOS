@@ -10,10 +10,13 @@ import reddift
 import SDWebImage
 import Starscream
 import UIKit
-import XLActionController
+import YYText
 
 class LiveThreadViewController: MediaViewController, UICollectionViewDelegate, WrappingFlowLayoutDelegate, UICollectionViewDataSource {
-
+    func headerOffset() -> Int {
+        return 0
+    }
+    
     var tableView: UICollectionView!
     var id: String
 
@@ -30,6 +33,8 @@ class LiveThreadViewController: MediaViewController, UICollectionViewDelegate, W
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         self.navigationController?.setToolbarHidden(true, animated: false)
+        socket?.connect()
+        UIApplication.shared.isIdleTimerDisabled = true
     }
 
     var flowLayout: WrappingFlowLayout = WrappingFlowLayout.init()
@@ -48,7 +53,7 @@ class LiveThreadViewController: MediaViewController, UICollectionViewDelegate, W
         self.tableView.dataSource = self
         self.tableView.register(LiveThreadUpdate.classForCoder(), forCellWithReuseIdentifier: "live")
 
-        tableView.backgroundColor = ColorUtil.backgroundColor
+        tableView.backgroundColor = ColorUtil.theme.backgroundColor
         session = (UIApplication.shared.delegate as! AppDelegate).session
 
         refresh()
@@ -71,6 +76,77 @@ class LiveThreadViewController: MediaViewController, UICollectionViewDelegate, W
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         socket?.disconnect()
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+    
+    deinit {
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+    
+    var doneOnce = false
+    func startPulse(_ complete: Bool) {
+        if !doneOnce {
+            doneOnce = true
+            let progressDot = UIView()
+            progressDot.alpha = 0.7
+            progressDot.backgroundColor = .clear
+            
+            let startAngle = -CGFloat.pi / 2
+            
+            let center = CGPoint(x: 20 / 2, y: 20 / 2)
+            let radius = CGFloat(20 / 2)
+            let arc = CGFloat.pi * CGFloat(2) * 1
+            
+            let cPath = UIBezierPath()
+            cPath.move(to: center)
+            cPath.addLine(to: CGPoint(x: center.x + radius * cos(startAngle), y: center.y + radius * sin(startAngle)))
+            cPath.addArc(withCenter: center, radius: radius, startAngle: startAngle, endAngle: arc + startAngle, clockwise: true)
+            cPath.addLine(to: CGPoint(x: center.x, y: center.y))
+            
+            let circleShape = CAShapeLayer()
+            circleShape.path = cPath.cgPath
+            circleShape.strokeColor = GMColor.red500Color().cgColor
+            circleShape.fillColor = GMColor.red500Color().cgColor
+            circleShape.lineWidth = 1.5
+            // add sublayer
+            for layer in progressDot.layer.sublayers ?? [CALayer]() {
+                layer.removeFromSuperlayer()
+            }
+            progressDot.layer.removeAllAnimations()
+            progressDot.layer.addSublayer(circleShape)
+            
+            let pulseAnimation = CABasicAnimation(keyPath: "transform.scale")
+            pulseAnimation.duration = 0.5
+            pulseAnimation.toValue = 1.2
+            pulseAnimation.fromValue = 0.2
+            pulseAnimation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut)
+            pulseAnimation.autoreverses = false
+            pulseAnimation.repeatCount = Float.greatestFiniteMagnitude
+            
+            let fadeAnimation = CABasicAnimation(keyPath: "opacity")
+            fadeAnimation.duration = 0.5
+            fadeAnimation.toValue = 0
+            fadeAnimation.fromValue = 2.5
+            fadeAnimation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut)
+            fadeAnimation.autoreverses = false
+            fadeAnimation.repeatCount = Float.greatestFiniteMagnitude
+            
+            progressDot.frame = CGRect(x: 0, y: 0, width: 20, height: 20)
+            let liveB = UIBarButtonItem.init(customView: progressDot)
+            let more = UIButton.init(type: .custom)
+            more.setImage(UIImage(sfString: SFSymbol.infoCircle, overrideString: "info")?.navIcon(), for: UIControl.State.normal)
+            more.addTarget(self, action: #selector(self.showMenu(_:)), for: UIControl.Event.touchUpInside)
+            more.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
+            let moreB = UIBarButtonItem.init(customView: more)
+            if complete {
+                navigationItem.rightBarButtonItem = moreB
+            } else {
+                self.navigationItem.rightBarButtonItems = [moreB, liveB]
+            }
+            
+            progressDot.layer.add(pulseAnimation, forKey: "scale")
+            progressDot.layer.add(fadeAnimation, forKey: "fade")
+        }
     }
 
     func collectionView(_ collectionView: UICollectionView, width: CGFloat, indexPath: IndexPath) -> CGSize {
@@ -78,44 +154,31 @@ class LiveThreadViewController: MediaViewController, UICollectionViewDelegate, W
         let itemWidth = width - 10
         let id = data["id"] as! String
         if estimatedHeights[id] == nil {
-            let titleString = NSMutableAttributedString.init(string: data["author"] as! String, attributes: [NSFontAttributeName: FontGenerator.fontOfSize(size: 14, submission: true)])
+            let content = NSMutableAttributedString(string: "u/\(data["author"] as! String) \(DateFormatter().timeSince(from: NSDate(timeIntervalSince1970: TimeInterval(data["created_utc"] as! Int)), numericDates: true))", attributes: [NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor, NSAttributedString.Key.font: FontGenerator.boldFontOfSize(size: 14, submission: false)])
             
-            var content: NSAttributedString?
-            if !(data["body_html"] as? String ?? "").isEmpty() {
-                var html = (data["body_html"] as! String).gtm_stringByUnescapingFromHTML()!
-                html = html.trimmed()
-                do {
-                    html = WrapSpoilers.addSpoilers(html)
-                    html = WrapSpoilers.addTables(html)
-                    let attr = try NSMutableAttributedString(data: (html.data(using: .unicode)!), options: [NSDocumentTypeDocumentAttribute: NSHTMLTextDocumentType], documentAttributes: nil)
-                    let font = FontGenerator.fontOfSize(size: 16, submission: false)
-                    let attr2 = attr.reconstruct(with: font, color: ColorUtil.fontColor, linkColor: .white)
-                    content = LinkParser.parse(attr2, .white)
-                } catch {
-                    content = NSAttributedString()
+            if let body = data["body_html"] as? String {
+                if !body.isEmpty() {
+                    let html = body.unescapeHTML
+                    content.append(NSAttributedString(string: "\n"))
+                   // TODO: - maybe link parsing here?
+                    content.append(TextDisplayStackView.createAttributedChunk(baseHTML: html, fontSize: 16, submission: false, accentColor: ColorUtil.baseAccent, fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil))
                 }
-            } else {
-                content = NSAttributedString()
             }
+
             var imageHeight = 0
             if data["mobile_embeds"] != nil && !(data["mobile_embeds"] as? JSONArray)!.isEmpty {
                 if let embedsB = data["mobile_embeds"] as? JSONArray, let embeds = embedsB[0] as? JSONDictionary, let height = embeds["height"] as? Int, let width = embeds["width"] as? Int {
+                    print(embedsB)
                     let ratio = Double(height) / Double(width)
                     let width = Double(itemWidth)
                     imageHeight = Int(width * ratio)
                 }
             }
 
-            let framesetterT = CTFramesetterCreateWithAttributedString(titleString)
-            let textSizeT = CTFramesetterSuggestFrameSizeWithConstraints(framesetterT, CFRange(), nil, CGSize.init(width: itemWidth - 16, height: CGFloat.greatestFiniteMagnitude), nil)
-            if content != nil {
-                let framesetterB = CTFramesetterCreateWithAttributedString(content!)
-                let textSizeB = CTFramesetterSuggestFrameSizeWithConstraints(framesetterB, CFRange(), nil, CGSize.init(width: itemWidth - 16, height: CGFloat.greatestFiniteMagnitude), nil)
-                
-                estimatedHeights[id] = CGFloat(34 + textSizeT.height + textSizeB.height + CGFloat(imageHeight))
-            } else {
-                estimatedHeights[id] = CGFloat(34 + textSizeT.height + CGFloat(imageHeight))
-            }
+            let size = CGSize(width: width - 18, height: CGFloat.greatestFiniteMagnitude)
+            let layout = YYTextLayout(containerSize: size, text: content)!
+            let infoHeight = layout.textBoundingSize.height
+            estimatedHeights[id] = CGFloat(24 + infoHeight + CGFloat(imageHeight))
         }
         return CGSize(width: itemWidth, height: estimatedHeights[id]!)
     }
@@ -144,16 +207,11 @@ class LiveThreadViewController: MediaViewController, UICollectionViewDelegate, W
     func doInfo(_ json: JSONDictionary) {
         self.baseData = json
         self.title = (json["title"] as? String) ?? ""
-        let more = UIButton.init(type: .custom)
-        more.setImage(UIImage.init(named: "info")?.navIcon(), for: UIControlState.normal)
-        more.addTarget(self, action: #selector(self.showMenu(_:)), for: UIControlEvents.touchUpInside)
-        more.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
-        let moreB = UIBarButtonItem.init(customView: more)
-        navigationItem.rightBarButtonItem = moreB
+        self.startPulse((json["state"] as? String ?? "complete") == "complete")
     }
     
     var baseData: JSONDictionary?
-    func showMenu(_ sender: AnyObject) {
+    @objc func showMenu(_ sender: AnyObject) {
         let alert = UIAlertController.init(title: (baseData!["title"] as? String) ?? "", message: "\n\n\(baseData!["viewer_count"] as! Int) watching\n\n\n\(baseData!["description"] as! String)", preferredStyle: .alert)
         alert.addAction(UIAlertAction.init(title: "Close", style: .cancel, handler: nil))
         present(alert, animated: true)
@@ -197,8 +255,22 @@ class LiveThreadViewController: MediaViewController, UICollectionViewDelegate, W
                     if let payload = (text as! JSONDictionary)["payload"] as? JSONDictionary, let data = payload["data"] as? JSONDictionary {
                         DispatchQueue.main.async {
                             self.content.insert(data, at: 0)
-                            self.flowLayout.reset()
-                            self.tableView.reloadData()
+                            self.flowLayout.reset(modal: self.presentingViewController != nil, vc: self, isGallery: false)
+                            let contentHeight = self.tableView.contentSize.height
+                            let offsetY = self.tableView.contentOffset.y
+                            let bottomOffset = contentHeight - offsetY
+                            if #available(iOS 11.0, *) {
+                                CATransaction.begin()
+                                CATransaction.setDisableActions(true)
+                                self.tableView.performBatchUpdates({
+                                    self.tableView.insertItems(at: [IndexPath(row: 0, section: 0)])
+                                }, completion: { (_) in
+                                    self.tableView.contentOffset = CGPoint(x: 0, y: self.tableView.contentSize.height - bottomOffset)
+                                    CATransaction.commit()
+                                })
+                            } else {
+                                self.tableView.insertItems(at: [IndexPath(row: 0, section: 0)])
+                            }
                         }
                     }
                 }
@@ -216,8 +288,34 @@ class LiveThreadViewController: MediaViewController, UICollectionViewDelegate, W
 
     func doneLoading() {
         DispatchQueue.main.async {
-            self.flowLayout.reset()
+            self.flowLayout.reset(modal: self.presentingViewController != nil, vc: self, isGallery: false)
             self.tableView.reloadData()
         }
     }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
+	guard let input = input else { return nil }
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringKey(_ input: NSAttributedString.Key) -> String {
+	return input.rawValue
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToNSAttributedStringDocumentReadingOptionKeyDictionary(_ input: [String: Any]) -> [NSAttributedString.DocumentReadingOptionKey: Any] {
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.DocumentReadingOptionKey(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringDocumentAttributeKey(_ input: NSAttributedString.DocumentAttributeKey) -> String {
+	return input.rawValue
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringDocumentType(_ input: NSAttributedString.DocumentType) -> String {
+	return input.rawValue
 }

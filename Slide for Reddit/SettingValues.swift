@@ -6,14 +6,18 @@
 //  Copyright © 2017 Haptic Apps. All rights reserved.
 //
 
+import Anchorage
+import AVFoundation
 import Foundation
 import reddift
+import YYText
 
 class SettingValues {
 
     public static let pref_viewType = "VIEW_TYPE"
     public static let pref_hiddenFAB = "HIDDEN_FAB"
     public static let pref_defaultSorting = "DEFAULT_SORT"
+    public static let pref_defaultSearchSort = "DEFAULT_SORT_SEARCH"
     public static let pref_defaultTimePeriod = "DEFAULT_TIME"
     public static let pref_defaultCommentSorting = "DEFAULT_SORT_COMMENT"
     public static let pref_tintingMode = "TINTING_MODE"
@@ -57,7 +61,6 @@ class SettingValues {
     public static let pref_saveButton = "SAVE_BUTTON"
     public static let pref_readLaterButton = "READ_LATER_BUTTON"
     public static let pref_internalYouTube = "INTERNAL_YOUTUBE"
-    public static let pref_multiColumn = "MULTI_COLUMN"
     public static let pref_showFirstParagraph = "FIRST_P"
     public static let pref_swapLongPress = "SWAP_LONG_PRESS"
     public static let pref_collapseFully = "COLLAPSE_FULLY"
@@ -72,7 +75,9 @@ class SettingValues {
     public static let pref_nightEndM = "NIGHTEM"
     public static let pref_nightTheme = "NIGHTTHEME"
     public static let pref_nightMode = "NIGHT_ENABLED"
+    public static let pref_nightModeFilter = "NIGHT_FILTER"
     public static let pref_multiColumnCount = "MULTICOLUMN_COUNT"
+    public static let pref_galleryCount = "GALLERY_COUNT"
     public static let pref_nameScrubbing = "NAME_SCRUBBING"
     public static let pref_autoCache = "AUTO_CACHE"
     public static let pref_pro = "RELEASE_PRO_ENABLED"
@@ -82,6 +87,7 @@ class SettingValues {
     public static let pref_commentActionLeftLeft = "COMMENT_LEFT_LEFT"
     public static let pref_commentActionLeftRight = "COMMENT_RIGHT_LEFT"
     public static let pref_commentActionDoubleTap = "COMMENT_DOUBLE_TAP"
+    public static let pref_commentActionForceTouch = "COMMENT_FORCE_TOUCH"
     public static let pref_submissionActionDoubleTap = "SUBMISSION_DOUBLE_TAP"
     public static let pref_commentFullScreen = "COMMENT_FULLSCREEN"
     public static let pref_hapticFeedback = "HAPTIC_FEEDBACK"
@@ -91,7 +97,6 @@ class SettingValues {
     public static let pref_flatMode = "FLAT_MODE"
     public static let pref_bottomBarHidden = "BOTTOM_BAR_HIDDEN"
     public static let pref_widerIndicators = "WIDE_INDICATORS"
-    public static let pref_lockCommentBottomBar = "LOCK_COMMENT_BOTTOM"
     public static let pref_blackShadowbox = "BLACK_SHADOWBOX"
     public static let pref_hideAutomod = "HIDE_AUTOMOD"
     public static let pref_commentGesturesEnabled = "COMMENT_GESTURES"
@@ -105,7 +110,30 @@ class SettingValues {
     public static let pref_showPages = "SHOW_PAGES"
     public static let pref_submissionActionLeft = "SUBMISSION_LEFT"
     public static let pref_submissionActionRight = "SUBMISSION_RIGHT"
+    public static let pref_submissionActionForceTouch = "SUBMISSION_FORCE_TOUCH"
     public static let pref_commentGesturesMode = "COMMENT_GESTURE_MODE"
+    public static let pref_notifications = "NOTIFICATIONS"
+    public static let pref_subBar = "SUB_BAR"
+    public static let pref_appMode = "APP_MODE"
+    public static let pref_moreButton = "MORE_BUTTON"
+    public static let pref_disableBanner = "DISABLE_BANNER"
+    public static let pref_newIndicator = "NEW_INDICATOR"
+    public static let pref_totallyCollapse = "TOTALLY_COLLAPSE"
+    public static let pref_fullyHideNavbar = "FULLY_HIDE_NAVBAR"
+    public static let pref_typeInTitle = "TYPE_IN_TITLE"
+    public static let pref_muteYouTube = "MUTE_YOU_TUBE"
+    public static let pref_commentJumpMode = "COMMENT_JUMP_MODE"
+    public static let pref_alwaysShowHeader = "ALWAYS_SHOW_HEADER"
+    public static let pref_disablePreviews = "DISABLE_PREVIEWS"
+    public static let pref_commentDepth = "MAX_COMMENT_DEPTH"
+    public static let pref_postsToCache = "POST_CACHE_COUNT"
+    public static let pref_shareButton = "SHARE_BUTTON_ENABLED"
+    public static let pref_hideSeen = "HIDE_SEEN"
+    public static let pref_sideGesture = "SIDE_GESTURE"
+    public static let pref_disable13Popup = "DISABLE_13_POPUP"
+    public static let pref_thumbTag = "THUMB_TAG"
+    public static let pref_commentLimit = "COMMENT_LIMIT"
+    public static let pref_submissionLimit = "SUBMISSION_LIMIT"
 
     public static let BROWSER_INTERNAL = "internal"
     public static let BROWSER_SAFARI_INTERNAL_READABILITY = "readability"
@@ -115,24 +143,34 @@ class SettingValues {
     public static let BROWSER_CHROME = "chrome"
     public static let BROWSER_OPERA = "opera"
     public static let BROWSER_FOCUS = "focus"
+    public static let BROWSER_FOCUS_KLAR = "focusklar"
+    public static let BROWSER_DDG = "duckduckgo"
+    public static let BROWSER_BRAVE = "brave"
 
     public static var commentActionRightRight = CommentAction.UPVOTE
     public static var commentActionRightLeft = CommentAction.DOWNVOTE
     public static var commentActionLeftRight = CommentAction.MENU
     public static var commentActionLeftLeft = CommentAction.COLLAPSE
     public static var commentActionDoubleTap = CommentAction.NONE
+    public static var commentActionForceTouch = CommentAction.MENU
     public static var submissionActionDoubleTap = SubmissionAction.NONE
     public static var submissionActionLeft = SubmissionAction.UPVOTE
     public static var submissionActionRight = SubmissionAction.SAVE
     public static var commentGesturesMode = CommentGesturesMode.NONE
+    public static var submissionActionForceTouch = SubmissionAction.NONE
+
+    public static var sideGesture = SideGesturesMode.NONE
 
     public static var browser = "firefox"
-    public static var viewType = true
+    public static var subredditBar = true
+    public static var totallyCollapse = true
+    public static var fullyHideNavbar = true
     public static var hiddenFAB = true
     public static var upvotePercentage = true
     public static var defaultSorting = LinkSortType.hot
+    public static var defaultSearchSorting = SearchSortBy.top
     public static var defaultTimePeriod = TimeFilterWithin.day
-    public static var defaultCommentSorting = CommentSort.confidence
+    public static var defaultCommentSorting = CommentSort.suggested
     public static var tintingMode = "TINTING_MODE"
     public static var onlyTintOutside = false
     public static var postViewMode = PostViewType.LIST
@@ -147,7 +185,9 @@ class SettingValues {
     public static var commentCountLastVisit = true
     public static var rightThumbnail = true
     public static var multiColumnCount = 2
+    public static var galleryCount = 2
     public static var nameScrubbing = true
+    public static var muteYouTube = true
     public static var autoCache = false
     public static var pinToolbar = false
     public static var hapticFeedback = true
@@ -156,8 +196,13 @@ class SettingValues {
     public static var hideAutomod = false
     public static var submissionGesturesEnabled = false
     public static var infoBelowTitle = false
-    public static var matchSilence = true
+   // public static var matchSilence = true
     public static var showPages = true
+    public static var menuButton = true
+    public static var shareButton = true
+    public static var disableBanner = false
+    public static var newIndicator = false
+    public static var typeInTitle = true
 
     public static var enlargeLinks = true
     public static var noImages = false
@@ -176,6 +221,8 @@ class SettingValues {
     public static var dataSavingDisableWiFi = false
     public static var postFontOffset = -4
     public static var commentFontOffset = -4
+    public static var cachedPostsCount = 25
+    public static var commentDepth = 10
     public static var largerThumbnail = true
     public static var isPro = true
     public static var lqLow = true
@@ -193,11 +240,11 @@ class SettingValues {
     public static var saveButton = false
     public static var readLaterButton = true
     public static var internalYouTube = true
-    public static var multiColumn = false
     public static var showFirstParagraph = true
     public static var swapLongPress = false
     public static var collapseFully = true
     public static var highlightOp = true
+    public static var notifications = true
     public static var smallerTag = true
     public static var biometrics = true
     public static var nightStart = 1
@@ -205,12 +252,21 @@ class SettingValues {
     public static var nightEnd = 5
     public static var nightEndMin = 0
     public static var nightModeEnabled = false
-    public static var nightTheme = ColorUtil.Theme.DARK
+    public static var nightModeFilter = false
+    public static var nightTheme = ""
     public static var commentFullScreen = true
     public static var linkAlwaysThumbnail = false
-    public static var bottomBarHidden = true
-    public static var lockCommentBars = true
     public static var autoKeyboard = true
+    public static var appMode = AppMode.SINGLE
+    public static var commentJumpButton = CommentJumpMode.RIGHT
+    public static var alwaysShowHeader = false
+    public static var disablePreviews = false
+    public static var hideSeen = true
+    public static var disable13Popup = true
+    public static var thumbTag = true
+    
+    public static var commentLimit = 95
+    public static var submissionLimit = 13
 
     enum PostViewType: String {
         case LIST = "list"
@@ -229,11 +285,16 @@ class SettingValues {
     enum ActionBarMode: String {
         case NONE = "none"
         case FULL = "full"
+        case FULL_LEFT = "left"
         case SIDE = "side"
         case SIDE_RIGHT = "right"
         
         func isSide() -> Bool {
             return self == .SIDE || self == .SIDE_RIGHT
+        }
+        
+        func isFull() -> Bool {
+            return self == .FULL || self == .FULL_LEFT
         }
     }
 
@@ -258,14 +319,14 @@ class SettingValues {
             }
         }
     }
-    
+
     enum CommentGesturesMode: String {
         static let cases: [CommentGesturesMode] = [.GESTURES, .NONE, .SWIPE_ANYWHERE]
         
-        case GESTURES = "never"
-        case NONE = "wifi_only"
-        case SWIPE_ANYWHERE = "always"
-        
+        case GESTURES = "gestures"
+        case NONE = "none"
+        case SWIPE_ANYWHERE = "swipe_anywhere"
+
         func description() -> String {
             switch self {
             case .GESTURES:
@@ -277,7 +338,62 @@ class SettingValues {
             }
         }
     }
-    
+
+    enum SideGesturesMode: String {
+        static let cases: [SideGesturesMode] = [.SUBS, .POST, .SIDEBAR, .INBOX, .NONE]
+        
+        case SUBS = "subs"
+        case POST = "post"
+        case SIDEBAR = "sidebar"
+        case NONE = "none"
+        case INBOX = "inbox"
+
+        func description() -> String {
+            switch self {
+            case .SUBS:
+                return "Open subreddit drawer"
+            case .POST:
+                return "Submit a post to the current subreddit"
+            case .INBOX:
+                return "Opens your Inbox"
+            case .SIDEBAR:
+                return "Open the current subreddit sidebar"
+            case .NONE:
+                return "No side swipe gesture"
+            }
+        }
+        
+        func getPhoto() -> String {
+            switch self {
+            case .SUBS :
+                return "subs"
+            case .POST:
+                return "edit"
+            case .INBOX:
+                return "inbox"
+            case .SIDEBAR:
+                return "info"
+            case .NONE:
+                return "close"
+            }
+        }
+        
+        func getColor() -> UIColor {
+            switch self {
+            case .SUBS :
+                return GMColor.blue500Color()
+            case .POST:
+                return GMColor.green500Color()
+            case .INBOX:
+                return GMColor.lightBlue500Color()
+            case .SIDEBAR:
+                return GMColor.orange500Color()
+            case .NONE:
+                return GMColor.red500Color()
+            }
+        }
+    }
+
     public static func shouldAutoPlay() -> Bool {
         switch SettingValues.autoPlayMode {
         case .ALWAYS:
@@ -320,17 +436,15 @@ class SettingValues {
     }
 
     public static func initialize() {
+        let pad = UIDevice.current.userInterfaceIdiom == .pad
         let settings = UserDefaults.standard
         SettingValues.saveNSFWHistory = settings.bool(forKey: SettingValues.pref_saveNSFWHistory)
-        SettingValues.reduceColor = settings.bool(forKey: SettingValues.pref_reduceColor)
+        SettingValues.reduceColor = settings.object(forKey: SettingValues.pref_reduceColor) == nil ? true : settings.bool(forKey: SettingValues.pref_reduceColor)
         SettingValues.saveHistory = settings.object(forKey: SettingValues.pref_saveHistory) == nil ? true : settings.bool(forKey: SettingValues.pref_saveHistory)
-        SettingValues.multiColumn = settings.object(forKey: SettingValues.pref_multiColumn) == nil ? false : settings.bool(forKey: SettingValues.pref_multiColumn)
         
-        var columns = Int(round(UIApplication.shared.statusBarView!.frame.size.width / CGFloat(320)))
-        if columns == 0 {
-            columns = 1
-        }
+        let columns = 2 // TODO - Maybe calculate per device?
         SettingValues.multiColumnCount = settings.object(forKey: SettingValues.pref_multiColumnCount) == nil ? columns : settings.integer(forKey: SettingValues.pref_multiColumnCount)
+        SettingValues.galleryCount = settings.object(forKey: SettingValues.pref_galleryCount) == nil ? columns : settings.integer(forKey: SettingValues.pref_galleryCount)
         SettingValues.highlightOp = settings.object(forKey: SettingValues.pref_highlightOp) == nil ? true : settings.bool(forKey: SettingValues.pref_highlightOp)
 
         var basePath = settings.string(forKey: SettingValues.pref_defaultSorting)
@@ -340,9 +454,19 @@ class SettingValues {
                 break
             }
         }
-
+        
+        basePath = settings.string(forKey: SettingValues.pref_defaultSearchSort)
+        for sort in SearchSortBy.cases {
+            if sort.path == basePath {
+                SettingValues.defaultSearchSorting = sort
+                break
+            }
+        }
+        
         SettingValues.hapticFeedback = settings.object(forKey: SettingValues.pref_hapticFeedback) == nil ? true : settings.bool(forKey: SettingValues.pref_hapticFeedback)
         SettingValues.submissionGesturesEnabled = settings.object(forKey: SettingValues.pref_submissionGesturesEnabled) == nil ? false : settings.bool(forKey: SettingValues.pref_submissionGesturesEnabled)
+        SettingValues.menuButton = settings.object(forKey: SettingValues.pref_moreButton) == nil ? true : settings.bool(forKey: SettingValues.pref_moreButton)
+        SettingValues.shareButton = settings.object(forKey: SettingValues.pref_shareButton) == nil ? false : settings.bool(forKey: SettingValues.pref_shareButton)
 
         basePath = settings.string(forKey: SettingValues.pref_defaultTimePeriod)
         for time in TimeFilterWithin.cases {
@@ -352,8 +476,14 @@ class SettingValues {
             }
         }
 
-        SettingValues.postFontOffset = settings.object(forKey: SettingValues.pref_postFontSize) == nil ? -2 : settings.integer(forKey: SettingValues.pref_postFontSize)
+        SettingValues.postFontOffset = settings.object(forKey: SettingValues.pref_postFontSize) == nil ? 0 : settings.integer(forKey: SettingValues.pref_postFontSize)
         SettingValues.commentFontOffset = settings.object(forKey: SettingValues.pref_commentFontSize) == nil ? -2 : settings.integer(forKey: SettingValues.pref_commentFontSize)
+
+        SettingValues.commentLimit = settings.object(forKey: SettingValues.pref_commentLimit) == nil ? 100 : settings.integer(forKey: SettingValues.pref_commentLimit)
+        SettingValues.submissionLimit = settings.object(forKey: SettingValues.pref_submissionLimit) == nil ? 13 : settings.integer(forKey: SettingValues.pref_submissionLimit)
+
+        SettingValues.commentDepth = settings.object(forKey: SettingValues.pref_commentDepth) == nil ? 10 : settings.integer(forKey: SettingValues.pref_commentDepth)
+        SettingValues.cachedPostsCount = settings.object(forKey: SettingValues.pref_postsToCache) == nil ? 25 : settings.integer(forKey: SettingValues.pref_postsToCache)
 
         if let time = UserDefaults.standard.string(forKey: pref_defaultTimePeriod) {
             for t in TimeFilterWithin.cases {
@@ -381,26 +511,45 @@ class SettingValues {
                 }
             }
         }
+        
+        if let sort = UserDefaults.standard.string(forKey: pref_commentJumpMode) {
+            for t in CommentJumpMode.cases {
+                if t.rawValue == sort {
+                    commentJumpButton = t
+                    break
+                }
+            }
+        }
+        
+        SettingValues.hideImageSelftext = settings.object(forKey: SettingValues.pref_hideImageSelftext) == nil ? true : settings.bool(forKey: SettingValues.pref_hideImageSelftext)
+        SettingValues.disable13Popup = settings.bool(forKey: SettingValues.pref_disable13Popup)
 
+        SettingValues.muteYouTube = settings.object(forKey: SettingValues.pref_muteYouTube) == nil ? true : settings.bool(forKey: SettingValues.pref_muteYouTube)
         SettingValues.smallerTag = settings.object(forKey: SettingValues.pref_smallTag) == nil ? true : settings.bool(forKey: SettingValues.pref_smallTag)
         SettingValues.blackShadowbox = settings.bool(forKey: SettingValues.pref_blackShadowbox)
+        SettingValues.alwaysShowHeader = settings.bool(forKey: SettingValues.pref_alwaysShowHeader)
         SettingValues.markReadOnScroll = settings.bool(forKey: SettingValues.pref_markReadOnScroll)
         SettingValues.swapLongPress = settings.bool(forKey: SettingValues.pref_swapLongPress)
         SettingValues.domainInInfo = settings.bool(forKey: SettingValues.pref_domainInInfo)
+        SettingValues.notifications = settings.bool(forKey: SettingValues.pref_notifications)
+        SettingValues.totallyCollapse = settings.bool(forKey: SettingValues.pref_totallyCollapse)
+        SettingValues.fullyHideNavbar = settings.bool(forKey: SettingValues.pref_fullyHideNavbar)
         SettingValues.showFirstParagraph = settings.object(forKey: SettingValues.pref_showFirstParagraph) == nil ? true : settings.bool(forKey: SettingValues.pref_showFirstParagraph)
         SettingValues.disableNavigationBar = settings.bool(forKey: SettingValues.pref_disableNavigationBar)
         SettingValues.disableColor = settings.bool(forKey: SettingValues.pref_disableColor)
+        SettingValues.typeInTitle = settings.bool(forKey: SettingValues.pref_typeInTitle)
         SettingValues.collapseDefault = settings.bool(forKey: SettingValues.pref_collapseDefault)
+        SettingValues.disablePreviews = settings.bool(forKey: SettingValues.pref_disablePreviews)
         SettingValues.volumeButtonNavigation = settings.bool(forKey: SettingValues.pref_volumeButtonNavigation)
         SettingValues.collapseFully = settings.bool(forKey: SettingValues.pref_collapseFully)
-        SettingValues.lockCommentBars = settings.bool(forKey: SettingValues.pref_lockCommentBottomBar)
         SettingValues.autoCache = settings.bool(forKey: SettingValues.pref_autoCache)
         SettingValues.wideIndicators = settings.bool(forKey: SettingValues.pref_widerIndicators)
         SettingValues.leftThumbnail = settings.bool(forKey: SettingValues.pref_leftThumbnail)
         SettingValues.hideAutomod = settings.bool(forKey: SettingValues.pref_hideAutomod)
         SettingValues.biometrics = settings.bool(forKey: SettingValues.pref_biometrics)
+        SettingValues.thumbTag = settings.object(forKey: SettingValues.pref_thumbTag) == nil ? true : settings.bool(forKey: SettingValues.pref_thumbTag)
         SettingValues.enlargeLinks = settings.object(forKey: SettingValues.pref_enlargeLinks) == nil ? true : settings.bool(forKey: SettingValues.pref_enlargeLinks)
-        SettingValues.commentFullScreen = settings.object(forKey: SettingValues.pref_commentFullScreen) == nil ? true : settings.bool(forKey: SettingValues.pref_commentFullScreen)
+        SettingValues.commentFullScreen = settings.object(forKey: SettingValues.pref_commentFullScreen) == nil ? !pad : settings.bool(forKey: SettingValues.pref_commentFullScreen)
         SettingValues.showLinkContentType = settings.object(forKey: SettingValues.pref_showLinkContentType) == nil ? true : settings.bool(forKey: SettingValues.pref_showLinkContentType)
         SettingValues.nameScrubbing = settings.bool(forKey: SettingValues.pref_nameScrubbing)
         SettingValues.hiddenFAB = settings.bool(forKey: SettingValues.pref_hiddenFAB)
@@ -408,14 +557,15 @@ class SettingValues {
         SettingValues.pinToolbar = settings.bool(forKey: SettingValues.pref_pinToolbar)
         SettingValues.autoKeyboard = settings.object(forKey: SettingValues.pref_autoKeyboard) == nil ? true : settings.bool(forKey: SettingValues.pref_autoKeyboard)
         SettingValues.linkAlwaysThumbnail = settings.object(forKey: SettingValues.pref_linkAlwaysThumbnail) == nil ? true : settings.bool(forKey: SettingValues.pref_linkAlwaysThumbnail)
-        SettingValues.bottomBarHidden = false // disable for now settings.bool(forKey: SettingValues.pref_bottomBarHidden)
         SettingValues.showPages = settings.bool(forKey: SettingValues.pref_showPages)
+        SettingValues.disableBanner = settings.bool(forKey: SettingValues.pref_disableBanner)
+        SettingValues.newIndicator = settings.bool(forKey: SettingValues.pref_newIndicator)
 
         SettingValues.dataSavingEnabled = settings.bool(forKey: SettingValues.pref_dataSavingEnabled)
         SettingValues.dataSavingDisableWiFi = settings.bool(forKey: SettingValues.pref_dataSavingDisableWifi)
         SettingValues.loadContentHQ = settings.bool(forKey: SettingValues.pref_loadContentHQ)
         SettingValues.noImages = settings.bool(forKey: SettingValues.pref_noImg)
-        SettingValues.lqLow = settings.bool(forKey: SettingValues.pref_lqLow)
+        SettingValues.lqLow = false //deprecate this settings.bool(forKey: SettingValues.pref_lqLow)
         SettingValues.saveButton = settings.object(forKey: SettingValues.pref_saveButton) == nil ? true : settings.bool(forKey: SettingValues.pref_saveButton)
         SettingValues.readLaterButton = settings.object(forKey: SettingValues.pref_readLaterButton) == nil ? true : settings.bool(forKey: SettingValues.pref_readLaterButton)
         SettingValues.hideButton = settings.bool(forKey: SettingValues.pref_hideButton)
@@ -425,18 +575,19 @@ class SettingValues {
         SettingValues.nightEnd = settings.object(forKey: SettingValues.pref_nightStartH) == nil ? 5 : settings.integer(forKey: SettingValues.pref_nightEndH)
         SettingValues.nightEndMin = settings.object(forKey: SettingValues.pref_nightStartH) == nil ? 0 : settings.integer(forKey: SettingValues.pref_nightEndM)
         if let name = UserDefaults.standard.string(forKey: SettingValues.pref_nightTheme) {
-            if let t = ColorUtil.Theme(rawValue: name) {
-                SettingValues.nightTheme = t
-            }
+            SettingValues.nightTheme = name
         }
 
         SettingValues.largerThumbnail = settings.object(forKey: SettingValues.pref_largerThumbnail) == nil ? true : settings.bool(forKey: SettingValues.pref_largerThumbnail)
-        SettingValues.viewType = settings.bool(forKey: SettingValues.pref_viewType)
-        SettingValues.matchSilence = settings.object(forKey: SettingValues.pref_matchSilence) == nil ? true : settings.bool(forKey: SettingValues.pref_matchSilence)
+        SettingValues.subredditBar = settings.object(forKey: SettingValues.pref_subBar) == nil ? true : settings.bool(forKey: SettingValues.pref_subBar)
+        //SettingValues.matchSilence = settings.bool(forKey: SettingValues.pref_matchSilence)
         SettingValues.infoBelowTitle = settings.bool(forKey: SettingValues.pref_infoBelowTitle)
         SettingValues.abbreviateScores = settings.object(forKey: SettingValues.pref_abbreviateScores) == nil ? true : settings.bool(forKey: SettingValues.pref_abbreviateScores)
         SettingValues.scoreInTitle = settings.bool(forKey: SettingValues.pref_scoreInTitle)
         SettingValues.commentsInTitle = settings.bool(forKey: SettingValues.pref_commentsInTitle)
+        SettingValues.appMode = AppMode.init(rawValue: settings.string(forKey: SettingValues.pref_appMode) ?? (pad ? "multi" : "single")) ?? (pad ? .SPLIT : .SINGLE)
+        SettingValues.hideSeen = settings.bool(forKey: SettingValues.pref_hideSeen)
+
         SettingValues.postViewMode = PostViewType.init(rawValue: settings.string(forKey: SettingValues.pref_postViewMode) ?? "card") ?? .CARD
         SettingValues.actionBarMode = ActionBarMode.init(rawValue: settings.string(forKey: SettingValues.pref_actionbarMode) ?? "full") ?? .FULL
         SettingValues.autoPlayMode = AutoPlay.init(rawValue: settings.string(forKey: SettingValues.pref_autoPlayMode) ?? "always") ?? .ALWAYS
@@ -444,22 +595,27 @@ class SettingValues {
         SettingValues.flatMode = settings.bool(forKey: SettingValues.pref_flatMode)
         SettingValues.postImageMode = PostImageMode.init(rawValue: settings.string(forKey: SettingValues.pref_postImageMode) ?? "full") ?? .CROPPED_IMAGE
         SettingValues.fabType = FabType.init(rawValue: settings.string(forKey: SettingValues.pref_fabType) ?? "hide") ?? .HIDE_READ
-        SettingValues.commentGesturesMode = CommentGesturesMode.init(rawValue: settings.string(forKey: SettingValues.pref_commentGesturesMode) ?? "none") ?? .NONE
+        SettingValues.commentGesturesMode = CommentGesturesMode.init(rawValue: settings.string(forKey: SettingValues.pref_commentGesturesMode) ?? "swipe_anywhere") ?? .SWIPE_ANYWHERE
         SettingValues.commentActionRightLeft = CommentAction.init(rawValue: settings.string(forKey: SettingValues.pref_commentActionRightLeft) ?? "downvote") ?? .DOWNVOTE
         SettingValues.commentActionRightRight = CommentAction.init(rawValue: settings.string(forKey: SettingValues.pref_commentActionRightRight) ?? "upvote") ?? .UPVOTE
         SettingValues.commentActionLeftLeft = CommentAction.init(rawValue: settings.string(forKey: SettingValues.pref_commentActionLeftLeft) ?? "collapse") ?? .COLLAPSE
         SettingValues.commentActionLeftRight = CommentAction.init(rawValue: settings.string(forKey: SettingValues.pref_commentActionLeftRight) ?? "menu") ?? .MENU
 
         SettingValues.commentActionDoubleTap = CommentAction.init(rawValue: settings.string(forKey: SettingValues.pref_commentActionDoubleTap) ?? "none") ?? .NONE
+        SettingValues.commentActionForceTouch = CommentAction.init(rawValue: settings.string(forKey: SettingValues.pref_commentActionForceTouch) ?? "menu") ?? .MENU
+
         SettingValues.submissionActionDoubleTap = SubmissionAction.init(rawValue: settings.string(forKey: SettingValues.pref_submissionActionDoubleTap) ?? "none") ?? .NONE
         SettingValues.submissionActionRight = SubmissionAction.init(rawValue: settings.string(forKey: SettingValues.pref_submissionActionRight) ?? "upvote") ?? .UPVOTE
         SettingValues.submissionActionLeft = SubmissionAction.init(rawValue: settings.string(forKey: SettingValues.pref_submissionActionLeft) ?? "downvote") ?? .DOWNVOTE
+
+        SettingValues.sideGesture = SideGesturesMode.init(rawValue: settings.string(forKey: SettingValues.pref_sideGesture) ?? "none") ?? .NONE
+
+        SettingValues.submissionActionForceTouch = SubmissionAction.init(rawValue: settings.string(forKey: SettingValues.pref_submissionActionForceTouch) ?? "none") ?? .NONE
 
         SettingValues.internalImageView = settings.object(forKey: SettingValues.pref_internalImageView) == nil ? true : settings.bool(forKey: SettingValues.pref_internalImageView)
         SettingValues.internalGifView = settings.object(forKey: SettingValues.pref_internalGifView) == nil ? true : settings.bool(forKey: SettingValues.pref_internalGifView)
         SettingValues.internalAlbumView = settings.object(forKey: SettingValues.pref_internalAlbumView) == nil ? true : settings.bool(forKey: SettingValues.pref_internalAlbumView)
         SettingValues.internalYouTube = settings.object(forKey: SettingValues.pref_internalYouTube) == nil ? true : settings.bool(forKey: SettingValues.pref_internalYouTube)
-
     }
 
     public static func doneVersion() -> Bool {
@@ -472,22 +628,202 @@ class SettingValues {
         return settings.object(forKey: "USEDONCE") != nil
     }
 
-    public static func showVersionDialog(_ title: String, _ permalink: String, parentVC: UIViewController) {
+    public static func showVersionDialog(_ title: String, _ submission: Link, parentVC: UIViewController) {
         let settings = UserDefaults.standard
         settings.set(true, forKey: Bundle.main.releaseVersionNumber!)
         settings.set(title, forKey: "vtitle")
-        settings.set(permalink, forKey: "vlink")
+        settings.set(submission.permalink, forKey: "vlink")
         settings.synchronize()
         let finalTitle = title + "\nTap to view Changelog"
         
-        BannerUtil.makeBanner(text: finalTitle, color: GMColor.green500Color(), seconds: 7, context: parentVC, top: true, callback: {
-            VCPresenter.openRedditLink(permalink, parentVC.navigationController, parentVC)
-        })
+        var size = CGSize(width: UIScreen.main.bounds.size.width * 0.85 - 30, height: CGFloat.greatestFiniteMagnitude)
+        let chunk = TextDisplayStackView.createAttributedChunk(baseHTML: submission.selftextHtml, fontSize: 12, submission: true, accentColor: ColorUtil.baseAccent, fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
+        let layout = YYTextLayout(containerSize: size, text: chunk)!
+        let textSize = layout.textBoundingSize
+
+        size = CGSize(width: UIScreen.main.bounds.size.width * 0.85 - 30, height: textSize.height)
+        let body = YYLabel()
+        body.numberOfLines = 0
+        body.attributedText = chunk
+        let detailViewController = UpdateViewController(view: body, size: size)
+        detailViewController.titleView.font = UIFont.boldSystemFont(ofSize: 20)
+        detailViewController.titleView.textColor = ColorUtil.theme.fontColor
+        detailViewController.titleView.text = submission.title
+        detailViewController.preferredContentSize = CGSize(width: UIScreen.main.bounds.size.width * 0.85, height: min(size.height, 300))
+        detailViewController.comments.backgroundColor = ColorUtil.baseAccent
+        detailViewController.comments.setTitle("Join the discussion!", for: UIControl.State.normal)
+        detailViewController.comments.titleLabel?.font = UIFont.boldSystemFont(ofSize: 12)
+        detailViewController.comments.contentHorizontalAlignment = .left
+        detailViewController.comments.addTapGestureRecognizer {
+            detailViewController.dismiss(animated: true) {
+                VCPresenter.openRedditLink(submission.permalink, parentVC.navigationController, parentVC)
+            }
+        }
+        detailViewController.comments.addRightImage(image: UIImage(sfString: SFSymbol.bubbleLeftAndBubbleRightFill, overrideString: "comments")!.navIcon(true), offset: 10)
+        detailViewController.dismissHandler = {() in
+        }
+        VCPresenter.presentModally(viewController: detailViewController, parentVC, CGSize(width: UIScreen.main.bounds.size.width * 0.85, height: min(size.height + 15 + 15 + 20, UIScreen.main.bounds.size.height * 0.6)))
+    }
+    
+    public enum PostOverflowAction: String {
+        public static let cases: [PostOverflowAction] = [.PROFILE, .SUBREDDIT, .SUBSCRIBE, .REPORT, .BLOCK, .SAVE, .CROSSPOST, .READ_LATER, .SHARE_CONTENT, .SHARE_REDDIT, .CHROME, .SAFARI, .FILTER, .COPY, .HIDE, .UPVOTE, .DOWNVOTE, .MODERATE]
+
+        case PROFILE = "profile"
+        case SUBREDDIT = "sub"
+        case REPORT = "report"
+        case BLOCK = "block"
+        case SAVE = "save"
+        case CROSSPOST = "crosspost"
+        case READ_LATER = "readlater"
+        case SHARE_CONTENT = "sharecontent"
+        case SHARE_REDDIT = "sharereddit"
+        case CHROME = "openchrome"
+        case SAFARI = "opensafari"
+        case FILTER = "filter"
+        case COPY = "copy"
+        case HIDE = "hide"
+        case UPVOTE = "upvote"
+        case DOWNVOTE = "downvote"
+        case MODERATE = "moderate"
+        case SUBSCRIBE = "subscribe"
+        
+        public static func getMenu(_ link: RSubmission, mutableList: Bool) -> [PostOverflowAction] {
+            var toReturn = [PostOverflowAction]()
+            for item in getMenuNone() {
+                if item == .CHROME {
+                    let open = OpenInChromeController.init()
+                    if !open.isChromeInstalled() {
+                        continue
+                    }
+                }
+                if !AccountController.isLoggedIn && (item == .UPVOTE || item == .DOWNVOTE || item == .SAVE || item == .CROSSPOST) {
+                    continue
+                }
+                if !AccountController.modSubs.contains(link.subreddit) && item == .MODERATE {
+                    continue
+                }
+                if !mutableList && (item == .FILTER || item == .HIDE) {
+                    continue
+                }
+                if Subscriptions.isSubscriber(link.subreddit) && item == .SUBSCRIBE {
+                    continue
+                }
+                toReturn.append(item)
+            }
+            return toReturn
+        }
+        
+        public static func getMenuNone() -> [PostOverflowAction] {
+            let menu = UserDefaults.standard.stringArray(forKey: "postMenu") ?? ["profile", "sub", "moderate", "report", "block", "save", "crosspost", "readlater", "sharecontent", "sharereddit", "openchrome", "opensafari", "filter", "copy", "hide"]
+            var toReturn = [PostOverflowAction]()
+            for item in menu {
+                toReturn.append(PostOverflowAction(rawValue: item)!)
+            }
+            return toReturn
+        }
+
+        public func getTitle(_ link: RSubmission? = nil) -> String {
+            switch self {
+            case .PROFILE:
+                if link == nil {
+                    return "Author profile"
+                }
+                return "\(AccountController.formatUsernamePosessive(input: link!.author, small: false)) profile"
+            case .SUBREDDIT:
+                if link == nil {
+                    return "Subreddit"
+                }
+                return "r/\(link!.subreddit)"
+            case .SUBSCRIBE:
+                if link == nil {
+                    return "Subscribe"
+                }
+                return "Subscribe to r/\(link!.subreddit)"
+            case .REPORT:
+                return "Report content"
+            case .BLOCK:
+                return "Block user"
+            case .SAVE:
+                return "Save"
+            case .CROSSPOST:
+                return "Crosspost submission"
+            case .READ_LATER:
+                if link == nil {
+                    return "Read Later"
+                }
+                return ReadLater.isReadLater(id: link!.getIdentifier()) ? "Remove from Read Later" : "Add to Read Later"
+            case .SHARE_CONTENT:
+                return "Share content link"
+            case .SHARE_REDDIT:
+                return "Share reddit link"
+            case .CHROME:
+                return "Open in Chrome"
+            case .SAFARI:
+                return "Open in Safari"
+            case .FILTER:
+                return "Filter this content"
+            case .COPY:
+                return "Copy self text"
+            case .HIDE:
+                return "Hide"
+            case .UPVOTE:
+                return "Upvote"
+            case .DOWNVOTE:
+                return "Downvote"
+            case .MODERATE:
+                return "Mod Actions"
+            }
+        }
+        
+        public func getImage(_ link: RSubmission? = nil) -> UIImage {
+            switch self {
+            case .PROFILE:
+                return UIImage(sfString: SFSymbol.personFill, overrideString: "profile")!.menuIcon()
+            case .SUBREDDIT:
+                return UIImage(sfString: .rCircleFill, overrideString: "subs")!.menuIcon()
+            case .REPORT:
+                return UIImage(sfString: SFSymbol.exclamationmarkBubbleFill, overrideString: "flag")!.menuIcon()
+            case .BLOCK:
+                return UIImage(sfString: SFSymbol.handRaisedFill, overrideString: "block")!.menuIcon()
+            case .SAVE:
+                return UIImage(sfString: SFSymbol.starFill, overrideString: "save")!.menuIcon()
+            case .SUBSCRIBE:
+                return UIImage(sfString: SFSymbol.plusCircleFill, overrideString: "add")!.menuIcon()
+            case .CROSSPOST:
+                return UIImage(named: "crosspost")!.menuIcon()
+            case .READ_LATER:
+                if link == nil {
+                    return UIImage(sfString: SFSymbol.trayAndArrowDownFill, overrideString: "readLater")!.menuIcon()
+                }
+                return ReadLater.isReadLater(id: link!.getIdentifier()) ? UIImage(sfString: SFSymbol.trayAndArrowUpFill, overrideString: "restore")!.menuIcon() : UIImage(sfString: SFSymbol.trayAndArrowDownFill, overrideString: "readLater")!.menuIcon()
+            case .SHARE_CONTENT:
+                return UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")!.menuIcon()
+            case .SHARE_REDDIT:
+                return UIImage(sfString: SFSymbol.bubbleLeftAndBubbleRightFill, overrideString: "comments")!.menuIcon()
+            case .CHROME:
+                return UIImage(sfString: SFSymbol.link, overrideString: "link")!.menuIcon()
+            case .SAFARI:
+                return UIImage(named: "world")!.menuIcon()
+            case .FILTER:
+                return UIImage(named: "filter")!.menuIcon()
+            case .COPY:
+                return UIImage(sfString: SFSymbol.docOnDocFill, overrideString: "copy")!.menuIcon()
+            case .HIDE:
+                return UIImage(sfString: SFSymbol.xmark, overrideString: "hide")!.menuIcon()
+            case .UPVOTE:
+                return UIImage(sfString: SFSymbol.arrowUp, overrideString: "upvote")!.menuIcon().getCopy(withColor: ColorUtil.upvoteColor)
+            case .DOWNVOTE:
+                return UIImage(sfString: SFSymbol.arrowDown, overrideString: "downvote")!.menuIcon().getCopy(withColor: ColorUtil.downvoteColor)
+            case .MODERATE:
+                return UIImage(sfString: SFSymbol.shieldLefthalfFill, overrideString: "mod")!.menuIcon().getCopy(withColor: GMColor.lightGreen500Color())
+            }
+        }
     }
     
     public enum CommentAction: String {
         public static let cases: [CommentAction] = [.UPVOTE, .DOWNVOTE, .MENU, .COLLAPSE, .SAVE, .REPLY, .EXIT, .NEXT, .NONE]
-        
+        public static let cases3D: [CommentAction] = [.PARENT_PREVIEW, .UPVOTE, .DOWNVOTE, .MENU, .COLLAPSE, .SAVE, .REPLY, .EXIT, .NEXT, .NONE]
+
         case UPVOTE = "upvote"
         case DOWNVOTE = "downvote"
         case MENU = "menu"
@@ -497,6 +833,7 @@ class SettingValues {
         case REPLY = "reply"
         case NEXT = "next"
         case EXIT = "exit"
+        case PARENT_PREVIEW = "parent"
         
         func getTitle() -> String {
             switch self {
@@ -518,6 +855,8 @@ class SettingValues {
                 return "Close comments"
             case .NEXT:
                 return "Next comment page"
+            case .PARENT_PREVIEW:
+                return "Parent comment preview"
             }
         }
         
@@ -541,13 +880,15 @@ class SettingValues {
                 return "back"
             case .NEXT:
                 return "next"
+            case .PARENT_PREVIEW:
+                return "comments"
             }
         }
         
         func getColor() -> UIColor {
             switch self {
             case .COLLAPSE :
-                return ColorUtil.baseAccent
+                return GMColor.grey500Color()
             case .UPVOTE:
                 return ColorUtil.upvoteColor
             case .DOWNVOTE:
@@ -555,15 +896,17 @@ class SettingValues {
             case .SAVE:
                 return GMColor.yellow500Color()
             case .MENU:
-                return ColorUtil.baseAccent
+                return GMColor.green500Color()
             case .NONE:
                 return GMColor.red500Color()
             case .REPLY:
                 return GMColor.green500Color()
             case .EXIT:
-                return ColorUtil.baseAccent
+                return GMColor.red500Color()
             case .NEXT:
-                return ColorUtil.baseAccent
+                return GMColor.lightGreen500Color()
+            case .PARENT_PREVIEW:
+                return GMColor.purple500Color()
             }
         }
     }
@@ -660,14 +1003,14 @@ class SettingValues {
             case .SHARE:
                 return GMColor.lightGreen500Color()
             case .READ_LATER:
-                return GMColor.orange400Color()
+                return GMColor.green500Color()
             }
         }
     }
 
     public enum FabType: String {
 
-        public static let cases: [FabType] = [.HIDE_READ, .SHADOWBOX, .NEW_POST, .SIDEBAR, .RELOAD, .SEARCH]
+        public static let cases: [FabType] = [.HIDE_READ, .HIDE_PERMANENTLY, .SHADOWBOX, .GALLERY, .NEW_POST, .SIDEBAR, .RELOAD, .SEARCH]
 
         case HIDE_READ = "hide"
         case SHADOWBOX = "shadowbox"
@@ -676,23 +1019,26 @@ class SettingValues {
         case GALLERY = "gallery"
         case SEARCH = "search"
         case RELOAD = "reload"
+        case HIDE_PERMANENTLY = "perm"
 
-        func getPhoto() -> String {
+        func getPhoto() -> UIImage? {
             switch self {
             case .HIDE_READ:
-                return "hide"
+                return UIImage(sfString: SFSymbol.eyeSlashFill, overrideString: "hide")
+            case .HIDE_PERMANENTLY:
+                return UIImage(sfString: SFSymbol.eyeSlashFill, overrideString: "hide")
             case .NEW_POST:
-                return "edit"
+                return UIImage(sfString: SFSymbol.squareAndPencil, overrideString: "edit")
             case .SHADOWBOX:
-                return "shadowbox"
+                return UIImage(named: "shadowbox")
             case .SIDEBAR:
-                return "info"
+                return UIImage(sfString: SFSymbol.infoCircleFill, overrideString: "info")
             case .RELOAD:
-                return "sync"
+                return UIImage(sfString: SFSymbol.arrowClockwise, overrideString: "sync")
             case .GALLERY:
-                return "image"
+                return UIImage(sfString: SFSymbol.photoFill, overrideString: "image")
             case .SEARCH:
-                return "search"
+                return UIImage(sfString: SFSymbol.magnifyingglass, overrideString: "search")
             }
         }
 
@@ -700,6 +1046,8 @@ class SettingValues {
             switch self {
             case .HIDE_READ:
                 return "Hide read"
+            case .HIDE_PERMANENTLY:
+                return "Hide read permanently"
             case .NEW_POST:
                 return "New submission"
             case .SHADOWBOX:
@@ -715,6 +1063,188 @@ class SettingValues {
             }
         }
 
+        func getTitleShort() -> String {
+            switch self {
+            case .HIDE_READ:
+                return "Hide read"
+            case .HIDE_PERMANENTLY:
+                return "Hide read"
+            case .NEW_POST:
+                return "Submit"
+            case .SHADOWBOX:
+                return "Shadowbox"
+            case .SIDEBAR:
+                return "Sidebar"
+            case .RELOAD:
+                return "Reload"
+            case .GALLERY:
+                return "Gallery"
+            case .SEARCH:
+                return "Search"
+            }
+        }
+
     }
 
+    public enum AppMode: String {
+        public static let cases: [AppMode] = [.SPLIT, .SINGLE, .MULTI_COLUMN]
+        
+        case SPLIT = "split"
+        case SINGLE = "single"
+        case MULTI_COLUMN = "multi"
+        
+        func getTitle() -> String {
+            switch self {
+            case .SPLIT:
+                return "Split view mode"
+            case .SINGLE:
+                return "Single list"
+            case .MULTI_COLUMN:
+                return "Multi-column mode"
+            }
+        }
+        
+        func getDescription() -> String {
+            switch self {
+            case .SPLIT:
+                return "Displays submissions on the left and comments on the right (requires an iPad)"
+            case .SINGLE:
+                return "Single column display of submissions"
+            case .MULTI_COLUMN:
+                return "Multiple column display of submissions \(UIDevice.current.userInterfaceIdiom == .phone ? " (landscape orientation)" : "")"
+            }
+        }
+    }
+
+    public enum CommentJumpMode: String {
+        
+        public static let cases: [CommentJumpMode] = [.DISABLED, .LEFT, .RIGHT]
+        
+        case DISABLED = "disabled"
+        case LEFT = "left"
+        case RIGHT = "right"
+        
+        func getTitle() -> String {
+            switch self {
+            case .DISABLED:
+                return "Disabled"
+            case .LEFT:
+                return "Left side"
+            case .RIGHT:
+                return "Right side"
+            }
+        }
+    }
+
+}
+
+// MARK: - Font Settings
+extension SettingValues {
+    static var commentFontWeight: String? {
+        get {
+            return UserDefaults.standard.string(forKey: "COMMENT_FONT_WEIGHT") ?? "Regular"
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "COMMENT_FONT_WEIGHT")
+        }
+    }
+
+    static var submissionFontWeight: String? {
+        get {
+            return UserDefaults.standard.string(forKey: "SUBMISSION_FONT_WEIGHT") ?? "Regular"
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "SUBMISSION_FONT_WEIGHT")
+        }
+    }
+}
+
+// MARK: - Audio Settings
+extension SettingValues {
+    static var muteInlineVideos: Bool {
+        get {
+            return UserDefaults.standard.object(forKey: "MUTE_INLINE_VIDEOS") as? Bool ?? true
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "MUTE_INLINE_VIDEOS")
+        }
+    }
+
+    static var muteVideosInModal: Bool {
+        get {
+            return UserDefaults.standard.object(forKey: "MUTE_VIDEOS_IN_MODAL") as? Bool ?? false
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "MUTE_VIDEOS_IN_MODAL")
+        }
+    }
+
+    static var modalVideosRespectHardwareMuteSwitch: Bool {
+        get {
+            return UserDefaults.standard.object(forKey: "MODAL_VIDEOS_RESPECT_HARDWARE_MUTE_SWITCH") as? Bool ?? true
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "MODAL_VIDEOS_RESPECT_HARDWARE_MUTE_SWITCH")
+        }
+    }
+}
+
+class UpdateViewController: UIViewController {
+    var childView = UIView()
+    var titleView = UILabel()
+    var exit = UIImageView()
+    var scrollView = UIScrollView()
+    var estimatedSize: CGSize
+    var comments = UIButton()
+    var dismissHandler: (() -> Void)?
+    init(view: UIView, size: CGSize) {
+        self.estimatedSize = size
+        super.init(nibName: nil, bundle: nil)
+        self.childView = view
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        scrollView = UIScrollView().then {
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
+            $0.isUserInteractionEnabled = true
+        }
+        self.view.addSubviews(scrollView, titleView, comments)
+        titleView.horizontalAnchors == self.view.horizontalAnchors
+        titleView.textAlignment = .center
+        titleView.topAnchor == self.view.topAnchor + 15
+        scrollView.topAnchor == self.titleView.bottomAnchor + 15
+        scrollView.horizontalAnchors == self.view.horizontalAnchors + 10
+        comments.topAnchor == self.scrollView.bottomAnchor + 15
+        comments.bottomAnchor == self.view.bottomAnchor - 15
+        comments.heightAnchor == 40
+        comments.layer.cornerRadius = 10
+        comments.layer.masksToBounds = true
+        comments.horizontalAnchors == self.view.horizontalAnchors + 15
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        scrollView.addSubview(childView)
+        childView.widthAnchor == estimatedSize.width
+        childView.heightAnchor == estimatedSize.height
+        childView.topAnchor == scrollView.topAnchor
+        scrollView.contentSize = estimatedSize
+    }
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        dismissHandler?()
+    }
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+extension UIButton {
+    func addRightImage(image: UIImage, offset: CGFloat) {
+        self.setImage(image, for: .normal)
+        self.imageView?.translatesAutoresizingMaskIntoConstraints = false
+        self.imageView?.centerYAnchor.constraint(equalTo: self.centerYAnchor, constant: 0.0).isActive = true
+        self.imageView?.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -offset).isActive = true
+    }
 }

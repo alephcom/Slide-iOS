@@ -7,31 +7,35 @@ target 'Slide for Reddit' do
   # Pods for Slide for Reddit
 
   pod 'reddift', :git =>  'https://github.com/ccrama/reddift'
-  pod 'SDWebImage', '~>4.1.2'
-  pod 'MKColorPicker'
-  pod 'BadgeSwift', '~> 5.0'
-  pod 'LicensesViewController', '~> 0.6.5'
+  pod 'SDWebImage'
+  pod 'MKColorPicker', :git => 'https://github.com/ccrama/MKColorPicker'
+  pod 'BadgeSwift', '~> 8.0'
+  pod 'LicensesViewController', '~> 0.7.0'
   pod 'BiometricAuthentication'
+  pod 'OpalImagePicker'
   pod 'MaterialComponents/ActivityIndicator'
   pod 'MaterialComponents/Tabs'
   pod 'MaterialComponents/ProgressView'
+  pod 'SwiftEntryKit', :git => 'https://github.com/ccrama/SwiftEntryKit'
   pod 'SubtleVolume'
-  pod 'Embassy', '~> 4.0'
+  pod 'SDCAlertView', :git => 'https://github.com/ccrama/SDCAlertView'
+  pod 'Embassy', '~> 4.1.0'
   pod 'MTColorDistance'
+  pod 'SwiftLinkPreview', '~> 3.0.1'
   pod 'DTCoreText', :git => 'https://github.com/Cocoanetics/DTCoreText'
-  pod 'XLActionController', :git => 'https://github.com/ccrama/XLActionController'
   pod 'SwiftSpreadsheet'
-  pod 'Starscream', '~> 3.0.2'
+  pod 'Starscream', '~> 3.1.1'
   pod 'RLBAlertsPickers', :git => 'https://github.com/ccrama/Alerts-Pickers'
-  pod 'SloppySwiper', :git => 'https://github.com/fastred/sloppySwiper'
-  pod 'TTTAttributedLabel'
-  pod 'ActionSheetPicker-3.0', :git => 'https://github.com/ccrama/ActionSheetPicker-3.0'
+  pod 'SloppySwiper', :git => 'https://github.com/ccrama/SloppySwiper'
+  pod 'YYText'
   pod 'Alamofire', '~> 4.3'
   pod 'SwiftyJSON'
   pod 'RealmSwift'
-  pod 'Anchorage'
+  pod 'Anchorage', '~>4.3'
   pod 'Then'
   pod 'SwiftLint'
+  pod "YoutubePlayer-in-WKWebView", "~> 0.3.0"
+  pod 'TGPControls'
 
   target 'Slide for RedditTests' do
     inherit! :search_paths
@@ -43,12 +47,19 @@ target 'Slide for Reddit' do
     # Pods for testing
   end
 
-end
-
-post_install do |installer|
-  installer.pods_project.targets.each do |target|
-    target.build_configurations.each do |config|
-      config.build_settings['SWIFT_VERSION'] = '3.0'
+  post_install do |installer|
+    installer.pods_project.targets.each do |target|
+        if [
+          'HTMLSpecialCharacters',
+          'MiniKeychain',
+          'RLBAlertsPickers',
+          'SwiftLinkPreview'
+        ].include? target.name
+            target.build_configurations.each do |config|
+                config.build_settings['SWIFT_VERSION'] = '4.2'
+            end
+        end
     end
   end
+
 end

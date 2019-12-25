@@ -8,9 +8,9 @@
 
 import Foundation
 import reddift
-import TTTAttributedLabel
+import YYText
 
-class Sidebar: NSObject, TTTAttributedLabelDelegate {
+class Sidebar: NSObject {
     
     var parent: (UIViewController & MediaVCDelegate)?
     var subname = ""
@@ -19,54 +19,7 @@ class Sidebar: NSObject, TTTAttributedLabelDelegate {
         self.parent = parent
         self.subname = subname
     }
-
-    func attributedLabel(_ label: TTTAttributedLabel!, didLongPressLinkWith url: URL!, at point: CGPoint) {
-        if (url) != nil {
-            if parent != nil {
-                let sheet = UIAlertController(title: url.absoluteString, message: nil, preferredStyle: .actionSheet)
-                sheet.addAction(
-                    UIAlertAction(title: "Close", style: .cancel) { (_) in
-                        sheet.dismiss(animated: true, completion: nil)
-                    }
-                )
-                let open = OpenInChromeController.init()
-                if open.isChromeInstalled() {
-                    sheet.addAction(
-                        UIAlertAction(title: "Open in Chrome", style: .default) { (_) in
-                            open.openInChrome(url, callbackURL: nil, createNewTab: true)
-                        }
-                    )
-                }
-                sheet.addAction(
-                    UIAlertAction(title: "Open in Safari", style: .default) { (_) in
-                        if #available(iOS 10.0, *) {
-                            UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                        } else {
-                            UIApplication.shared.openURL(url)
-                        }
-                        sheet.dismiss(animated: true, completion: nil)
-                    }
-                )
-                sheet.addAction(
-                    UIAlertAction(title: "Open", style: .default) { (_) in
-                        /* let controller = WebViewController(nibName: nil, bundle: nil)
-                         controller.url = url
-                         let nav = UINavigationController(rootViewController: controller)
-                         self.present(nav, animated: true, completion: nil)*/
-                    }
-                )
-                sheet.addAction(
-                    UIAlertAction(title: "Copy URL", style: .default) { (_) in
-                        UIPasteboard.general.setValue(url, forPasteboardType: "public.url")
-                        sheet.dismiss(animated: true, completion: nil)
-                    }
-                )
-                
-                parent?.present(sheet, animated: true, completion: nil)
-            }
-        }
-    }
-
+    
     var inner: SubSidebarViewController?
     var subInfo: Subreddit?
 
@@ -95,13 +48,12 @@ class Sidebar: NSObject, TTTAttributedLabelDelegate {
     func doDisplaySidebar(_ sub: Subreddit) {
         guard let parent = parent else { return }
         inner = SubSidebarViewController(sub: sub, parent: parent)
-
-        menuPresentationController = BottomMenuPresentationController(presentedViewController: inner!, presenting: parent)
-        menuPresentationController?.scrollView = inner!.scrollView
-        inner!.transitioningDelegate = menuPresentationController!
-        inner!.modalPresentationStyle = .custom
-
-        parent.present(inner!, animated: true, completion: nil)
+        
+        if #available(iOS 13.0, *) {
+            VCPresenter.presentAlert(UINavigationController(rootViewController: inner!), parentVC: parent)
+        } else {
+            VCPresenter.showVC(viewController: inner!, popupIfPossible: false, parentNavigationController: parent.navigationController, parentViewController: parent)
+        }
     }
 
     func subscribe(_ sub: Subreddit) {
@@ -111,35 +63,28 @@ class Sidebar: NSObject, TTTAttributedLabelDelegate {
             parent!.subChanged = false
             BannerUtil.makeBanner(text: "Unsubscribed", seconds: 5, context: self.parent, top: true)
         } else {
-            let alrController = UIAlertController.init(title: "Subscribe to \(sub.displayName)", message: nil, preferredStyle: .actionSheet)
+            let alrController = DragDownAlertMenu(title: "Follow r/\(sub.displayName)", subtitle: "", icon: nil, themeColor: ColorUtil.accentColorForSub(sub: sub.displayName), full: true)
             if AccountController.isLoggedIn {
-                let somethingAction = UIAlertAction(title: "Add to sub list and subscribe", style: UIAlertActionStyle.default, handler: {(_: UIAlertAction!) in
+                alrController.addAction(title: "Subscribe", icon: nil) {
                     Subscriptions.subscribe(sub.displayName, true, session: (UIApplication.shared.delegate as! AppDelegate).session!)
                     self.parent!.subChanged = true
                     BannerUtil.makeBanner(text: "Subscribed", seconds: 5, context: self.parent, top: true)
-                })
-                alrController.addAction(somethingAction)
+                }
             }
             
-            let somethingAction = UIAlertAction(title: "Add to sub list", style: UIAlertActionStyle.default, handler: {(_: UIAlertAction!) in
+            alrController.addAction(title: "Casually subscribe", icon: nil) {
                 Subscriptions.subscribe(sub.displayName, false, session: (UIApplication.shared.delegate as! AppDelegate).session!)
                 self.parent!.subChanged = true
                 BannerUtil.makeBanner(text: "Added to subscription list", seconds: 5, context: self.parent, top: true)
-            })
-            alrController.addAction(somethingAction)
-            
-            let cancelAction = UIAlertAction(title: "Cancel", style: UIAlertActionStyle.cancel, handler: { (_: UIAlertAction!) in print("cancel") })
-            
-            alrController.addAction(cancelAction)
-            alrController.modalPresentationStyle = .popover
-            if let presenter = alrController.popoverPresentationController {
-                presenter.sourceView = parent!.view
-                presenter.sourceRect = parent!.view.bounds
             }
 
-            parent?.present(alrController, animated: true, completion: {})
-            
+            alrController.show(parent)
         }
     }
 
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToUIApplicationOpenExternalURLOptionsKeyDictionary(_ input: [String: Any]) -> [UIApplication.OpenExternalURLOptionsKey: Any] {
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (UIApplication.OpenExternalURLOptionsKey(rawValue: key), value) })
 }

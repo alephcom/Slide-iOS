@@ -7,6 +7,8 @@
 //
 
 import Anchorage
+import AVKit
+import SDCAlertView
 import Then
 import UIKit
 
@@ -19,6 +21,13 @@ class ModalMediaViewController: UIViewController {
     var panGestureRecognizer: UIPanGestureRecognizer?
     public var background: UIView?
     public var blurView: UIVisualEffectView?
+
+    var closeButton = UIButton().then {
+        $0.accessibilityIdentifier = "Close Button"
+        $0.accessibilityTraits = UIAccessibilityTraits.button
+        $0.accessibilityLabel = "Close button"
+        $0.accessibilityHint = "Closes the media view"
+    }
     
     var originalPosition: CGPoint?
     var currentPositionTouched: CGPoint?
@@ -30,16 +39,20 @@ class ModalMediaViewController: UIViewController {
     private var savedColor: UIColor?
     var commentCallback: (() -> Void)?
     var failureCallback: ((_ url: URL) -> Void)?
+    var upvoteCallback: (() -> Void)?
+    var isUpvoted = false
 
-    init(url: URL, lq: URL?, _ commentCallback: (() -> Void)?, _ failureCallback: ((_ url: URL) -> Void)? = nil) {
+    init(url: URL, lq: URL?, _ commentCallback: (() -> Void)? = nil, upvoteCallback: (() -> Void)? = nil, isUpvoted: Bool = false, _ failureCallback: ((_ url: URL) -> Void)? = nil) {
         super.init(nibName: nil, bundle: nil)
 
         self.failureCallback = failureCallback
         self.commentCallback = commentCallback
+        self.upvoteCallback = upvoteCallback
+        self.isUpvoted = isUpvoted
         
         let type = ContentType.getContentType(baseUrl: url)
         if ContentType.isImgurLink(uri: url) || type == .DEVIANTART || type == .XKCD {
-            spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+            spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
             spinnerIndicator.center = self.view.center
             spinnerIndicator.color = UIColor.white
             self.view.addSubview(spinnerIndicator)
@@ -47,7 +60,7 @@ class ModalMediaViewController: UIViewController {
 
             self.loadTypeAsync(url, type)
         } else {
-            self.setModel(model: EmbeddableMediaDataModel(baseURL: url, lqURL: lq, text: nil, inAlbum: false))
+            self.setModel(model: EmbeddableMediaDataModel(baseURL: url, lqURL: lq, text: nil, inAlbum: false, buttons: true))
         }
     }
     
@@ -55,12 +68,26 @@ class ModalMediaViewController: UIViewController {
         spinnerIndicator.stopAnimating()
         let contentType = ContentType.getContentType(baseUrl: model.baseURL)
         embeddedVC = ModalMediaViewController.getVCForContent(ofType: contentType, withModel: model)
-        embeddedVC.commentCallback = { [weak self] in
-            guard let strongSelf = self else {
-                return
+        
+        if self.commentCallback != nil {
+            embeddedVC.commentCallback = { [weak self] in
+                guard let strongSelf = self else {
+                    return
+                }
+                strongSelf.commentCallback!()
             }
-            strongSelf.commentCallback!()
         }
+        
+        if self.upvoteCallback != nil {
+            embeddedVC.upvoteCallback = { [weak self] in
+                guard let strongSelf = self else {
+                    return
+                }
+                strongSelf.upvoteCallback!()
+            }
+            embeddedVC.isUpvoted = isUpvoted
+        }
+
         embeddedVC.failureCallback = { [weak self] (url) in
             guard let strongSelf = self else {
                 return
@@ -107,7 +134,7 @@ class ModalMediaViewController: UIViewController {
                     }
                     DispatchQueue.main.async {
                         if url != nil {
-                            self.setModel(model: EmbeddableMediaDataModel(baseURL: URL(string: url!), lqURL: nil, text: nil, inAlbum: false))
+                            self.setModel(model: EmbeddableMediaDataModel(baseURL: URL(string: url!), lqURL: nil, text: nil, inAlbum: false, buttons: true))
                         }
                     }
                 }
@@ -152,7 +179,7 @@ class ModalMediaViewController: UIViewController {
                     }
                     DispatchQueue.main.async {
                         if url != nil {
-                            self.setModel(model: EmbeddableMediaDataModel(baseURL: URL(string: url!), lqURL: nil, text: text, inAlbum: false))
+                            self.setModel(model: EmbeddableMediaDataModel(baseURL: URL(string: url!), lqURL: nil, text: text, inAlbum: false, buttons: true))
                         }
                     }
                 }
@@ -160,7 +187,9 @@ class ModalMediaViewController: UIViewController {
                 }.resume()
 
         } else {
-            let changedUrl = URL.init(string: baseUrl.absoluteString + ".png")!
+            var urlBase = baseUrl.absoluteString
+            urlBase = urlBase.replacingOccurrences(of: "m.imgur.com", with: "i.imgur.com")
+            let changedUrl = URL(string: "\(urlBase).png")!
             var request = URLRequest(url: changedUrl)
             request.httpMethod = "HEAD"
             let task = URLSession.shared.dataTask(with: request) { (_, response, _) -> Void in
@@ -168,16 +197,16 @@ class ModalMediaViewController: UIViewController {
                     if response!.mimeType ?? "" == "image/gif" {
                         let finalUrl = URL.init(string: baseUrl.absoluteString + ".mp4")!
                         DispatchQueue.main.async {
-                            self.setModel(model: EmbeddableMediaDataModel(baseURL: finalUrl, lqURL: nil, text: nil, inAlbum: false))
+                            self.setModel(model: EmbeddableMediaDataModel(baseURL: finalUrl, lqURL: nil, text: nil, inAlbum: false, buttons: true))
                         }
                     } else {
                         DispatchQueue.main.async {
-                            self.setModel(model: EmbeddableMediaDataModel(baseURL: changedUrl, lqURL: nil, text: nil, inAlbum: false))
+                            self.setModel(model: EmbeddableMediaDataModel(baseURL: changedUrl, lqURL: nil, text: nil, inAlbum: false, buttons: true))
                         }
                     }
                 } else {
                     DispatchQueue.main.async {
-                        self.setModel(model: EmbeddableMediaDataModel(baseURL: baseUrl, lqURL: nil, text: nil, inAlbum: false))
+                        self.setModel(model: EmbeddableMediaDataModel(baseURL: baseUrl, lqURL: nil, text: nil, inAlbum: false, buttons: true))
                     }
                 }
             }
@@ -190,7 +219,7 @@ class ModalMediaViewController: UIViewController {
         setModel(model: model)
     }
     
-    override func prefersHomeIndicatorAutoHidden() -> Bool {
+    override var prefersHomeIndicatorAutoHidden: Bool {
         return true
     }
 
@@ -202,7 +231,7 @@ class ModalMediaViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+        desiredStatusBarStyle = .lightContent
         if !(parent is AlbumViewController) {
             panGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(panGestureAction(_:)))
             panGestureRecognizer!.delegate = self
@@ -220,7 +249,7 @@ class ModalMediaViewController: UIViewController {
             
             self.view.insertSubview(background!, at: 0)
             blurView = UIVisualEffectView(frame: UIScreen.main.bounds)
-            blurEffect.setValue(3, forKeyPath: "blurRadius")
+            blurEffect.setValue(5, forKeyPath: "blurRadius")
             blurView!.effect = blurEffect
             view.insertSubview(blurView!, at: 0)
         }
@@ -233,16 +262,17 @@ class ModalMediaViewController: UIViewController {
             shouldLoad = true
         }
     }
-
+    
     override func viewWillAppear(_ animated: Bool) {
-        savedColor = UIApplication.shared.statusBarView?.backgroundColor
-        UIApplication.shared.statusBarView?.backgroundColor = .clear
+        savedColor = UIApplication.shared.statusBarUIView?.backgroundColor
+        UIApplication.shared.statusBarUIView?.backgroundColor = .clear
         super.viewWillAppear(animated)
         
         if parent is AlbumViewController || parent is ShadowboxLinkViewController {
-            self.embeddedVC.navigationBar.isHidden = true
+            self.closeButton.isHidden = true
         }
-        UIApplication.shared.statusBarStyle = .lightContent
+
+        UIAccessibility.post(notification: UIAccessibility.Notification.screenChanged, argument: closeButton)
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -251,20 +281,33 @@ class ModalMediaViewController: UIViewController {
             self.setNeedsUpdateOfHomeIndicatorAutoHidden()
         }
     }
-
+    
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-
-        UIApplication.shared.statusBarView?.isHidden = false
+        UIApplication.shared.statusBarUIView?.isHidden = false
         if savedColor != nil {
-            UIApplication.shared.statusBarView?.backgroundColor = savedColor
+            UIApplication.shared.statusBarUIView?.backgroundColor = savedColor
         }
-        
-        if SettingValues.reduceColor && ColorUtil.theme.isLight() {
-            UIApplication.shared.statusBarStyle = .default
+
+        if SettingValues.reduceColor && ColorUtil.theme.isLight {
+            desiredStatusBarStyle = .default
         } else {
-            UIApplication.shared.statusBarStyle = .lightContent
+            desiredStatusBarStyle = .lightContent
         }
+    }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+    }
+
+    var desiredStatusBarStyle: UIStatusBarStyle = .default {
+        didSet {
+            setNeedsStatusBarAppearanceUpdate()
+        }
+    }
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        return desiredStatusBarStyle
     }
 
 //    override func didReceiveMemoryWarning() {
@@ -272,40 +315,47 @@ class ModalMediaViewController: UIViewController {
 //        // Dispose of any resources that can be recreated.
 //    }
 
+    var videoView: VideoView?
+    var displayLink: CADisplayLink?
     func configureViews() {
-        self.addChildViewController(embeddedVC)
-        embeddedVC.didMove(toParentViewController: self)
+        if let video = embeddedVC as? VideoMediaViewController {
+            videoView = video.videoView
+            displayLink = video.displayLink
+        }
+        self.addChild(embeddedVC)
+        embeddedVC.didMove(toParent: self)
         self.view.addSubview(embeddedVC.view)
 
-        embeddedVC.navigationBar = UINavigationBar.init(frame: CGRect.init(x: 0, y: 0, width: self.view.frame.size.width, height: 56))
-        embeddedVC.navigationBar.setBackgroundImage(UIImage(), for: .default)
-        embeddedVC.navigationBar.shadowImage = UIImage()
-        embeddedVC.navigationBar.isTranslucent = true
-        let navItem = UINavigationItem(title: "")
-        let close = UIButton.init(type: .custom)
-        close.setImage(UIImage.init(named: "close")?.navIcon(true), for: UIControlState.normal)
-        close.addTarget(self, action: #selector(self.exit), for: UIControlEvents.touchUpInside)
-        close.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-        let closeB = UIBarButtonItem.init(customView: close)
-        navItem.leftBarButtonItem = closeB
-        
-        embeddedVC.navigationBar.setItems([navItem], animated: false)
-        self.view.addSubview(embeddedVC.navigationBar)
-        
-        if #available(iOS 11, *) {
-            embeddedVC.navigationBar.topAnchor == self.view.safeTopAnchor
-        } else {
-            embeddedVC.navigationBar.topAnchor == self.view.topAnchor + 20
-        }
-        embeddedVC.navigationBar.horizontalAnchors == self.view.horizontalAnchors
+        closeButton.setImage(UIImage(sfString: SFSymbol.xmark, overrideString: "close")?.navIcon(true), for: .normal)
+        closeButton.addTarget(self, action: #selector(self.exit), for: UIControl.Event.touchUpInside)
+        self.view.addSubview(closeButton)
     }
     
-    func exit() {
-        self.dismiss(animated: true, completion: nil)
+    @objc func exit() {
+        var viewToMove: UIView
+        if embeddedVC is ImageMediaViewController {
+            viewToMove = (embeddedVC as! ImageMediaViewController).imageView
+        } else if embeddedVC != nil {
+            viewToMove = (embeddedVC as! VideoMediaViewController).isYoutubeView ? (embeddedVC as! VideoMediaViewController).youtubeView : (embeddedVC as! VideoMediaViewController).videoView
+        } else {
+            viewToMove = self.view
+        }
+        var newFrame = viewToMove.frame
+        newFrame.origin.y = -newFrame.size.height * 0.2
+        UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseOut, animations: {
+            viewToMove.frame = newFrame
+            self.view.alpha = 0
+            self.dismiss(animated: true)
+        }, completion: { _ in
+        })
     }
 
     func configureLayout() {
         embeddedVC.view.edgeAnchors == self.view.edgeAnchors
+
+        closeButton.sizeAnchors == .square(size: 26)
+        closeButton.topAnchor == self.view.safeTopAnchor + 8
+        closeButton.leftAnchor == self.view.safeLeftAnchor + 12
     }
 
     func connectGestures() {
@@ -333,27 +383,32 @@ class ModalMediaViewController: UIViewController {
 
 // MARK: - Actions
 extension ModalMediaViewController {
-    func fullscreen(_ sender: AnyObject) {
+    @objc func fullscreen(_ sender: AnyObject) {
+        // Don't allow fullscreen if the user is a voiceover user.
+        if UIAccessibility.isVoiceOverRunning {
+            return
+        }
+
         fullscreen = true
         UIView.animate(withDuration: 0.5, delay: 0.0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.2, options: .curveEaseInOut, animations: {
-            let statusBar: UIView = UIApplication.shared.value(forKey: "statusBar") as! UIView
+            let statusBar: UIView = UIApplication.shared.statusBarUIView ?? UIView()
             statusBar.isHidden = true
 
             self.background?.alpha = 1
+            self.closeButton.alpha = 0
             self.embeddedVC.bottomButtons.alpha = 0
-            self.embeddedVC.navigationBar.alpha = 0.2
         }, completion: {_ in
             self.embeddedVC.bottomButtons.isHidden = true
         })
     }
 
-    func unFullscreen(_ sender: AnyObject) {
+    @objc func unFullscreen(_ sender: AnyObject) {
         fullscreen = false
         self.embeddedVC.bottomButtons.isHidden = false
         UIView.animate(withDuration: 0.5, delay: 0.0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.2, options: .curveEaseInOut, animations: {
-            let statusBar: UIView = UIApplication.shared.value(forKey: "statusBar") as! UIView
+            let statusBar: UIView = UIApplication.shared.statusBarUIView ?? UIView()
             statusBar.isHidden = false
-            self.embeddedVC.navigationBar.alpha = 1
+            self.closeButton.alpha = 1
 
             self.background?.alpha = 0.6
             self.embeddedVC.bottomButtons.alpha = 1
@@ -376,14 +431,16 @@ extension ModalMediaViewController: UIGestureRecognizerDelegate {
         }
     }
 
-    func panGestureAction(_ panGesture: UIPanGestureRecognizer) {
+    @objc func panGestureAction(_ panGesture: UIPanGestureRecognizer) {
         let translation = panGesture.translation(in: view)
         
         let viewToMove: UIView
         if embeddedVC is ImageMediaViewController {
             viewToMove = (embeddedVC as! ImageMediaViewController).imageView
-        } else {
+        } else if embeddedVC != nil {
             viewToMove = (embeddedVC as! VideoMediaViewController).isYoutubeView ? (embeddedVC as! VideoMediaViewController).youtubeView : (embeddedVC as! VideoMediaViewController).videoView
+        } else {
+            return
         }
         
         if panGesture.state == .began {
@@ -391,6 +448,9 @@ extension ModalMediaViewController: UIGestureRecognizerDelegate {
             currentPositionTouched = panGesture.location(in: view)
             didStartPan(true)
         } else if panGesture.state == .changed {
+            if originalPosition == nil {
+                originalPosition = viewToMove.frame.origin
+            }
             viewToMove.frame.origin = CGPoint(
                 x: 0,
                 y: originalPosition!.y + translation.y
@@ -418,7 +478,7 @@ extension ModalMediaViewController: UIGestureRecognizerDelegate {
                 })
             } else {
                 UIView.animate(withDuration: 0.2, animations: {
-                    viewToMove.frame.origin = self.originalPosition!
+                    viewToMove.frame.origin = self.originalPosition ?? CGPoint.zero
                     self.view.alpha = 1
                     if self.embeddedVC is VideoMediaViewController {
                         self.background?.alpha = 1
@@ -426,5 +486,22 @@ extension ModalMediaViewController: UIGestureRecognizerDelegate {
                 })
             }
         }
+    }
+
+    override func accessibilityPerformEscape() -> Bool {
+        exit()
+        return true
+    }
+
+    override var accessibilityViewIsModal: Bool {
+        get {
+            return true
+        }
+        set { } // swiftlint:disable:this unused_setter_value
+    }
+}
+extension UINavigationController {
+    open override var preferredStatusBarStyle: UIStatusBarStyle {
+        return (presentedViewController is AlertController) ? .lightContent : (presentedViewController?.preferredStatusBarStyle ?? topViewController?.preferredStatusBarStyle ?? (SettingValues.reduceColor && ColorUtil.theme.isLight ? .default : .lightContent))
     }
 }

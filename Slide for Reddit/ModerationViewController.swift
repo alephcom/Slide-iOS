@@ -6,6 +6,7 @@
 //  Copyright © 2017 Haptic Apps. All rights reserved.
 //
 
+import Anchorage
 import MaterialComponents.MaterialTabs
 import reddift
 import UIKit
@@ -16,6 +17,19 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
     var session: Session?
 
     var vCs: [UIViewController] = []
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+
+        } else {
+            return .lightContent
+        }
+    }
 
     public init() {
         self.session = (UIApplication.shared.delegate as! AppDelegate).session
@@ -61,6 +75,12 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        if let navigationController = navigationController {
+            if navigationController.viewControllers.count == 1 {
+                navigationItem.leftBarButtonItem = UIBarButtonItem.init(title: "Close", style: .done, target: self, action: #selector(closeButtonPressed))
+            }
+        }
+
         var items: [String] = []
         for i in content {
             items.append(i.description)
@@ -69,8 +89,8 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
         tabBar = MDCTabBar.init(frame: CGRect.init(x: 0, y: -8, width: self.view.frame.size.width, height: 45))
         
         tabBar.backgroundColor = ColorUtil.getColorForSub(sub: "", true)
-        tabBar.selectedItemTintColor = (SettingValues.reduceColor ? ColorUtil.fontColor : UIColor.white)
-        tabBar.unselectedItemTintColor = (SettingValues.reduceColor ? ColorUtil.fontColor : UIColor.white).withAlphaComponent(0.45)
+        tabBar.selectedItemTintColor = (SettingValues.reduceColor ? ColorUtil.theme.fontColor : UIColor.white)
+        tabBar.unselectedItemTintColor = (SettingValues.reduceColor ? ColorUtil.theme.fontColor : UIColor.white).withAlphaComponent(0.45)
 
         tabBar.itemAppearance = .titles
         tabBar.items = content.enumerated().map { index, source in
@@ -79,17 +99,30 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
         tabBar.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
 
         tabBar.selectedItem = tabBar.items[0]
-        // 4
+        tabBar.inkColor = UIColor.clear
         tabBar.delegate = self
         tabBar.tintColor = ColorUtil.accentColorForSub(sub: "NONE")
         // 5
-        tabBar.sizeToFit()
 
         self.view.addSubview(tabBar)
+        tabBar.heightAnchor == 48
+        tabBar.horizontalAnchors == self.view.horizontalAnchors
+        
+        self.edgesForExtendedLayout = UIRectEdge.all
+        
+        self.extendedLayoutIncludesOpaqueBars = true
+        self.automaticallyAdjustsScrollViewInsets = false
+        
+        var isModal13 = false
+        if #available(iOS 13, *), (self.navigationController?.viewControllers[0] == self) {
+            isModal13 = true
+        }
+        tabBar.topAnchor == self.view.topAnchor + (self.navigationController?.navigationBar.frame.size.height ?? 64) + (isModal13 ? 0 : UIApplication.shared.statusBarFrame.height)
+        tabBar.sizeToFit()
 
         time = History.getInboxSeen()
         History.inboxSeen()
-        view.backgroundColor = ColorUtil.backgroundColor
+        view.backgroundColor = ColorUtil.theme.backgroundColor
         // set up style before super view did load is executed
         // -
 
@@ -107,7 +140,6 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
         }
 
         if self.navigationController?.interactivePopGestureRecognizer != nil {
-            print("Not nil")
             for view in view.subviews {
                 if let scrollView = view as? UIScrollView {
                     scrollView.panGestureRecognizer.require(toFail: self.navigationController!.interactivePopGestureRecognizer!)
@@ -121,6 +153,25 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
                 completion: nil)
 
     }
+    
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        self.lastPosition = scrollView.contentOffset.x
+        
+        if currentIndex == 0 && scrollView.contentOffset.x < scrollView.bounds.size.width {
+            scrollView.contentOffset = CGPoint(x: scrollView.bounds.size.width, y: 0)
+        } else if currentIndex == vCs.count - 1 && scrollView.contentOffset.x > scrollView.bounds.size.width {
+            scrollView.contentOffset = CGPoint(x: scrollView.bounds.size.width, y: 0)
+        }
+    }
+    
+    //From https://stackoverflow.com/a/25167681/3697225
+    func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+        if currentIndex == 0 && scrollView.contentOffset.x <= scrollView.bounds.size.width {
+            targetContentOffset.pointee = CGPoint(x: scrollView.bounds.size.width, y: 0)
+        } else if currentIndex == vCs.count - 1 && scrollView.contentOffset.x >= scrollView.bounds.size.width {
+            targetContentOffset.pointee = CGPoint(x: scrollView.bounds.size.width, y: 0)
+        }
+    }
 
     var selected = false
 
@@ -128,7 +179,7 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
         guard completed else {
             return
         }
-        let page = vCs.index(of: self.viewControllers!.first!)
+        let page = vCs.firstIndex(of: self.viewControllers!.first!)
 
         if !selected {
             tabBar.setSelectedItem(tabBar.items[page! ], animated: true)
@@ -141,22 +192,9 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
     var currentIndex = 0
     var lastPosition: CGFloat = 0
 
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        self.lastPosition = scrollView.contentOffset.x
-
-        if (currentIndex == vCs.count - 1) && (lastPosition > scrollView.frame.width) {
-            scrollView.contentOffset.x = scrollView.frame.width
-            return
-
-        } else if currentIndex == 0 && lastPosition < scrollView.frame.width {
-            scrollView.contentOffset.x = scrollView.frame.width
-            return
-        }
-    }
-
     func pageViewController(_ pageViewController: UIPageViewController,
                             viewControllerBefore viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = vCs.index(of: viewController) else {
+        guard let viewControllerIndex = vCs.firstIndex(of: viewController) else {
             return nil
         }
 
@@ -175,7 +213,7 @@ class ModerationViewController: UIPageViewController, UIPageViewControllerDataSo
 
     func pageViewController(_ pageViewController: UIPageViewController,
                             viewControllerAfter viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = vCs.index(of: viewController) else {
+        guard let viewControllerIndex = vCs.firstIndex(of: viewController) else {
             return nil
         }
 
@@ -199,7 +237,7 @@ extension ModerationViewController: MDCTabBarDelegate {
 
     func tabBar(_ tabBar: MDCTabBar, didSelect item: UITabBarItem) {
         selected = true
-        let firstViewController = vCs[tabBar.items.index(of: item)!]
+        let firstViewController = vCs[tabBar.items.firstIndex(of: item)!]
 
         setViewControllers([firstViewController],
                 direction: .forward,
@@ -208,4 +246,11 @@ extension ModerationViewController: MDCTabBarDelegate {
 
     }
 
+}
+
+// MARK: - Actions
+extension ModerationViewController {
+    @objc func closeButtonPressed() {
+        dismiss(animated: true, completion: nil)
+    }
 }

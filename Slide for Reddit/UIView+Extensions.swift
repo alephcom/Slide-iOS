@@ -23,25 +23,25 @@ extension UIView {
         
         batch {
             let constraints = self.edgeAnchors == container.edgeAnchors + padding
-            constraints.bottom.priority = UILayoutPriorityRequired - 1
-            constraints.trailing.priority = UILayoutPriorityRequired - 1
+            constraints.bottom.priority = UILayoutPriority.required - 1
+            constraints.trailing.priority = UILayoutPriority.required - 1
         }
         
         return container
     }
     
-    // TODO: Make static
+    // TODO: - Make static
     func flexSpace() -> UIView {
         return UIView().then {
-            $0.setContentHuggingPriority(0, for: .horizontal)
-            $0.setContentHuggingPriority(0, for: .vertical)
+            $0.setContentHuggingPriority(UILayoutPriority(rawValue: 0), for: .horizontal)
+            $0.setContentHuggingPriority(UILayoutPriority(rawValue: 0), for: .vertical)
         }
     }
     
     static func flexSpace() -> UIView {
         return UIView().then {
-            $0.setContentHuggingPriority(0, for: .horizontal)
-            $0.setContentHuggingPriority(0, for: .vertical)
+            $0.setContentHuggingPriority(UILayoutPriority(rawValue: 0), for: .horizontal)
+            $0.setContentHuggingPriority(UILayoutPriority(rawValue: 0), for: .vertical)
         }
     }
     
@@ -56,7 +56,7 @@ extension UIView {
             self.backgroundColor = color
         }, completion: {_ in
             UIView.animate(withDuration: 0.25, delay: 0.0, options: [.curveLinear], animations: {
-                self.backgroundColor = ColorUtil.foregroundColor
+                self.backgroundColor = ColorUtil.theme.foregroundColor
             }, completion: nil)
         })
     }
@@ -97,12 +97,28 @@ extension UIView {
             return leadingAnchor
         }
     }
+
+    var safeLeftAnchor: NSLayoutXAxisAnchor {
+        if #available(iOS 11.0, *) {
+            return safeAreaLayoutGuide.leftAnchor
+        } else {
+            return leftAnchor
+        }
+    }
     
     var safeTrailingAnchor: NSLayoutXAxisAnchor {
         if #available(iOS 11.0, *) {
             return safeAreaLayoutGuide.trailingAnchor
         } else {
             return trailingAnchor
+        }
+    }
+
+    var safeRightAnchor: NSLayoutXAxisAnchor {
+        if #available(iOS 11.0, *) {
+            return safeAreaLayoutGuide.rightAnchor
+        } else {
+            return rightAnchor
         }
     }
     
@@ -137,6 +153,15 @@ extension UIView {
             return horizontalAnchors
         }
     }
+
+    var safeVerticalAnchors: AnchorPair<NSLayoutYAxisAnchor, NSLayoutYAxisAnchor> {
+        if #available(iOS 11.0, *) {
+            return AnchorPair(first: safeAreaLayoutGuide.topAnchor, second: safeAreaLayoutGuide.bottomAnchor)
+        } else {
+            return verticalAnchors
+        }
+    }
+
     enum Border {
         case left
         case right

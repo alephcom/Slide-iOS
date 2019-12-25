@@ -13,9 +13,9 @@ final class FullLinkCellView: LinkCellView {
     
     override func configureView() {
         full = true
-        self.textView = TextDisplayStackView.init(fontSize: 16, submission: false, color: ColorUtil.baseAccent, delegate: self, width: 100).then {
+        self.textView = TextDisplayStackView.init(fontSize: 16, submission: false, color: ColorUtil.baseAccent, width: 100, delegate: self).then {
             $0.accessibilityIdentifier = "Self Text View"
-            $0.backgroundColor = ColorUtil.foregroundColor
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
             $0.isHidden = true
         }
         super.configureView()
@@ -29,10 +29,12 @@ final class FullLinkCellView: LinkCellView {
         let bannerPadding = CFloat(5)
         
         constraintsForType = batch {
-            textView.bottomAnchor <= box.topAnchor - ctwelve
+            textView.bottomAnchor == infoBox.topAnchor - (ctwelve / 2)
+            infoBox.bottomAnchor >= box.topAnchor - (ctwelve / 2)
+            infoBox.horizontalAnchors == contentView.horizontalAnchors + ctwelve
             textView.topAnchor == title.bottomAnchor + ceight
             textView.horizontalAnchors == contentView.horizontalAnchors + ctwelve
-            title.topAnchor == contentView.topAnchor + ctwelve
+            title.topAnchor == contentView.topAnchor + ctwelve - 5
             title.horizontalAnchors == contentView.horizontalAnchors + ctwelve
 
             if big {
@@ -41,9 +43,11 @@ final class FullLinkCellView: LinkCellView {
                 title.bottomAnchor <= bannerImage.topAnchor - ceight
                 
                 bannerImage.horizontalAnchors == contentView.horizontalAnchors + bannerPadding
-                bannerImage.bottomAnchor == box.topAnchor - ctwelve
-                if type != ContentType.CType.IMAGE {
+                bannerImage.bottomAnchor == infoBox.topAnchor - ctwelve
+                if thumb {
                     infoContainer.isHidden = false
+                } else {
+                    infoContainer.isHidden = true
                 }
                 infoContainer.heightAnchor == CGFloat(45)
                 infoContainer.leftAnchor == bannerImage.leftAnchor
@@ -57,10 +61,10 @@ final class FullLinkCellView: LinkCellView {
             } else if thumb {
                 thumbImageContainer.isHidden = false
                 infoContainer.backgroundColor = .clear
-                info.textColor = ColorUtil.fontColor
+                info.textColor = ColorUtil.theme.fontColor
                 let ceight = CGFloat(8)
                 let ctwelve = CGFloat(12)
-                thumbImageContainer.bottomAnchor <= box.topAnchor - ceight
+                thumbImageContainer.bottomAnchor <= infoBox.topAnchor - ceight
                 
                 // Thumbnail sizing
                 thumbImageContainer.topAnchor == title.bottomAnchor + ctwelve

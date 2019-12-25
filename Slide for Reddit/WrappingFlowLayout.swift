@@ -10,6 +10,7 @@ import Foundation
 
 protocol WrappingFlowLayoutDelegate: class {
     func collectionView(_ collectionView: UICollectionView, width: CGFloat, indexPath: IndexPath) -> CGSize
+    func headerOffset() -> Int
 }
 
 class WrappingFlowLayout: UICollectionViewLayout {
@@ -37,22 +38,22 @@ class WrappingFlowLayout: UICollectionViewLayout {
     override var collectionViewContentSize: CGSize {
         return CGSize(width: contentWidth, height: contentHeight)
     }
-    func reset() {
+    func reset(modal: Bool, vc: UIViewController, isGallery: Bool) {
         cache = []
         contentHeight = 0
         var portraitCount = SettingValues.multiColumnCount / 2
         if portraitCount == 0 {
             portraitCount = 1
         }
-        
+                
         let pad = UIScreen.main.traitCollection.userInterfaceIdiom == .pad
         if portraitCount == 1 && pad {
             portraitCount = 2
         }
         
-        if SettingValues.multiColumn {
-            if UIApplication.shared.statusBarOrientation.isPortrait || !SettingValues.isPro {
-                if UIScreen.main.traitCollection.userInterfaceIdiom != .pad || !SettingValues.isPro {
+        if SettingValues.appMode == .MULTI_COLUMN {
+            if UIApplication.shared.statusBarOrientation.isPortrait {
+                if UIScreen.main.traitCollection.userInterfaceIdiom != .pad {
                     numberOfColumns = 1
                 } else {
                     numberOfColumns = portraitCount
@@ -64,21 +65,28 @@ class WrappingFlowLayout: UICollectionViewLayout {
             numberOfColumns = 1
         }
         
-        if pad && !UIApplication.shared.statusBarOrientation.isPortrait && !SettingValues.isPro {
-            numberOfColumns = 2
-        }
-        
-        if pad && UIApplication.shared.keyWindow?.frame != UIScreen.main.bounds {
+        if pad && UIApplication.shared.keyWindow?.frame != UIScreen.main.bounds || UIApplication.shared.isSplitOrSlideOver {
             numberOfColumns = 1
         }
         
+        if vc.modalPresentationStyle == .pageSheet && vc.isBeingPresented {
+            numberOfColumns = 1
+        }
+        
+        if vc is ContentListingViewController && numberOfColumns > 2 {
+            numberOfColumns = 2
+            portraitCount = 1
+        }
+        if isGallery {
+            numberOfColumns = SettingValues.galleryCount
+        }
         cellPadding = (numberOfColumns > 1 && (SettingValues.postViewMode != .LIST) && (SettingValues.postViewMode != .COMPACT)) ? CGFloat(3) : ((SettingValues.postViewMode == .LIST) ? CGFloat(1) : CGFloat(0))
         prepare()
     }
     
     override func prepare() {
         // 1
-        if cache.isEmpty {
+        if cache.isEmpty && collectionView!.numberOfItems(inSection: 0) != 0 {
             // 2
             let columnWidth = contentWidth / CGFloat(numberOfColumns)
             var xOffset = [CGFloat]()
@@ -99,6 +107,7 @@ class WrappingFlowLayout: UICollectionViewLayout {
                 
                 // 4
                 let width = columnWidth - (cellPadding * 2)
+
                 let height1 = delegate.collectionView(collectionView!, width: width, indexPath: indexPath).height
                 let height = cellPadding + height1 + cellPadding
 
@@ -111,6 +120,9 @@ class WrappingFlowLayout: UICollectionViewLayout {
                 
                 // 5
                 let attributes = UICollectionViewLayoutAttributes(forCellWith: indexPath)
+                if insetFrame.origin.x > 999999 {
+                    return
+                }
                 attributes.frame = insetFrame
                 cache.append(attributes)
                 

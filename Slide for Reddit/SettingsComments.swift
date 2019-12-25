@@ -9,63 +9,58 @@
 import Anchorage
 import MKColorPicker
 import UIKit
-import XLActionController
 
-class SettingsComments: UITableViewController, ColorPickerViewDelegate {
-    var disableNavigationBarCell: UITableViewCell = UITableViewCell()
-    var disableNavigationBar = UISwitch()
-    
-    var authorThemeCell: UITableViewCell = UITableViewCell()
-
-    var themeColorCell: UITableViewCell = UITableViewCell()
-    
-    var lockBottomCell: UITableViewCell = UITableViewCell()
-    var lockBottom = UISwitch()
-    
-    var wideIndicatorCell: UITableViewCell = UITableViewCell()
-    var wideIndicator = UISwitch()
-    
-    var collapseDefaultCell: UITableViewCell = UITableViewCell()
-    var collapseDefault = UISwitch()
-    
-    var swapLongPressCell: UITableViewCell = UITableViewCell()
-    var swapLongPress = UISwitch()
-    
-    var collapseFullyCell: UITableViewCell = UITableViewCell()
-    var collapseFully = UISwitch()
-
-    var fullscreenImageCell: UITableViewCell = UITableViewCell()
-    var fullscreenImage = UISwitch()
-
-    var highlightOpCell: UITableViewCell = UITableViewCell()
-    var highlightOp = UISwitch()
-    
-    var hideAutomodCell: UITableViewCell = UITableViewCell()
-    var hideAutomod = UISwitch()
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        // Do any additional setup after loading the view.
+class SettingsComments: BubbleSettingTableViewController, ColorPickerViewDelegate {
+    var disableNavigationBarCell: UITableViewCell = InsetCell()
+    var disableNavigationBar = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
     }
     
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
+    var authorThemeCell: UITableViewCell = InsetCell()
+
+    var themeColorCell: UITableViewCell = InsetCell()
+    
+    var wideIndicatorCell: UITableViewCell = InsetCell()
+    var wideIndicator = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
+
+    var floatingJumpCell: UITableViewCell = InsetCell(style: .subtitle, reuseIdentifier: "jump")
+
+    var collapseDefaultCell: UITableViewCell = InsetCell()
+    var collapseDefault = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
     }
     
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        setupBaseBarColors()
+    var swapLongPressCell: UITableViewCell = InsetCell()
+    var swapLongPress = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
     }
     
-    func switchIsChanged(_ changed: UISwitch) {
+    var collapseFullyCell: UITableViewCell = InsetCell()
+    var collapseFully = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
+
+    var fullscreenImageCell: UITableViewCell = InsetCell()
+    var fullscreenImage = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
+
+    var highlightOpCell: UITableViewCell = InsetCell()
+    var highlightOp = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
+    
+    var hideAutomodCell: UITableViewCell = InsetCell()
+    var hideAutomod = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
+
+    @objc func switchIsChanged(_ changed: UISwitch) {
         if changed == disableNavigationBar {
             SettingValues.disableNavigationBar = changed.isOn
             UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_disableNavigationBar)
-        } else if changed == lockBottom {
-            SettingValues.lockCommentBars = changed.isOn
-            UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_lockCommentBottomBar)
         } else if changed == wideIndicator {
             SettingValues.wideIndicators = changed.isOn
             UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_widerIndicators)
@@ -82,29 +77,13 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             SettingValues.collapseFully = changed.isOn
             UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_collapseFully)
         } else if changed == fullscreenImage {
-            SettingValues.commentFullScreen = changed.isOn
-            UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_commentFullScreen)
+            SettingValues.commentFullScreen = !changed.isOn
+            UserDefaults.standard.set(!changed.isOn, forKey: SettingValues.pref_commentFullScreen)
         } else if changed == highlightOp {
             SettingValues.highlightOp = changed.isOn
             UserDefaults.standard.set(changed.isOn, forKey: SettingValues.pref_highlightOp)
         }
         UserDefaults.standard.synchronize()
-    }
-    
-    override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        let label: UILabel = UILabel()
-        label.textColor = ColorUtil.baseAccent
-        label.font = FontGenerator.boldFontOfSize(size: 20, submission: true)
-        let toReturn = label.withPadding(padding: UIEdgeInsets.init(top: 0, left: 12, bottom: 0, right: 0))
-        toReturn.backgroundColor = ColorUtil.backgroundColor
-        
-        switch section {
-        case 0: label.text  = "Submission"
-        case 1: label.text  = "Display"
-        case 2: label.text = "Interaction"
-        default: label.text  = ""
-        }
-        return toReturn
     }
     
     func colorPickerView(_ colorPickerView: ColorPickerView, didSelectItemAt indexPath: IndexPath) {
@@ -118,7 +97,25 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             showAuthorChooser()
         } else if indexPath.section == 1 && indexPath.row == 1 {
             showDepthChooser()
+        } else if indexPath.section == 0 && indexPath.row == 2 {
+            showJumpChooser()
         }
+    }
+    
+    func showJumpChooser() {
+        let actionSheetController = DragDownAlertMenu(title: "Comment floating jump button", subtitle: "Can be long-pressed to jump up", icon: nil)
+        
+        let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.menuIcon()
+
+        for t in SettingValues.CommentJumpMode.cases {
+            actionSheetController.addAction(title: t.getTitle(), icon: SettingValues.commentJumpButton == t ? selected : nil) {
+                SettingValues.commentJumpButton = t
+                UserDefaults.standard.set(t.rawValue, forKey: SettingValues.pref_commentJumpMode)
+                self.floatingJumpCell.detailTextLabel?.text = t.getTitle()
+            }
+        }
+        
+        actionSheetController.show(self)
     }
     
     func setDepthColors(_ colors: [UIColor]) {
@@ -127,11 +124,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
     }
     
     func showDepthChooser() {
-        let alertController: BottomSheetActionController = BottomSheetActionController()
-        alertController.headerData = "Comment depths"
+        let alertController = DragDownAlertMenu(title: "Comment depth theme", subtitle: "Select a color theme for comment depth", icon: nil)
 
-        alertController.addAction(Action(ActionData(title: "Default", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.red500Color())), style: .default, handler: { _ in
-            //choose color
+        alertController.addAction(title: "Default", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.red500Color())) {
             var colorArray = [UIColor]()
             colorArray.append(GMColor.red500Color())
             colorArray.append(GMColor.orange500Color())
@@ -139,9 +134,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(GMColor.green500Color())
             colorArray.append(GMColor.blue500Color())
             self.setDepthColors(colorArray)
-        }))
-        
-        alertController.addAction(Action(ActionData(title: "Monochrome", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.grey500Color())), style: .default, handler: { _ in
+        }
+
+        alertController.addAction(title: "Monochrome", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.grey500Color())) {
             var colorArray = [UIColor]()
             colorArray.append(GMColor.grey700Color())
             colorArray.append(GMColor.grey600Color())
@@ -149,9 +144,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(GMColor.grey400Color())
             colorArray.append(GMColor.grey300Color())
             self.setDepthColors(colorArray)
-        }))
-        
-        alertController.addAction(Action(ActionData(title: "Main color", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: ColorUtil.baseColor)), style: .default, handler: { _ in
+        }
+
+        alertController.addAction(title: "Main color", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: ColorUtil.baseColor)) {
             let baseColor = ColorUtil.baseColor
             var colorArray = [UIColor]()
             colorArray.append(baseColor.add(overlay: UIColor.white.withAlphaComponent(0.3)))
@@ -160,10 +155,10 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(baseColor.add(overlay: UIColor.black.withAlphaComponent(0.15)))
             colorArray.append(baseColor.add(overlay: UIColor.black.withAlphaComponent(0.3)))
             self.setDepthColors(colorArray)
-        }))
-        
-        alertController.addAction(Action(ActionData(title: "Invisible", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: ColorUtil.backgroundColor)), style: .default, handler: { _ in
-            let baseColor = ColorUtil.backgroundColor
+        }
+
+        alertController.addAction(title: "Invisible", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: ColorUtil.theme.backgroundColor)) {
+            let baseColor = ColorUtil.theme.backgroundColor
             var colorArray = [UIColor]()
             colorArray.append(baseColor)
             colorArray.append(baseColor)
@@ -171,9 +166,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(baseColor)
             colorArray.append(baseColor)
             self.setDepthColors(colorArray)
-        }))
-        
-        alertController.addAction(Action(ActionData(title: "Accent color", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: ColorUtil.baseAccent)), style: .default, handler: { _ in
+        }
+
+        alertController.addAction(title: "Accent color", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: ColorUtil.baseAccent)) {
             let baseColor = ColorUtil.baseAccent
             var colorArray = [UIColor]()
             colorArray.append(baseColor.add(overlay: UIColor.white.withAlphaComponent(0.3)))
@@ -182,10 +177,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(baseColor.add(overlay: UIColor.black.withAlphaComponent(0.15)))
             colorArray.append(baseColor.add(overlay: UIColor.black.withAlphaComponent(0.3)))
             self.setDepthColors(colorArray)
-        }))
-        
-        alertController.addAction(Action(ActionData(title: "Space", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: UIColor(hex: "BF3436"))), style: .default, handler: { _ in
-            //choose color
+        }
+
+        alertController.addAction(title: "Space", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: UIColor(hex: "BF3436"))) {
             var colorArray = [UIColor]()
             colorArray.append(UIColor(hex: "EF6040"))
             colorArray.append(UIColor(hex: "BF3436"))
@@ -193,10 +187,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(UIColor(hex: "662132"))
             colorArray.append(UIColor(hex: "20151D"))
             self.setDepthColors(colorArray)
-        }))
-            
-        alertController.addAction(Action(ActionData(title: "Candy", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.blue500Color())), style: .default, handler: { _ in
-            //choose color
+        }
+
+        alertController.addAction(title: "Candy", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.blue500Color())) {
             var colorArray = [UIColor]()
             colorArray.append(UIColor(hex: "E83F6F"))
             colorArray.append(UIColor(hex: "FF7B00"))
@@ -204,10 +197,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(UIColor(hex: "32936F"))
             colorArray.append(UIColor(hex: "2274A5"))
             self.setDepthColors(colorArray)
-        }))
+        }
 
-        alertController.addAction(Action(ActionData(title: "Spice", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.blue500Color())), style: .default, handler: { _ in
-            //choose color
+        alertController.addAction(title: "Spice", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.blue500Color())) {
             var colorArray = [UIColor]()
             colorArray.append(UIColor(hex: "4F000B"))
             colorArray.append(UIColor(hex: "720026"))
@@ -215,10 +207,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(UIColor(hex: "CE4257"))
             colorArray.append(UIColor(hex: "FF9B54"))
             self.setDepthColors(colorArray)
-        }))
+        }
 
-        alertController.addAction(Action(ActionData(title: "Bright", image: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.blue500Color())), style: .default, handler: { _ in
-            //choose color
+        alertController.addAction(title: "Bright", icon: UIImage(named: "circle")!.menuIcon().getCopy(withColor: GMColor.blue500Color())) {
             var colorArray = [UIColor]()
             colorArray.append(UIColor(hex: "FFBE0B"))
             colorArray.append(UIColor(hex: "FB5607"))
@@ -226,13 +217,13 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             colorArray.append(UIColor(hex: "8338EC"))
             colorArray.append(UIColor(hex: "3A86FF"))
             self.setDepthColors(colorArray)
-        }))
+        }
 
-        present(alertController, animated: true, completion: nil)
+        alertController.show(self)
     }
     
     func showAuthorChooser() {
-        let alertController = UIAlertController(title: "\n\n\n\n\n\n\n\n", message: nil, preferredStyle: UIAlertControllerStyle.actionSheet)
+        let alertController = UIAlertController(title: "\n\n\n\n\n\n\n\n", message: nil, preferredStyle: UIAlertController.Style.actionSheet)
         
         let margin: CGFloat = 10.0
         let rect = CGRect(x: margin, y: margin, width: UIScreen.main.traitCollection.userInterfaceIdiom == .pad ? 314 - margin * 4.0: alertController.view.bounds.size.width - margin * 4.0, height: 150)
@@ -271,34 +262,37 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
     
     public func createCell(_ cell: UITableViewCell, _ switchV: UISwitch? = nil, isOn: Bool, text: String) {
         cell.textLabel?.text = text
-        cell.textLabel?.textColor = ColorUtil.fontColor
-        cell.backgroundColor = ColorUtil.foregroundColor
+        cell.textLabel?.textColor = ColorUtil.theme.fontColor
+        cell.backgroundColor = ColorUtil.theme.foregroundColor
         cell.textLabel?.numberOfLines = 0
         cell.textLabel?.lineBreakMode = .byWordWrapping
         if let s = switchV {
             s.isOn = isOn
-            s.addTarget(self, action: #selector(SettingsLayout.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+            s.addTarget(self, action: #selector(SettingsLayout.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
             cell.accessoryView = s
         }
-        cell.selectionStyle = UITableViewCellSelectionStyle.none
+        cell.selectionStyle = UITableViewCell.SelectionStyle.none
     }
 
     override func loadView() {
         super.loadView()
-        self.view.backgroundColor = ColorUtil.backgroundColor
+        self.view.backgroundColor = ColorUtil.theme.backgroundColor
         // set the title
-        self.title = "Comments"
-        self.tableView.separatorStyle = .none
+        self.title = "Comments settings"
+        self.headers = ["Comments page", "Comment display", "Comment interaction"]
 
         createCell(disableNavigationBarCell, disableNavigationBar, isOn: SettingValues.disableNavigationBar, text: "Disable comment navigation toolbar")
-        createCell(fullscreenImageCell, fullscreenImage, isOn: SettingValues.commentFullScreen, text: "Show full height submission image in commment view")
+        createCell(fullscreenImageCell, fullscreenImage, isOn: !SettingValues.commentFullScreen, text: "Crop the lead banner image")
         createCell(collapseDefaultCell, collapseDefault, isOn: SettingValues.collapseDefault, text: "Collapse all comments automatically")
         createCell(swapLongPressCell, swapLongPress, isOn: SettingValues.swapLongPress, text: "Swap tap and long press actions")
         createCell(collapseFullyCell, collapseFully, isOn: SettingValues.collapseFully, text: "Collapse comments fully")
-        createCell(highlightOpCell, highlightOp, isOn: SettingValues.highlightOp, text: "Highlight op replies of parent comments")
+        createCell(highlightOpCell, highlightOp, isOn: SettingValues.highlightOp, text: "Purple depth indicator for OP replies")
         createCell(wideIndicatorCell, wideIndicator, isOn: SettingValues.wideIndicators, text: "Make comment depth indicator wider")
-        createCell(lockBottomCell, lockBottom, isOn: SettingValues.lockCommentBars, text: "Don't autohide toolbars in comments")
-        createCell(hideAutomodCell, hideAutomod, isOn: SettingValues.hideAutomod, text: "Move top AutoModerator comment to a button (if it is not your submission)")
+        createCell(hideAutomodCell, hideAutomod, isOn: SettingValues.hideAutomod, text: "Hide pinned AutoModerator comments")
+        createCell(floatingJumpCell, nil, isOn: false, text: "Floating jump button")
+        floatingJumpCell.detailTextLabel?.textColor = ColorUtil.theme.fontColor
+        floatingJumpCell.detailTextLabel?.numberOfLines = 0
+        floatingJumpCell.detailTextLabel?.text = SettingValues.commentJumpButton.getTitle()
 
         updateThemeCell()
         updateDepthsCell()
@@ -308,11 +302,11 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
     
     public func updateThemeCell() {
         authorThemeCell.textLabel?.text = "Author username color"
-        authorThemeCell.textLabel?.textColor = ColorUtil.fontColor
-        authorThemeCell.backgroundColor = ColorUtil.foregroundColor
+        authorThemeCell.textLabel?.textColor = ColorUtil.theme.fontColor
+        authorThemeCell.backgroundColor = ColorUtil.theme.foregroundColor
         authorThemeCell.textLabel?.numberOfLines = 0
         authorThemeCell.textLabel?.lineBreakMode = .byWordWrapping
-        authorThemeCell.selectionStyle = UITableViewCellSelectionStyle.none
+        authorThemeCell.selectionStyle = UITableViewCell.SelectionStyle.none
         let circleView = UIView(frame: CGRect(x: 0, y: 0, width: 30, height: 30))
         circleView.layer.cornerRadius = 15
         circleView.backgroundColor = ColorUtil.getCommentNameColor("NONE")
@@ -321,11 +315,11 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
     
     public func updateDepthsCell() {
         themeColorCell.textLabel?.text = "Depths colors"
-        themeColorCell.textLabel?.textColor = ColorUtil.fontColor
-        themeColorCell.backgroundColor = ColorUtil.foregroundColor
+        themeColorCell.textLabel?.textColor = ColorUtil.theme.fontColor
+        themeColorCell.backgroundColor = ColorUtil.theme.foregroundColor
         themeColorCell.textLabel?.numberOfLines = 0
         themeColorCell.textLabel?.lineBreakMode = .byWordWrapping
-        themeColorCell.selectionStyle = UITableViewCellSelectionStyle.none
+        themeColorCell.selectionStyle = UITableViewCell.SelectionStyle.none
         let currentColors = ColorUtil.getCommentDepthColors().backwards()
         let stack = UIStackView(frame: CGRect(x: 0, y: 0, width: 68, height: 30)).then {
             $0.axis = .horizontal
@@ -347,17 +341,6 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
         return 3
     }
     
-    override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        return 70
-    }
-    
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        return 60
-    }
-    
-    func tableView(tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
-    }
-    
     override func viewWillDisappear(_ animated: Bool) {
         PagingCommentViewController.savedComment = nil
     }
@@ -368,6 +351,7 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             switch indexPath.row {
             case 0: return self.fullscreenImageCell
             case 1: return self.hideAutomodCell
+            case 2: return self.floatingJumpCell
             default: fatalError("Unkown row in section 0")
             }
         case 1:
@@ -375,6 +359,7 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             case 0: return self.authorThemeCell
             case 1: return self.themeColorCell
             case 2: return self.wideIndicatorCell
+            case 3: return self.highlightOpCell
             default: fatalError("Unknown row in section 1")
             }
         case 2:
@@ -382,8 +367,6 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
             case 0: return self.collapseDefaultCell
             case 1: return self.collapseFullyCell
             case 2: return self.swapLongPressCell
-            case 3: return self.highlightOpCell
-            case 4: return self.lockBottomCell
             default: fatalError("Unknown row in section 2")
             }
         default: fatalError("Unknown section")
@@ -393,9 +376,9 @@ class SettingsComments: UITableViewController, ColorPickerViewDelegate {
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
-        case 0: return 2
-        case 1: return 3
-        case 2: return 5
+        case 0: return 3
+        case 1: return 4
+        case 2: return 3
         default: fatalError("Unknown number of sections")
         }
     }

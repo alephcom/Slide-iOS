@@ -13,15 +13,26 @@ import UIKit
 class RedditLink {
     
     public static func getViewControllerForURL(urlS: URL) -> UIViewController {
-        let oldUrl = urlS
+        var urlString = urlS.absoluteString.replacingOccurrences(of: "slide://", with: "https://")
+        if !urlString.startsWith("http") && !urlString.startsWith("https") {
+            urlString = "https://" + urlString
+        }
+        if urlS.host == "google.com" {
+            urlString = urlString.replacingOccurrences(of: "google.com/amp/s/amp.", with: "")
+        }
+        let oldUrl = URL(string: urlString)!
         var url = formatRedditUrl(urlS: urlS)
         var np = false
+        
+        if urlS.absoluteString.startsWith("/m/") {
+            return SingleSubredditViewController.init(subName: urlS.absoluteString, single: true)
+        }
         if url.isEmpty() {
             if SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL || SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY {
                 let safariVC = SFHideSafariViewController(url: oldUrl, entersReaderIfAvailable: SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY)
                 if #available(iOS 10.0, *) {
-                    safariVC.preferredBarTintColor = ColorUtil.backgroundColor
-                    safariVC.preferredControlTintColor = ColorUtil.fontColor
+                    safariVC.preferredBarTintColor = ColorUtil.theme.backgroundColor
+                    safariVC.preferredControlTintColor = ColorUtil.theme.fontColor
                 } else {
                     // Fallback on earlier versions
                 }
@@ -44,11 +55,16 @@ class RedditLink {
             parts.remove(at: parts.count - 1)
         }
                 
-        let safeURL = url.startsWith("/") ? "https://www.reddit.com" + url : url
+        var safeURL = url.startsWith("/") ? "https://www.reddit.com" + url : url
+        if safeURL.startsWith("reddit.com") {
+            safeURL = "https://www." + safeURL
+        }
         
         switch type {
         case .SHORTENED:
             return CommentViewController.init(submission: parts[1], subreddit: nil, np: np)
+        case .MULTI:
+            return SingleSubredditViewController.init(subName: "/u/\(parts[2])/m/\(parts[4])", single: true)
         case .LIVE:
             print(parts[1])
             return LiveThreadViewController.init(id: parts[2])
@@ -104,19 +120,32 @@ class RedditLink {
         case .SUBREDDIT:
             return SingleSubredditViewController.init(subName: parts[2], single: true)
         case .MESSAGE:
-            return ReplyViewController.init(name: "/r/\(parts[parts.count - 1])", completion: { (_) in
+            var to = ""
+            var subject = ""
+            var message = ""
+            
+            if let q = urlS.queryDictionary["to"] {
+                to = q.removingPercentEncoding?.removingPercentEncoding ?? q
+            }
+            if let q = urlS.queryDictionary["subject"] {
+                subject = q.removingPercentEncoding?.removingPercentEncoding ?? q
+            }
+            if let q = urlS.queryDictionary["message"] {
+                message = q.removingPercentEncoding?.removingPercentEncoding ?? q
+            }
+
+            return ReplyViewController.init(name: to, subject: subject, message: message, completion: { (_) in
             })
         case .USER:
             return ProfileViewController.init(name: parts[2])
         case .OTHER:
             break
-            
         }
         if SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL || SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY {
             let safariVC = SFHideSafariViewController(url: oldUrl, entersReaderIfAvailable: SettingValues.browser == SettingValues.BROWSER_SAFARI_INTERNAL_READABILITY)
             if #available(iOS 10.0, *) {
-                safariVC.preferredBarTintColor = ColorUtil.backgroundColor
-                safariVC.preferredControlTintColor = ColorUtil.fontColor
+                safariVC.preferredBarTintColor = ColorUtil.theme.backgroundColor
+                safariVC.preferredControlTintColor = ColorUtil.theme.fontColor
             } else {
                 // Fallback on earlier versions
             }
@@ -165,8 +194,8 @@ class RedditLink {
         if url.hasSuffix("/") { url = url.substring(0, length: url.length - 1) }
         
         // Converts links such as reddit.com/help to reddit.com/r/reddit.com/wiki
-        if url.matches(regex: "(?i)[^/]++/(?>wiki|help)(?>$|/.*)") {
-            url.stringByRemovingRegexMatches(pattern: "(?i)/(?>wiki|help)", replaceWith: "/r/reddit.com/wiki")
+        if url.matches(regex: "(?i)[^/]++/(?>w|wiki|help)(?>$|/.*)") {
+            url.stringByRemovingRegexMatches(pattern: "(?i)/(?>w|wiki|help)", replaceWith: "/r/reddit.com/wiki")
         }
         
         url = url.removingPercentEncoding ?? url
@@ -207,6 +236,9 @@ class RedditLink {
         } else if url.matches(regex: "(?i)reddit\\.com/r/[a-z0-9-_.]+/comments/\\w+.*") {
             // Submission. Format: reddit.com/r/$subreddit/comments/$post_id/$post_title [optional]
             return RedditLinkType.SUBMISSION
+        } else if url.matches(regex: "(?i)reddit\\.com/u(?:ser)?/[a-z0-9-_]+.*/m/[a-z0-9_]+.*") {
+            // Multireddit. Format: reddit.com/u [or user]/$username/m/$multireddit/$sort [optional]
+            return RedditLinkType.MULTI
         } else if url.matches(regex: "(?i)reddit\\.com/comments/\\w+.*") {
             // Submission without a given subreddit. Format: reddit.com/comments/$post_id/$post_title [optional]
             return RedditLinkType.SUBMISSION_WITHOUT_SUB
@@ -230,6 +262,7 @@ class RedditLink {
         case SUBMISSION_WITHOUT_SUB
         case SUBREDDIT
         case USER
+        case MULTI
         case SEARCH
         case MESSAGE
         case LIVE
@@ -257,5 +290,4 @@ extension String {
             return
         }
     }
-    
 }

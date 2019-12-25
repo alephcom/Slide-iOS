@@ -6,34 +6,30 @@
 //  Copyright © 2017 Haptic Apps. All rights reserved.
 //
 
+import DTCoreText
 import UIKit
 
 class FontGenerator {
-    //Fonts are: HelveticaNeue, RobotoCondensed-Regular, RobotoCondensed-Bold, Roboto-Light, Roboto-Bold, Roboto-Medium, or System Font (San Fransisco)
+    
     public static func fontOfSize(size: CGFloat, submission: Bool) -> UIFont {
-        if let font = fontDict["\(size)\(submission)"] {
-            return font
-        }
-        let newFont = (submission ? postFont.font : commentFont.font).withSize( size + CGFloat(submission ? SettingValues.postFontOffset : SettingValues.commentFontOffset))
-        fontDict["\(size)\(submission)"] = newFont
-        return newFont
+        let fontName = UserDefaults.standard.string(forKey: submission ? "postfont" : "commentfont") ?? ( submission ? "AvenirNext-DemiBold" : "AvenirNext-Medium")
+        let adjustedSize = size + CGFloat(submission ? SettingValues.postFontOffset : SettingValues.commentFontOffset)
+
+        return FontMapping.fromStoredName(name: fontName).font(ofSize: adjustedSize) ?? UIFont.systemFont(ofSize: adjustedSize)
     }
     
     public static func boldFontOfSize(size: CGFloat, submission: Bool) -> UIFont {
-        if let font = fontDict["\(size)\(submission)B"] {
-            return font
+        let normalFont = fontOfSize(size: size, submission: submission)
+        if normalFont.fontName == UIFont.systemFont(ofSize: 10).fontName {
+            return UIFont.boldSystemFont(ofSize: size)
         }
-        let newFont = (submission ? postFont.bold() : commentFont.bold()).withSize( size + CGFloat(submission ? SettingValues.postFontOffset : SettingValues.commentFontOffset))
-        fontDict["\(size)\(submission)B"] = newFont
-        return newFont
+        return normalFont.makeBold()
     }
     
     public static var postFont = Font.SYSTEM
     public static var commentFont = Font.SYSTEM
-    public static var fontDict = [String: UIFont]()
 
     public static func initialize() {
-        fontDict.removeAll()
         if let name = UserDefaults.standard.string(forKey: "postfont") {
             if let t = Font(rawValue: name) {
                 postFont = t
@@ -45,7 +41,6 @@ class FontGenerator {
                 commentFont = t
             }
         }
-
     }
     
     enum Font: String {
@@ -119,5 +114,17 @@ class FontGenerator {
             }
         }
         
+    }
+}
+extension UIFont {
+    
+    func withTraits(traits: UIFontDescriptor.SymbolicTraits...) -> UIFont {
+        let descriptor = self.fontDescriptor
+            .withSymbolicTraits(UIFontDescriptor.SymbolicTraits(traits)) ?? self.fontDescriptor
+        return UIFont(descriptor: descriptor, size: 0)
+    }
+    
+    func makeBold() -> UIFont {
+        return withTraits(traits: .traitBold)
     }
 }

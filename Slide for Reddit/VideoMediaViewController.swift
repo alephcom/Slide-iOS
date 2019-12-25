@@ -9,22 +9,31 @@
 import Alamofire
 import Anchorage
 import AVFoundation
+import SDCAlertView
 import SDWebImage
 import SubtleVolume
 import Then
 import UIKit
 
-import AVFoundation
-
-class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecognizerDelegate {
+class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecognizerDelegate, SubtleVolumeDelegate {
 
     var isYoutubeView: Bool {
         return contentType == ContentType.CType.VIDEO
     }
     
+    var youtubeMute = false {
+        didSet(fromValue) {
+            let changeImage = youtubeMute ? UIImage(sfString: SFSymbol.volumeSlashFill, overrideString: "mute")?.navIcon(true).getCopy(withColor: GMColor.red500Color()) : UIImage(sfString: SFSymbol.volume2Fill, overrideString: "audio")?.navIcon(true)
+            
+            UIView.animate(withDuration: 0.5, animations: {
+                self.muteButton.setImage(changeImage, for: UIControl.State.normal)
+            }, completion: nil)
+        }
+    }
     let volume = SubtleVolume(style: SubtleVolumeStyle.rounded)
     let volumeHeight: CGFloat = 3
-    
+    var setOnce = false
+
     var safeAreaInsets: UIEdgeInsets {
         if #available(iOS 11.0, tvOS 11.0, *) {
             return view.safeAreaInsets
@@ -33,15 +42,22 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         }
     }
     
+    func subtleVolume(_ subtleVolume: SubtleVolume, willChange value: Double) {
+        if !self.muteButton.isHidden && !SettingValues.modalVideosRespectHardwareMuteSwitch {
+       //disable for now     self.unmute()
+        }
+    }
+    
     var youtubeResolution = CGSize(width: 16, height: 9)
     var videoView = VideoView()
-    var youtubeView = YTPlayerView()
+    var youtubeView = WKYTPlayerView()
     var downloadedOnce = false
     
     var size = UILabel()
     var videoType: VideoType!
     
     var menuButton = UIButton()
+    var muteButton = UIButton()
     var downloadButton = UIButton()
     var ytButton = UIButton()
     var request: DownloadRequest?
@@ -74,20 +90,26 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
 
         // Disable screen dimming due to inactivity
         UIApplication.shared.isIdleTimerDisabled = true
-
+        loaded = false
         configureViews()
         configureLayout()
         connectActions()
 
-        loadContent()
         handleHideUI()
         
         volume.barTintColor = .white
         volume.barBackgroundColor = UIColor.white.withAlphaComponent(0.3)
         volume.animation = .slideDown
-        view.addSubview(volume)
         
-        NotificationCenter.default.addObserver(volume, selector: #selector(SubtleVolume.resume), name: NSNotification.Name.UIApplicationDidBecomeActive, object: nil)
+        var is13 = false
+        if #available(iOS 13, *) {
+            is13 = true
+        }
+        if !((parent?.parent) is ShadowboxLinkViewController) && !is13 {
+            view.addSubview(volume)
+            volume.delegate = self
+            NotificationCenter.default.addObserver(volume, selector: #selector(SubtleVolume.resume), name: UIApplication.didBecomeActiveNotification, object: nil)
+        }
     }
     
     override func viewDidLayoutSubviews() {
@@ -97,7 +119,7 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
     func layoutVolume() {
         let volumeYPadding: CGFloat = 10
         let volumeXPadding = UIScreen.main.bounds.width * 0.4 / 2
-        volume.superview?.bringSubview(toFront: volume)
+        volume.superview?.bringSubviewToFront(volume)
         volume.frame = CGRect(x: safeAreaInsets.left + volumeXPadding, y: safeAreaInsets.top + volumeYPadding, width: UIScreen.main.bounds.width - (volumeXPadding * 2) - safeAreaInsets.left - safeAreaInsets.right, height: volumeHeight)
     }
 
@@ -106,52 +128,76 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         displayLink = nil
     }
 
+    var loaded = false
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        displayLink = CADisplayLink(target: self, selector: #selector(displayLinkDidUpdate))
-        displayLink?.add(to: .current, forMode: .defaultRunLoopMode)
-        displayLink?.isPaused = false
-        videoView.player?.play()
+        if loaded && ((parent is ShadowboxLinkViewController) || (parent is AlbumViewController)) {
+            displayLink = CADisplayLink(target: self, selector: #selector(displayLinkDidUpdate))
+            displayLink?.add(to: .current, forMode: RunLoop.Mode.default)
+            displayLink?.isPaused = false
+            videoView.player?.play()
+        } else {
+            loadContent()
+        }
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
+    override func viewDidDisappear(_ animated: Bool) {
         timer?.invalidate()
         request?.cancel()
         stopDisplayLink()
-        videoView.player?.pause()
-        videoView.player?.currentItem?.cancelPendingSeeks()
-        videoView.player?.currentItem?.asset.cancelLoading()
-        stopDisplayLink()
-        super.viewWillDisappear(animated)
-    }
-
-    deinit {
-        videoView.player?.currentItem?.cancelPendingSeeks()
-        videoView.player?.currentItem?.asset.cancelLoading()
-        stopDisplayLink()
-    }
-    
-    override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        // Re-enable screen dimming due to inactivity
         UIApplication.shared.isIdleTimerDisabled = false
-        displayLink?.isPaused = true
-
+        self.endVideos()
         // Turn off forced fullscreen
         if forcedFullscreen {
             disableForcedFullscreen()
         }
     }
 
+    deinit {
+        self.endVideos()
+        self.videoView.player?.replaceCurrentItem(with: nil)
+        self.videoView.player = nil
+    }
+    
+    func endVideos() {
+        self.displayLink?.invalidate()
+        self.displayLink = nil
+        
+        if !(parent is ShadowboxLinkViewController) && !(parent is AlbumViewController) {
+            DispatchQueue.global(qos: .background).async {
+                do {
+                    try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+                    try AVAudioSession.sharedInstance().setActive(false, options: AVAudioSession.SetActiveOptions.notifyOthersOnDeactivation)
+                } catch {
+                    NSLog(error.localizedDescription)
+                }
+            }
+        }
+    }
+
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
-
+        
+        resetFrame(withSize: self.view.frame.size)
+    }
+    
+    func resetFrame(withSize: CGSize) {
         // Recalculate youtube frame size
         self.youtubeView.frame = AVMakeRect(aspectRatio: youtubeResolution, insideRect: self.view.bounds)
 
         // Recalculate player size
-        let size = videoView.player?.currentItem?.presentationSize ?? self.view.bounds.size
-        self.videoView.frame = AVMakeRect(aspectRatio: size, insideRect: self.view.bounds)
+        var size = videoView.player?.currentItem?.presentationSize ?? self.view.bounds.size
+        if size == CGSize.zero {
+            size = withSize
+        }
+
+        self.videoView.frame = AVMakeRect(aspectRatio: size, insideRect: self.view.bounds) // CALayer position contains NaN: [nan nan]
+    }
+    
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        resetFrame(withSize: size)
     }
 
 //    override func didReceiveMemoryWarning() {
@@ -170,7 +216,7 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         view.addSubview(scrubber)
         scrubber.delegate = self
 
-        rewindImageView = UIImageView(image: UIImage(named: "rewind")?.getCopy(withSize: .square(size: 40), withColor: .white)).then {
+        rewindImageView = UIImageView(image: UIImage(sfString: SFSymbol.backwardEndFill, overrideString: "rewind")?.getCopy(withSize: .square(size: 40), withColor: .white)).then {
             $0.alpha = 0
             $0.backgroundColor = UIColor.black.withAlphaComponent(0.5)
             $0.layer.cornerRadius = 20
@@ -178,7 +224,7 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         }
         view.addSubview(rewindImageView)
 
-        fastForwardImageView = UIImageView(image: UIImage(named: "fast_forward")?.getCopy(withSize: .square(size: 40), withColor: .white)).then {
+        fastForwardImageView = UIImageView(image: UIImage(sfString: SFSymbol.forwardEndFill, overrideString: "fast_forward")?.getCopy(withSize: .square(size: 40), withColor: .white)).then {
             $0.alpha = 0
             $0.backgroundColor = UIColor.black.withAlphaComponent(0.5)
             $0.layer.cornerRadius = 20
@@ -194,48 +240,64 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         }
         view.addSubview(bottomButtons)
         
-        menuButton = UIButton().then {
-            $0.accessibilityIdentifier = "More Button"
-            $0.setImage(UIImage(named: "moreh")?.navIcon(true), for: [])
-            $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        }
-        
-        downloadButton = UIButton().then {
-            $0.accessibilityIdentifier = "Download Button"
-            $0.setImage(UIImage(named: "download")?.navIcon(true), for: [])
-            $0.isHidden = true // The button will be unhidden once the content has loaded.
-            $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        }
-        
-        ytButton = UIButton().then {
-            $0.accessibilityIdentifier = "Open in YouTube"
-            $0.setImage(UIImage(named: "youtube")?.navIcon(true), for: [])
-            $0.isHidden = true // The button will be unhidden once the content has loaded.
-            $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        }
-        
-        goToCommentsButton = UIButton().then {
-            $0.accessibilityIdentifier = "Go to Comments Button"
-            $0.setImage(UIImage(named: "comments")?.navIcon(true), for: [])
-            $0.isHidden = commentCallback == nil
-            $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        }
-                
-        showTitleButton = UIButton().then {
-            $0.accessibilityIdentifier = "Show Title Button"
-            $0.setImage(UIImage(named: "size")?.navIcon(true), for: [])
-            $0.isHidden = !(data.text != nil && !(data.text!.isEmpty))
-            $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        }
-        
-        size = UILabel().then {
-            $0.accessibilityIdentifier = "File size"
-            $0.font = UIFont.boldSystemFont(ofSize: 12)
-            $0.textAlignment = .center
-            $0.textColor = .white
-        }
+        if data.buttons {
+            menuButton = UIButton().then {
+                $0.accessibilityIdentifier = "More Button"
+                $0.setImage(UIImage(sfString: SFSymbol.ellipsis, overrideString: "moreh")?.navIcon(true), for: [])
+                $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+            }
+            
+            downloadButton = UIButton().then {
+                $0.accessibilityIdentifier = "Download Button"
+                $0.setImage(UIImage(sfString: SFSymbol.squareAndArrowDownFill, overrideString: "download")?.navIcon(true), for: [])
+                $0.isHidden = true // The button will be unhidden once the content has loaded.
+                $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+            }
+            
+            upvoteButton = UIButton().then {
+                $0.accessibilityIdentifier = "Upvote Button"
+                $0.setImage(UIImage(sfString: SFSymbol.arrowUp, overrideString: "upvote")?.navIcon(true).getCopy(withColor: isUpvoted ? ColorUtil.upvoteColor : UIColor.white), for: [])
+                $0.isHidden = upvoteCallback == nil // The button will be unhidden once the content has loaded.
+                $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+            }
 
-        bottomButtons.addArrangedSubviews(showTitleButton, goToCommentsButton, size, UIView.flexSpace(), ytButton, downloadButton, menuButton)
+            muteButton = UIButton().then {
+                $0.accessibilityIdentifier = "Un-mute video"
+                $0.setImage(UIImage(sfString: SFSymbol.volumeSlashFill, overrideString: "mute")?.navIcon(true).getCopy(withColor: GMColor.red500Color()), for: [])
+                $0.isHidden = true // The button will be unhidden once the content has loaded.
+                $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+            }
+            
+            ytButton = UIButton().then {
+                $0.accessibilityIdentifier = "Open in YouTube"
+                $0.setImage(UIImage(named: "youtube")?.navIcon(true), for: [])
+                $0.isHidden = true // The button will be unhidden once the content has loaded.
+                $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+            }
+            
+            goToCommentsButton = UIButton().then {
+                $0.accessibilityIdentifier = "Go to Comments Button"
+                $0.setImage(UIImage(sfString: SFSymbol.bubbleLeftAndBubbleRightFill, overrideString: "comments")?.navIcon(true), for: [])
+                $0.isHidden = commentCallback == nil
+                $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+            }
+            
+            showTitleButton = UIButton().then {
+                $0.accessibilityIdentifier = "Show Title Button"
+                $0.setImage(UIImage(sfString: SFSymbol.textbox, overrideString: "size")?.navIcon(true), for: [])
+                $0.isHidden = !(data.text != nil && !(data.text!.isEmpty))
+                $0.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+            }
+            
+            size = UILabel().then {
+                $0.accessibilityIdentifier = "File size"
+                $0.font = UIFont.boldSystemFont(ofSize: 12)
+                $0.textAlignment = .center
+                $0.textColor = .white
+            }
+            
+            bottomButtons.addArrangedSubviews(showTitleButton, goToCommentsButton, upvoteButton, size, UIView.flexSpace(), muteButton, ytButton, downloadButton, menuButton)
+        }
     }
     
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -249,9 +311,48 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         return true
     }
     
+    @objc func unmute() {
+        if isYoutubeView {
+            if youtubeMute {
+                // TODO: - An error is thrown when this is evaluated. Resolve why to allow error handling
+                youtubeView.webView?.evaluateJavaScript("player.unMute()") { [weak self] (_, _) in
+                    if let strongSelf = self {
+                        strongSelf.youtubeMute = false
+                        strongSelf.videoView.player?.isMuted = false
+                        
+                        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [])
+                    }
+                }
+            } else {
+                youtubeView.webView?.evaluateJavaScript("player.mute()") { [weak self] (_, _) in
+                    if let strongSelf = self {
+                        strongSelf.youtubeMute = true
+                        strongSelf.videoView.player?.isMuted = true
+                        
+                        try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+                    }
+                }
+            }
+        } else {
+            if youtubeMute {
+                self.youtubeMute = false
+                self.videoView.player?.isMuted = false
+                
+                try? AVAudioSession.sharedInstance().setCategory(.playback, options: [])
+            } else {
+                self.youtubeMute = true
+                self.videoView.player?.isMuted = true
+                
+                try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            }
+        }
+    }
+    
     func connectActions() {
         menuButton.addTarget(self, action: #selector(showContextMenu(_:)), for: .touchUpInside)
         downloadButton.addTarget(self, action: #selector(downloadVideoToLibrary(_:)), for: .touchUpInside)
+        muteButton.addTarget(self, action: #selector(unmute), for: .touchUpInside)
+        upvoteButton.addTarget(self, action: #selector(upvote(_:)), for: .touchUpInside)
         goToCommentsButton.addTarget(self, action: #selector(openComments(_:)), for: .touchUpInside)
         showTitleButton.addTarget(self, action: #selector(showTitle(_:)), for: .touchUpInside)
         ytButton.addTarget(self, action: #selector(openInYoutube(_:)), for: .touchUpInside)
@@ -293,8 +394,8 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         fastForwardImageView.trailingAnchor == view.safeTrailingAnchor - 30
     }
     
-    func handleTap(_ sender: UITapGestureRecognizer) {
-        if sender.state == UIGestureRecognizerState.ended {
+    @objc func handleTap(_ sender: UITapGestureRecognizer) {
+        if sender.state == UIGestureRecognizer.State.ended {
             if scrubber.alpha == 0 {
                 self.handleShowUI()
                 self.startTimerToHide()
@@ -304,8 +405,8 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         }
     }
     
-    func handleDoubleTap(_ sender: UITapGestureRecognizer) {
-        if sender.state == UIGestureRecognizerState.ended {
+    @objc func handleDoubleTap(_ sender: UITapGestureRecognizer) {
+        if sender.state == UIGestureRecognizer.State.ended {
             
             let maxTime = scrubber.slider.maximumValue
             let x = sender.location(in: self.view).x
@@ -318,7 +419,7 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
             }
         }
     }
-
+    
     func startTimerToHide(_ duration: Double = 5) {
         cancelled = false
         timer?.invalidate()
@@ -329,7 +430,7 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
                                      repeats: false)
     }
     
-    func handleHideUI() {
+    @objc func handleHideUI() {
         if !self.scrubber.isHidden {
             if let parent = parent as? ModalMediaViewController {
                 parent.fullscreen(self)
@@ -356,8 +457,8 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         }
     }
 
-    // TODO: Also fade background to black?
-    func toggleForcedLandscapeFullscreen(_ sender: UILongPressGestureRecognizer) {
+    // TODO: - Also fade background to black?
+    @objc func toggleForcedLandscapeFullscreen(_ sender: UILongPressGestureRecognizer) {
         guard sender.state == .began else {
             return
         }
@@ -396,23 +497,6 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
     
     func loadContent() {
 
-        // Prevent video from stopping system background audio
-        do {
-            if SettingValues.matchSilence {
-                try AVAudioSession.sharedInstance().setCategory(AVAudioSessionCategoryAmbient)
-            } else {
-                try AVAudioSession.sharedInstance().setCategory(AVAudioSessionCategoryPlayback)
-            }
-        } catch let error as NSError {
-            print(error)
-        }
-
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch let error as NSError {
-            print(error)
-        }
-
         // Load Youtube View
         if isYoutubeView {
             showSpinner()
@@ -433,17 +517,17 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
             showSpinner()
         }
 
-        videoType.getSourceObject().load(url: url, completion: { [weak self] (urlString) in
+        _ = videoType.getSourceObject().load(url: url, completion: { [weak self] (urlString) in
             self?.getVideo(urlString)
-            }, failure: {
-                self.parent?.dismiss(animated: true, completion: {
-                    self.failureCallback?(URL.init(string: url)!)
-                })
+        }, failure: {
+            self.parent?.dismiss(animated: true, completion: {
+                self.failureCallback?(URL.init(string: url)!)
+            })
         })
     }
     
     func showSpinner() {
-        spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+        spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
         spinnerIndicator.center = self.view.center
         spinnerIndicator.color = UIColor.white
         self.view.addSubview(spinnerIndicator)
@@ -456,6 +540,8 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         self.spinnerIndicator.stopAnimating()
         self.spinnerIndicator.isHidden = true
     }
+    
+    var lastTracks = false
     
     func getVideo(_ toLoad: String) {
         self.hideSpinner()
@@ -536,21 +622,42 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
     }
 
     func playVideo(_ url: String = "") {
+        //Prevent video from stopping system background audio
+        DispatchQueue.global(qos: .background).async {
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch let error as NSError {
+                print(error)
+            }
+        }
+        
         self.setProgressViewVisible(false)
         self.size.isHidden = true
-//        self.downloadButton.isHidden = true //todo maybe download videos in the future?
-        let playerItem = AVPlayerItem(url: SettingValues.shouldAutoPlay() ? URL(string: url)! : URL(fileURLWithPath: getKeyFromURL()))
-        videoView.player = AVPlayer(playerItem: playerItem)
-        videoView.player?.actionAtItemEnd = AVPlayerActionAtItemEnd.none
-        videoView.player?.play()
-        
-        scrubber.totalDuration = videoView.player!.currentItem!.asset.duration
+//        self.downloadButton.isHidden = true// TODO: - maybe download videos in the future?
+        if let videoUrl = SettingValues.shouldAutoPlay() ? URL(string: url) : URL(fileURLWithPath: getKeyFromURL()) {
+            let playerItem = AVPlayerItem(url: videoUrl)
+            videoView.player = AVPlayer(playerItem: playerItem)
+            videoView.player?.actionAtItemEnd = AVPlayer.ActionAtItemEnd.none
+            self.videoView.player?.isMuted = SettingValues.muteVideosInModal
+            
+            scrubber.totalDuration = videoView.player!.currentItem!.asset.duration
+            self.loaded = true
+            displayLink = CADisplayLink(target: self, selector: #selector(displayLinkDidUpdate))
+            displayLink?.add(to: .current, forMode: RunLoop.Mode.default)
+            displayLink?.isPaused = false
+            videoView.player?.play()
+        } else {
+            self.parent?.dismiss(animated: true, completion: {
+                self.failureCallback?(URL.init(string: url)!)
+            })
+        }
     }
     
     var handlingPlayerItemDidreachEnd = false
     
     func playerItemDidreachEnd() {
-        self.videoView.player!.seek(to: CMTimeMake(1, 1000), toleranceBefore: kCMTimeZero, toleranceAfter: kCMTimeZero, completionHandler: { [weak self] (_) in
+        self.videoView.player!.seek(to: CMTimeMake(value: 1, timescale: 1000), toleranceBefore: CMTime.zero, toleranceAfter: CMTime.zero, completionHandler: { [weak self] (_) in
             guard let strongSelf = self else { return }
             // NOTE: the following is not needed since `strongSelf.videoView.player?.actionAtItemEnd` is set to `AVPlayerActionAtItemEnd.none`
 //            if finished {
@@ -615,7 +722,7 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
         case OTHER
 
         static func fromPath(_ url: String) -> VideoType {
-            if url.contains(".mp4") || url.contains("webm") || url.contains("redditmedia.com") {
+            if url.contains(".mp4") || url.contains("webm") || url.contains("redditmedia.com") || (url.contains("preview.redd.it") && url.contains("format=mp4")) {
                 return VideoType.DIRECT
             }
             if url.contains("gfycat") && !url.contains("mp4") {
@@ -649,8 +756,7 @@ class VideoMediaViewController: EmbeddableMediaViewController, UIGestureRecogniz
             case .VID_ME:
                 return VidMeVideoSource()
             case .OTHER:
-                //we should never get here
-                fatalError("Video type unrecognized and unimplemented!")
+                return DirectVideoSource()
             }
         }
     }
@@ -665,14 +771,18 @@ extension VideoMediaViewController {
         var playlist = ""
         
         var url = urlS
+        if let unencoded = url.removingPercentEncoding {
+            url = unencoded
+        }
+        url = url.decodeHTML()
+
         if url.contains("#t=") {
             url = url.replacingOccurrences(of: "#t=", with: url.contains("?") ? "&t=" : "?t=")
         }
-        
-        url = url.replacingOccurrences(of: "&amp;", with: "&")
 
         let i = URL(string: url)
         if let dictionary = i?.queryDictionary {
+            print(dictionary)
             if let t = dictionary["t"] {
                 seconds = getTimeFromString(t)
             } else if let start = dictionary["start"] {
@@ -692,8 +802,10 @@ extension VideoMediaViewController {
             }
 
             if let u = dictionary["u"] {
-                let param = u
-                video = param.substring(param.indexOf("=")! + 1, length: param.contains("&") ? param.indexOf("&")! : param.length)
+                let startIndex = u.indexOf("=")! + 1
+                let param = u.substring(startIndex, length: u.length - startIndex)
+                let paramStart = param.contains("&") ? param.indexOf("&")! : 0
+                video = param.substring(paramStart, length: param.length - paramStart)
             }
         }
         
@@ -763,9 +875,9 @@ extension VideoMediaViewController {
             youtubeView.seek(toSeconds: newTime, allowSeekAhead: true)
             youtubeView.playVideo()
         } else {
-            let tolerance: CMTime = CMTimeMakeWithSeconds(0.001, 1000) // 1 ms with a resolution of 1 ms
-            let newCMTime = CMTimeMakeWithSeconds(Float64(newTime), 1000)
-            self.videoView.player?.seek(to: newCMTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { _ in
+            let tolerance: CMTime = CMTimeMakeWithSeconds(0.001, preferredTimescale: 1000) // 1 ms with a resolution of 1 ms
+            let newCMTime = CMTimeMakeWithSeconds(Float64(newTime), preferredTimescale: 1000)
+            self.videoView.player?.seek(to: newCMTime, toleranceBefore: CMTime.zero, toleranceAfter: CMTime.zero) { _ in
                 self.videoView.player?.play()
             }
         }
@@ -793,7 +905,7 @@ extension VideoMediaViewController {
                 return
             }
             guard let data = data,
-                let jsonObj = try? JSONSerialization.jsonObject(with: data, options: .allowFragments) as? NSDictionary,
+                let jsonObj = ((try? JSONSerialization.jsonObject(with: data, options: .allowFragments) as? NSDictionary) as NSDictionary??),
                 let dict = jsonObj else {
                 failureBlock()
                 return
@@ -821,28 +933,73 @@ extension VideoMediaViewController {
         if key.length > 200 {
             key = key.substring(0, length: 200)
         }
-        
-        return (SDImageCache.shared().makeDiskCachePath(key) ?? "") + ".mp4"
+        let paths = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true)
+        return paths[0].appending(key + ".mp4")
     }
 }
 
 extension VideoMediaViewController {
-    
-    func displayLinkDidUpdate(displaylink: CADisplayLink) {
-        if !sliderBeingUsed {
-            if isYoutubeView {
-                if !sliderBeingUsed {
-                    self.scrubber.updateWithTime(elapsedTime: CMTime(seconds: Double(youtubeView.currentTime()), preferredTimescale: 1000))
+    @objc func displayLinkDidUpdate(displaylink: CADisplayLink) {
+        if isYoutubeView {
+            if youtubeMute && muteButton.isHidden && SettingValues.muteYouTube {
+                muteButton.isHidden = false
+            }
+            if !sliderBeingUsed {
+                youtubeView.getCurrentTime { [weak self] (currentTime: Float, error: Error?) in
+                    if error == nil {
+                        self?.scrubber.updateWithTime(elapsedTime: CMTime(seconds: Double(currentTime), preferredTimescale: 1000))
+                    }
+                }
+            }
+        }
+
+        let hasAudioTracks = isYoutubeView || (videoView.player?.currentItem?.tracks.count ?? 1) > 1
+        
+        if hasAudioTracks {
+            if (videoView.player?.isMuted ?? youtubeMute) && muteButton.isHidden && (isYoutubeView ? SettingValues.muteYouTube : SettingValues.muteVideosInModal) {
+                muteButton.isHidden = false
+            }
+        }
+
+        if !setOnce || lastTracks != hasAudioTracks {
+            setOnce = true
+            lastTracks = hasAudioTracks
+            
+            if hasAudioTracks {
+                if isYoutubeView ? !SettingValues.muteYouTube : !SettingValues.muteVideosInModal {
+                    youtubeMute = false
+                    if SettingValues.modalVideosRespectHardwareMuteSwitch {
+                        try? AVAudioSession.sharedInstance().setCategory(.soloAmbient, options: [])
+                    } else {
+                        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [])
+                    }
+                } else {
+                    youtubeMute = true
+                    try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
                 }
             } else {
-                if let player = videoView.player {
-                    scrubber.updateWithTime(elapsedTime: player.currentTime())
-                    let duration = Float(CMTimeGetSeconds(player.currentItem!.duration))
-                    let time = Float(CMTimeGetSeconds(player.currentTime()))
-                    if !handlingPlayerItemDidreachEnd && (time / duration) >= 0.99 {
-                        handlingPlayerItemDidreachEnd = true
-                        self.playerItemDidreachEnd()
-                    }
+                // If there's no audio track, set the category to ambient to prevent the player
+                // from silencing background audio
+                do {
+                    try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+                } catch {
+                    NSLog(error.localizedDescription)
+                }
+            }
+        }
+        
+        guard let player = videoView.player else {
+            return
+        }
+
+        if !sliderBeingUsed {
+            scrubber.updateWithTime(elapsedTime: player.currentTime())
+            if let pDuration = player.currentItem?.duration {
+                let duration = Float(CMTimeGetSeconds(pDuration))
+                let time = Float(CMTimeGetSeconds(player.currentTime()))
+                if !handlingPlayerItemDidreachEnd && (time / duration) >= 0.99 {
+                    handlingPlayerItemDidreachEnd = true
+                    self.playerItemDidreachEnd()
                 }
             }
         }
@@ -850,22 +1007,50 @@ extension VideoMediaViewController {
 
 }
 
-extension VideoMediaViewController: YTPlayerViewDelegate {
+extension VideoMediaViewController: WKYTPlayerViewDelegate {
     
-    func playerViewDidBecomeReady(_ playerView: YTPlayerView) {
-        youtubeView.playVideo()
-        scrubber.totalDuration = CMTime(seconds: playerView.duration(), preferredTimescale: 1000)
+    func playerViewDidBecomeReady(_ playerView: WKYTPlayerView) {
+        playerView.getDuration { [weak self] (duration: TimeInterval, error: Error?) in
+            if error == nil {
+                self?.scrubber.totalDuration = CMTime(seconds: duration, preferredTimescale: 1000)
+            }
+        }
+        DispatchQueue.global(qos: .background).async {
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch let error as NSError {
+                print(error)
+            }
+        }
         
+        self.setProgressViewVisible(false)
+        //        self.downloadButton.isHidden = true// TODO: - maybe download videos in the future?
+        if isYoutubeView && SettingValues.muteYouTube {
+            // TODO: - An error is thrown when this is evaluated. Resolve why to allow error handling
+            playerView.webView?.evaluateJavaScript("player.mute()", completionHandler: { [weak self] (_, _) in
+                if let strongSelf = self {
+                    strongSelf.youtubeMute = true
+                }
+            })
+        }
+        
+        self.loaded = true
+        displayLink = CADisplayLink(target: self, selector: #selector(displayLinkDidUpdate))
+        displayLink?.add(to: .current, forMode: RunLoop.Mode.default)
+        displayLink?.isPaused = false
+        
+        youtubeView.playVideo()
         hideSpinner()
     }
     
-    func playerView(_ playerView: YTPlayerView, didPlayTime playTime: Float) {
+    func playerView(_ playerView: WKYTPlayerView, didPlayTime playTime: Float) {
 //        if !sliderBeingUsed {
 //            self.scrubber.updateWithTime(elapsedTime: CMTime(seconds: Double(playTime), preferredTimescale: 1000))
 //        }
     }
 
-    func playerView(_ playerView: YTPlayerView, didChangeTo state: YTPlayerState) {
+    func playerView(_ playerView: WKYTPlayerView, didChangeTo state: WKYTPlayerState) {
         switch state {
         case .buffering:
             break
@@ -874,39 +1059,44 @@ extension VideoMediaViewController: YTPlayerViewDelegate {
 //            self.scrubber.updateWithTime(elapsedTime: scrubber.totalDuration)
             scrubber.setPlayButton()
         case .paused:
-            break
+            scrubber.setPlayButton()
         case .playing:
-            break
+            self.startTimerToHide(1)
+            scrubber.setPauseButton()
         case .queued:
             break
         case .unstarted:
             break
         case .unknown:
             break
+        @unknown default:
+            break
         }
     }
 
-    func playerView(_ playerView: YTPlayerView, didChangeTo quality: YTPlaybackQuality) {
+    func playerView(_ playerView: WKYTPlayerView, didChangeTo quality: WKYTPlaybackQuality) {
 
     }
 
-    func playerView(_ playerView: YTPlayerView, receivedError error: YTPlayerError) {
+    func playerView(_ playerView: WKYTPlayerView, receivedError error: WKYTPlayerError) {
         switch error {
         case .html5Error:
             break
         case .invalidParam:
             break
         case .notEmbeddable:
-            // TODO: Redirect user to YouTube app or web view
+            // TODO: - Redirect user to YouTube app or web view
             print("Video is not embeddable!")
         case .videoNotFound:
             break
         case .unknown:
             break
+        @unknown default:
+            break
         }
     }
 
-    func playerViewPreferredWebViewBackgroundColor(_ playerView: YTPlayerView) -> UIColor {
+    func playerViewPreferredWebViewBackgroundColor(_ playerView: WKYTPlayerView) -> UIColor {
         return .clear
     }
 
@@ -949,85 +1139,98 @@ extension VideoMediaViewController {
         return timeAdd
 
     }
-    func showTitle(_ sender: AnyObject) {
-        let alertController = UIAlertController(title: "Caption", message: nil, preferredStyle: .alert)
-        alertController.addTextViewer(text: .text(data.text!))
-        alertController.addAction(UIAlertAction(title: "Close", style: .cancel, handler: nil))
-        present(alertController, animated: true, completion: nil)
+    @objc func showTitle(_ sender: AnyObject) {
+        let alert = AlertController.init(title: "Caption", message: nil, preferredStyle: .alert)
+        
+        alert.setupTheme()
+        alert.attributedTitle = NSAttributedString(string: "Caption", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+        
+        alert.attributedMessage = TextDisplayStackView.createAttributedChunk(baseHTML: data.text!.trimmed(), fontSize: 14, submission: false, accentColor: ColorUtil.baseAccent, fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
+        
+        alert.addCloseButton()
+        alert.addBlurView()
+        present(alert, animated: true, completion: nil)
     }
     
-    func showContextMenu(_ sender: UIButton) {
+    @objc func showContextMenu(_ sender: UIButton) {
         guard let baseURL = self.data.baseURL else {
             return
         }
-        let alert = UIAlertController(title: baseURL.absoluteString, message: "", preferredStyle: .actionSheet)
-        let open = OpenInChromeController()
+        let alertController = DragDownAlertMenu(title: "Video options", subtitle: baseURL.absoluteString, icon: nil)
+        
+        let open = OpenInChromeController.init()
         if open.isChromeInstalled() {
-            alert.addAction(
-                UIAlertAction(title: "Open in Chrome", style: .default) { (_) in
-                    open.openInChrome(baseURL, callbackURL: nil, createNewTab: true)
-                }
-            )
-        }
-        alert.addAction(
-            UIAlertAction(title: "Open in Safari", style: .default) { (_) in
-                if #available(iOS 10.0, *) {
-                    UIApplication.shared.open(baseURL, options: [:], completionHandler: nil)
-                } else {
-                    UIApplication.shared.openURL(baseURL)
-                }
+            alertController.addAction(title: "Open in Chrome", icon: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) {
+                open.openInChrome(baseURL, callbackURL: nil, createNewTab: true)
             }
-        )
-        alert.addAction(
-            UIAlertAction(title: "Share URL", style: .default) { (_) in
-                let shareItems: Array = [baseURL]
-                let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
-                if let presenter = activityViewController.popoverPresentationController {
-                    presenter.sourceView = sender
-                    presenter.sourceRect = sender.bounds
-                }
-                let window = UIApplication.shared.keyWindow!
-                if let modalVC = window.rootViewController?.presentedViewController {
-                    modalVC.present(activityViewController, animated: true, completion: nil)
-                } else {
-                    window.rootViewController!.present(activityViewController, animated: true, completion: nil)
-                }
-            }
-        )
-        /* alert.addAction(
-            UIAlertAction(title: "Share Video", style: .default) { (_) in
-                //TODO THIS
-            }
-        )*/
-        alert.addAction(
-            UIAlertAction(title: "Cancel", style: .cancel) { (_) in
-            }
-        )
-        let window = UIApplication.shared.keyWindow!
-        alert.modalPresentationStyle = .popover
-        
-        if let presenter = alert.popoverPresentationController {
-            presenter.sourceView = sender
-            presenter.sourceRect = sender.bounds
         }
         
-        if let modalVC = window.rootViewController?.presentedViewController {
-            modalVC.present(alert, animated: true, completion: nil)
+        alertController.addAction(title: "Open in default app", icon: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")!.menuIcon()) {
+            if #available(iOS 10.0, *) {
+                UIApplication.shared.open(baseURL, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
+            } else {
+                UIApplication.shared.openURL(baseURL)
+            }
+        }
+        
+        alertController.addAction(title: "Share video URL", icon: UIImage(sfString: SFSymbol.arrowshapeTurnUpLeftFill, overrideString: "reply")!.menuIcon()) {
+            let shareItems: Array = [baseURL]
+            let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+            if let presenter = activityViewController.popoverPresentationController {
+                presenter.sourceView = sender
+                presenter.sourceRect = sender.bounds
+            }
+            let window = UIApplication.shared.keyWindow!
+            if let modalVC = window.rootViewController?.presentedViewController {
+                modalVC.present(activityViewController, animated: true, completion: nil)
+            } else {
+                window.rootViewController!.present(activityViewController, animated: true, completion: nil)
+            }
+        }
+        
+        if !isYoutubeView {
+            alertController.addAction(title: "Share Video", icon: UIImage(sfString: SFSymbol.playFill, overrideString: "play")!.menuIcon()) {
+                self.shareVideo(baseURL, sender: sender)
+            }
+        }
+        
+        if let topController = UIApplication.topViewController(base: self) {
+            alertController.show(topController)
         } else {
-            window.rootViewController!.present(alert, animated: true, completion: nil)
+            alertController.show(self)
         }
     }
-    
-    func downloadVideoToLibrary(_ sender: AnyObject) {
+
+    func shareVideo(_ baseURL: URL, sender: UIView) {
+        VideoMediaDownloader.init(urlToLoad: baseURL).getVideoWithCompletion(completion: { (fileURL) in
+            DispatchQueue.main.async {
+                if fileURL != nil {
+                    let shareItems: [Any] = [fileURL!]
+                    let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+                    if let presenter = activityViewController.popoverPresentationController {
+                        presenter.sourceView = sender
+                        presenter.sourceRect = sender.bounds
+                    }
+                    let window = UIApplication.shared.keyWindow!
+                    if let modalVC = window.rootViewController?.presentedViewController {
+                        modalVC.present(activityViewController, animated: true, completion: nil)
+                    } else {
+                        window.rootViewController!.present(activityViewController, animated: true, completion: nil)
+                    }
+                }
+            }
+        }, parent: self)
+    }
+
+    @objc func downloadVideoToLibrary(_ sender: AnyObject) {
         CustomAlbum.shared.saveMovieToLibrary(movieURL: URL(fileURLWithPath: getKeyFromURL()), parent: self)
     }
     
-    func openInYoutube(_ sender: AnyObject) {
+    @objc func openInYoutube(_ sender: AnyObject) {
         if let url = youtubeURL {
             UIApplication.shared.openURL(url)
         }
     }
-    
 }
 
 extension VideoMediaViewController: VideoScrubberViewDelegate {
@@ -1040,15 +1243,21 @@ extension VideoMediaViewController: VideoScrubberViewDelegate {
         if isYoutubeView {
             self.youtubeView.seek(toSeconds: toSeconds, allowSeekAhead: true) // Disable seekahead until the user lets go
         } else {
-            let tolerance: CMTime = CMTimeMakeWithSeconds(0.001, 1000) // 1 ms with a resolution of 1 ms
-            self.videoView.player?.seek(to: targetTime, toleranceBefore: tolerance, toleranceAfter: tolerance)
+            let tolerance: CMTime = CMTimeMakeWithSeconds(0.001, preferredTimescale: 1000) // 1 ms with a resolution of 1 ms
+            self.videoView.player?.seek(to: targetTime, toleranceBefore: CMTime.zero, toleranceAfter: CMTime.zero)
         }
     }
 
     func sliderDidBeginDragging() {
         if isYoutubeView {
-            wasPlayingWhenPaused = youtubeView.playerState() == .playing
-            youtubeView.pauseVideo()
+            youtubeView.getPlayerState { [weak self] (state: WKYTPlayerState, error: Error?) in
+                if error == nil {
+                    if let strongSelf = self {
+                        strongSelf.wasPlayingWhenPaused = state == .playing
+                        strongSelf.youtubeView.pauseVideo()
+                    }
+                }
+            }
         } else {
             if let player = videoView.player {
                 wasPlayingWhenPaused = player.rate != 0
@@ -1071,30 +1280,27 @@ extension VideoMediaViewController: VideoScrubberViewDelegate {
         sliderBeingUsed = false
     }
     
-    func toggleReturnPlaying() -> Bool {
+    func togglePlaying() {
         self.handleShowUI()
         if let player = videoView.player {
             if player.rate != 0 {
                 player.pause()
-                return false
             } else {
                 player.play()
-                self.startTimerToHide()
-                return true
             }
         }
 
         if isYoutubeView {
-            if youtubeView.playerState() == .playing {
-                youtubeView.pauseVideo()
-                return false
-            } else {
-                youtubeView.playVideo()
-                self.startTimerToHide()
-                return true
+            youtubeView.getPlayerState { [weak self] (state: WKYTPlayerState, error: Error?) in
+                if error == nil {
+                    if state == .playing {
+                        self?.youtubeView.pauseVideo()
+                    } else {
+                        self?.youtubeView.playVideo()
+                    }
+                }
             }
         }
-        return false
     }
     
     //From https://stackoverflow.com/a/39100999/3697225
@@ -1108,18 +1314,18 @@ extension VideoMediaViewController: VideoScrubberViewDelegate {
         let aVideoAsset: AVAsset = AVAsset(url: videoUrl)
         let aAudioAsset: AVAsset = AVAsset(url: audioUrl)
         
-        mutableCompositionVideoTrack.append(mixComposition.addMutableTrack(withMediaType: AVMediaTypeVideo, preferredTrackID: kCMPersistentTrackID_Invalid))
-        mutableCompositionAudioTrack.append(mixComposition.addMutableTrack(withMediaType: AVMediaTypeAudio, preferredTrackID: kCMPersistentTrackID_Invalid))
+        mutableCompositionVideoTrack.append(mixComposition.addMutableTrack(withMediaType: AVMediaType.video, preferredTrackID: kCMPersistentTrackID_Invalid)!)
+        mutableCompositionAudioTrack.append(mixComposition.addMutableTrack(withMediaType: AVMediaType.audio, preferredTrackID: kCMPersistentTrackID_Invalid)!)
         
-        let aVideoAssetTrack: AVAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaTypeVideo)[0]
-        let aAudioAssetTrack: AVAssetTrack = aAudioAsset.tracks(withMediaType: AVMediaTypeAudio)[0]
+        let aVideoAssetTrack: AVAssetTrack = aVideoAsset.tracks(withMediaType: AVMediaType.video)[0]
+        let aAudioAssetTrack: AVAssetTrack = aAudioAsset.tracks(withMediaType: AVMediaType.audio)[0]
         
         do {
-            try mutableCompositionVideoTrack[0].insertTimeRange(CMTimeRangeMake(kCMTimeZero, aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: kCMTimeZero)
+            try mutableCompositionVideoTrack[0].insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aVideoAssetTrack, at: CMTime.zero)
             
             //In my case my audio file is longer then video file so i took videoAsset duration
             //instead of audioAsset duration
-            try mutableCompositionAudioTrack[0].insertTimeRange(CMTimeRangeMake(kCMTimeZero, aVideoAssetTrack.timeRange.duration), of: aAudioAssetTrack, at: kCMTimeZero)
+            try mutableCompositionAudioTrack[0].insertTimeRange(CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration), of: aAudioAssetTrack, at: CMTime.zero)
             
             //Use this instead above line if your audiofile and video file's playing durations are same
             //            try mutableCompositionAudioTrack[0].insertTimeRange(CMTimeRangeMake(kCMTimeZero, aVideoAssetTrack.timeRange.duration), ofTrack: aAudioAssetTrack, atTime: kCMTimeZero)
@@ -1127,10 +1333,10 @@ extension VideoMediaViewController: VideoScrubberViewDelegate {
             print(error.localizedDescription)
         }
         
-        totalVideoCompositionInstruction.timeRange = CMTimeRangeMake(kCMTimeZero, aVideoAssetTrack.timeRange.duration)
+        totalVideoCompositionInstruction.timeRange = CMTimeRangeMake(start: CMTime.zero, duration: aVideoAssetTrack.timeRange.duration)
         
         let mutableVideoComposition: AVMutableVideoComposition = AVMutableVideoComposition()
-        mutableVideoComposition.frameDuration = CMTimeMake(1, 30)
+        mutableVideoComposition.frameDuration = CMTimeMake(value: 1, timescale: 30)
         
         mutableVideoComposition.renderSize = aVideoAssetTrack.naturalSize
         
@@ -1147,21 +1353,31 @@ extension VideoMediaViewController: VideoScrubberViewDelegate {
         
         //find your video on this URl
         let assetExport: AVAssetExportSession = AVAssetExportSession(asset: mixComposition, presetName: AVAssetExportPresetHighestQuality)!
-        assetExport.outputFileType = AVFileTypeMPEG4
+        assetExport.outputFileType = AVFileType.mp4
         assetExport.outputURL = savePathUrl
         assetExport.exportAsynchronously { () -> Void in
             switch assetExport.status {
                 
-            case AVAssetExportSessionStatus.completed:
+            case AVAssetExportSession.Status.completed:
                 completion()
                 print("success")
-            case AVAssetExportSessionStatus.failed:
+            case AVAssetExportSession.Status.failed:
                 print("failed \(assetExport.error?.localizedDescription ?? "")")
-            case AVAssetExportSessionStatus.cancelled:
+            case AVAssetExportSession.Status.cancelled:
                 print("cancelled \(assetExport.error?.localizedDescription ?? "")")
             default:
                 print("complete")
             }
         }
     }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromAVAudioSessionCategory(_ input: AVAudioSession.Category) -> String {
+	return input.rawValue
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToUIApplicationOpenExternalURLOptionsKeyDictionary(_ input: [String: Any]) -> [UIApplication.OpenExternalURLOptionsKey: Any] {
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (UIApplication.OpenExternalURLOptionsKey(rawValue: key), value) })
 }

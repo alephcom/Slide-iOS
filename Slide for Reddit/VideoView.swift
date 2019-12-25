@@ -16,6 +16,9 @@ final class VideoView: UIView {
         }
         set {
             playerLayer.player = newValue
+            if self.tag == 42 {
+                playerLayer.videoGravity = .resizeAspectFill
+            }
         }
     }
 

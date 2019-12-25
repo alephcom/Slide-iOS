@@ -35,15 +35,15 @@ class ActionStates {
         }
         let fullname = s.getId()
         
-        if let index = upVotedFullnames.index(of: fullname) {
+        if let index = upVotedFullnames.firstIndex(of: fullname) {
             upVotedFullnames.remove(at: index)
         }
         
-        if let index = downVotedFullnames.index(of: fullname) {
+        if let index = downVotedFullnames.firstIndex(of: fullname) {
             downVotedFullnames.remove(at: index)
         }
         
-        if let index = unvotedFullnames.index(of: fullname) {
+        if let index = unvotedFullnames.firstIndex(of: fullname) {
             unvotedFullnames.remove(at: index)
         }
         
@@ -69,7 +69,7 @@ class ActionStates {
     
     static func setRead(s: RMessage, read: Bool) {
         let fullname = s.getId()
-        if let index = savedFullnames.index(of: fullname) {
+        if let index = savedFullnames.firstIndex(of: fullname) {
             savedFullnames.remove(at: index)
         }
         
@@ -95,7 +95,7 @@ class ActionStates {
             HapticUtility.hapticActionStrong()
         }
         let fullname = s.getId()
-        if let index = savedFullnames.index(of: fullname) {
+        if let index = savedFullnames.firstIndex(of: fullname) {
             savedFullnames.remove(at: index)
         }
         
@@ -125,15 +125,15 @@ class ActionStates {
         }
         let fullname = s.getId()
         
-        if let index = upVotedFullnames.index(of: fullname) {
+        if let index = upVotedFullnames.firstIndex(of: fullname) {
             upVotedFullnames.remove(at: index)
         }
         
-        if let index = downVotedFullnames.index(of: fullname) {
+        if let index = downVotedFullnames.firstIndex(of: fullname) {
             downVotedFullnames.remove(at: index)
         }
         
-        if let index = unvotedFullnames.index(of: fullname) {
+        if let index = unvotedFullnames.firstIndex(of: fullname) {
             unvotedFullnames.remove(at: index)
         }
         
@@ -152,6 +152,8 @@ class ActionStates {
             return true
         } else if unSavedFullnames.contains(s.getId()) {
             return false
+        } else if Collections.isSavedCollectionAny(link: s) {
+            return true
         } else {
             return s.saved
         }
@@ -162,7 +164,7 @@ class ActionStates {
             HapticUtility.hapticActionStrong()
         }
         let fullname = s.getId()
-        if let index = savedFullnames.index(of: fullname) {
+        if let index = savedFullnames.firstIndex(of: fullname) {
             savedFullnames.remove(at: index)
         }
         
@@ -192,15 +194,15 @@ class ActionStates {
         }
         let fullname = s.getId()
         
-        if let index = upVotedFullnames.index(of: fullname) {
+        if let index = upVotedFullnames.firstIndex(of: fullname) {
             upVotedFullnames.remove(at: index)
         }
         
-        if let index = downVotedFullnames.index(of: fullname) {
+        if let index = downVotedFullnames.firstIndex(of: fullname) {
             downVotedFullnames.remove(at: index)
         }
         
-        if let index = unvotedFullnames.index(of: fullname) {
+        if let index = unvotedFullnames.firstIndex(of: fullname) {
             unvotedFullnames.remove(at: index)
         }
         
@@ -229,7 +231,7 @@ class ActionStates {
             HapticUtility.hapticActionStrong()
         }
         let fullname = s.getId()
-        if let index = savedFullnames.index(of: fullname) {
+        if let index = savedFullnames.firstIndex(of: fullname) {
             savedFullnames.remove(at: index)
         }
         

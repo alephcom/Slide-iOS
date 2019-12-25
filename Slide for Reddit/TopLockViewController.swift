@@ -20,9 +20,9 @@ public class TopLockViewController: UIViewController {
         imageView.image = UIImage(named: "roundicon")
         unlockButton.backgroundColor = .clear
         unlockButton.setTitle("Tap to Unlock Slide", for: .normal)
-        unlockButton.setTitleColor(ColorUtil.fontColor, for: .normal)
+        unlockButton.setTitleColor(ColorUtil.theme.fontColor, for: .normal)
         unlockButton.addTarget(self, action: #selector(doBios), for: .touchUpInside)
-        self.view.backgroundColor = ColorUtil.backgroundColor
+        self.view.backgroundColor = ColorUtil.theme.backgroundColor
         self.view.addSubviews(imageView, unlockButton)
         
         imageView.widthAnchor == 150
@@ -51,23 +51,31 @@ public class TopLockViewController: UIViewController {
         doBios()
     }
     
-    func doBios() {
+    @objc func doBios() {
         if SettingValues.biometrics && BioMetricAuthenticator.canAuthenticate() {
-            BioMetricAuthenticator.authenticateWithBioMetrics(reason: "", success: {
-                self.dismiss(animated: true, completion: nil)
-            }, failure: { [weak self] (error) in
-                
-                // do nothing on canceled
-                if error == .canceledByUser || error == .canceledBySystem {
-                    self?.unlockButton.isHidden = false
+            BioMetricAuthenticator.authenticateWithBioMetrics(reason: "") {[weak self] (result) in
+                if let strongSelf = self {
+                    switch result {
+                    case .success:
+                        strongSelf.dismiss(animated: true, completion: nil)
+                    case .failure(let error):
+                        // do nothing on canceled
+                        if error == .canceledByUser || error == .canceledBySystem {
+                            strongSelf.unlockButton.isHidden = false
+                        }
+                        BioMetricAuthenticator.authenticateWithPasscode(reason: "Enter your password to unlock Slide", cancelTitle: "Exit", completion: { [weak self](result) in
+                            if let strongSelf = self {
+                                switch result {
+                                case .success:
+                                    strongSelf.dismiss(animated: true, completion: nil)
+                                case .failure:
+                                    strongSelf.unlockButton.isHidden = false
+                                }
+                            }
+                        })
+                    }
                 }
-                
-                BioMetricAuthenticator.authenticateWithPasscode(reason: "Enter your password", cancelTitle: "Exit", success: {
-                    self?.dismiss(animated: true, completion: nil)
-                }, failure: { (_) in
-                    self?.unlockButton.isHidden = false
-                })
-            })
+            }
         }
     }
 }

@@ -12,9 +12,8 @@ import reddift
 import SDWebImage
 import SwiftSpreadsheet
 import Then
-import TTTAttributedLabel
 import UIKit
-import XLActionController
+import YYText
 
 class TableDisplayView: UIScrollView {
 
@@ -25,13 +24,19 @@ class TableDisplayView: UIScrollView {
     var widths = [[CGFloat]]()
     var baseColor: UIColor
     var tColor: UIColor
-    var textDelegate: TTTAttributedLabelDelegate
-
-    init(baseHtml: String, color: UIColor, accentColor: UIColor, delegate: TTTAttributedLabelDelegate) {
+    var action: YYTextAction?
+    var longAction: YYTextAction?
+    var linksCallback: ((URL) -> Void)?
+    var indexCallback: (() -> Int)?
+    
+    init(baseHtml: String, color: UIColor, accentColor: UIColor, action: YYTextAction?, longAction: YYTextAction?, linksCallback: ((URL) -> Void)?, indexCallback: (() -> Int)?) {
+        self.linksCallback = linksCallback
+        self.indexCallback = indexCallback
         let newData = baseHtml.replacingOccurrences(of: "http://view.table/", with: "")
         self.baseColor = color
         self.tColor = accentColor
-        self.textDelegate = delegate
+        self.action = action
+        self.longAction = longAction
         super.init(frame: CGRect.zero)
 
         parseHtml(newData.removingPercentEncoding ?? newData)
@@ -87,23 +92,23 @@ class TableDisplayView: UIScrollView {
             } else if !columnStarted
                 && (current == tableColumnStart || current == tableHeaderStart) {
                 columnStarted = true
-                //todo maybe gravity = Gravity.START;
+               // TODO: - maybe gravity = Gravity.START;
             } else if !columnStarted && (current == tableColumnStartRight || current == tableHeaderStartRight) {
                 columnStarted = true
-                //todo maybe gravity = Gravity.END;
+               // TODO: - maybe gravity = Gravity.END;
             } else if !columnStarted && (current == tableColumnStartCenter || current == tableHeaderStartCenter) {
                 columnStarted = true
-                //todo maybe gravity = Gravity.CENTER;
+               // TODO: - maybe gravity = Gravity.CENTER;
             } else if !columnStarted && (current == tableColumnStartLeft || current == tableHeaderStartLeft) {
                 columnStarted = true
-                //todo maybe gravity = Gravity.START;
+               // TODO: - maybe gravity = Gravity.START;
             } else if current == tableColumnEnd || current == tableHeaderEnd {
                 if currentString.startsWith("<td") {
                     let index = currentString.indexOf(">")
                     currentString = currentString.substring(index! + 1, length: currentString.length - index! - 1)
                 }
                 columnStarted = false
-                currentRow.append(TextDisplayStackView.createAttributedChunk(baseHTML: currentString.trimmed(), fontSize: CGFloat((isHeader ? 3 : 0) + 16 ), submission: false, accentColor: tColor))
+                currentRow.append(TextDisplayStackView.createAttributedChunk(baseHTML: currentString.trimmed(), fontSize: CGFloat((isHeader ? 3 : 0) + 16 ), submission: false, accentColor: tColor, fontColor: baseColor, linksCallback: linksCallback, indexCallback: indexCallback))
                 currentString = ""
             } else {
                 currentString.append(current)
@@ -142,7 +147,6 @@ class TableDisplayView: UIScrollView {
     }
     
     func addSubviews() {
-        let activeLinkAttributes = [kCTForegroundColorAttributeName: tColor]
         var odd = false
         for row in baseData {
             let rowStack = UIStackView().then({
@@ -153,15 +157,14 @@ class TableDisplayView: UIScrollView {
             globalHeight += 30
             globalWidth = 0
             for string in row {
-                let text = TTTAttributedLabel.init(frame: CGRect.zero).then({
+                let text = YYLabel.init(frame: CGRect.zero).then({
                     $0.heightAnchor == CGFloat(30)
-                    $0.delegate = self.textDelegate
-                    $0.linkAttributes = activeLinkAttributes
-                    $0.activeLinkAttributes = activeLinkAttributes
                 })
-                text.setText(string)
+                text.highlightLongPressAction = longAction
+                text.highlightTapAction = action
+                text.attributedText = string
                 if odd {
-                    text.backgroundColor = ColorUtil.foregroundColor
+                    text.backgroundColor = ColorUtil.theme.foregroundColor
                 }
                 let width = getWidestCell(column: column)
                 globalWidth += width
@@ -250,16 +253,16 @@ class TableDisplayView: UIScrollView {
             } else if !columnStarted
                 && (current == tableColumnStart || current == tableHeaderStart) {
                 columnStarted = true
-                //todo maybe gravity = Gravity.START;
+               // TODO: - maybe gravity = Gravity.START;
             } else if !columnStarted && (current == tableColumnStartRight || current == tableHeaderStartRight) {
                 columnStarted = true
-                //todo maybe gravity = Gravity.END;
+               // TODO: - maybe gravity = Gravity.END;
             } else if !columnStarted && (current == tableColumnStartCenter || current == tableHeaderStartCenter) {
                 columnStarted = true
-                //todo maybe gravity = Gravity.CENTER;
+               // TODO: - maybe gravity = Gravity.CENTER;
             } else if !columnStarted && (current == tableColumnStartLeft || current == tableHeaderStartLeft) {
                 columnStarted = true
-                //todo maybe gravity = Gravity.START;
+               // TODO: - maybe gravity = Gravity.START;
             } else if current == tableColumnEnd || current == tableHeaderEnd {
                 if currentString.startsWith("<td") {
                     let index = currentString.indexOf(">")

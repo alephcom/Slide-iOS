@@ -87,9 +87,9 @@ class CustomAlbum: NSObject {
                 }, completionHandler: { (success, _) in
                     DispatchQueue.main.async {
                         if success {
-                            BannerUtil.makeBanner(text: "Image saved to gallery!", color: .black, seconds: 3, context: parent)
+                            BannerUtil.makeBanner(text: "Image saved to gallery!", color: ColorUtil.theme.fontColor, seconds: 3, context: parent)
                         } else {
-                            BannerUtil.makeBanner(text: "Error saving image!\nMake sure Slide has permission to access gallery", color: GMColor.red500Color(), seconds: 3, context: parent)
+                            BannerUtil.makeBanner(text: "Error saving image!\nDoes Slide have photo access?", color: GMColor.red500Color(), seconds: 3, context: parent)
                         }
                     }
                 })
@@ -99,28 +99,23 @@ class CustomAlbum: NSObject {
     }
 
     func saveMovieToLibrary(movieURL: URL, parent: UIViewController?) {
-
         self.checkAuthorizationWithHandler { (success) in
             if success, self.assetCollection != nil {
-
                 PHPhotoLibrary.shared().performChanges({
-
                     if let assetChangeRequest = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: movieURL) {
                         let assetPlaceHolder = assetChangeRequest.placeholderForCreatedAsset
                         if let albumChangeRequest = PHAssetCollectionChangeRequest(for: self.assetCollection) {
                             let enumeration: NSArray = [assetPlaceHolder!]
                             albumChangeRequest.addAssets(enumeration)
                         }
-
                     }
-
                 }, completionHandler: { (success, error) in
                     DispatchQueue.main.async {
                         if success {
                             BannerUtil.makeBanner(text: "Video saved to gallery!", color: .black, seconds: 3, context: parent)
                         } else {
                             print("Error writing to movie library: \(error!.localizedDescription)")
-                            BannerUtil.makeBanner(text: "Error saving video!\nMake sure Slide has permission to access gallery", color: GMColor.red500Color(), seconds: 3, context: parent)
+                            BannerUtil.makeBanner(text: "Error saving video!\nDoes Slide have photo access?", color: GMColor.red500Color(), seconds: 3, context: parent)
                         }
                     }
                 })

@@ -7,7 +7,9 @@
 //
 
 import Anchorage
+import AVKit
 import RLBAlertsPickers
+import SDCAlertView
 import SDWebImage
 import UIKit
 
@@ -18,6 +20,7 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
     var baseURL: URL?
     var bottomScroll = UIScrollView()
     var failureCallback: ((_ url: URL) -> Void)?
+    var albumHash: String = ""
     
     public init(urlB: URL) {
         super.init(transitionStyle: .scroll, navigationOrientation: .horizontal, options: nil)
@@ -44,12 +47,13 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
                 baseURL: URL.init(string: urlStringkey)!,
                 lqURL: URL.init(string: "https://imgur.com/\(hash)m.png"),
                 text: nil,
-                inAlbum: true
+                inAlbum: true,
+                buttons: true
             )
         }
-        let prefetcher = SDWebImagePrefetcher.shared()
+        let prefetcher = SDWebImagePrefetcher.shared
         prefetcher.prefetchURLs(thumbs)
-        
+
         let firstViewController = ModalMediaViewController(model: self.embeddableMediaDataCache[self.urlStringKeys[0]]!)
         
         self.setViewControllers([firstViewController],
@@ -57,7 +61,12 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
                                 animated: true,
                                 completion: nil)
         self.navItem?.title = "1/\(self.urlStringKeys.count)"
-        let gridB = UIBarButtonItem(image: UIImage(named: "grid")?.navIcon(true), style: .plain, target: self, action: #selector(overview(_:)))
+        let overview = UIButton.init(type: .custom)
+        overview.setImage(UIImage(sfString: SFSymbol.squareGrid2x2Fill, overrideString: "grid")?.navIcon(true), for: UIControl.State.normal)
+        overview.addTarget(self, action: #selector(self.overview(_:)), for: UIControl.Event.touchUpInside)
+        overview.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
+        let gridB = UIBarButtonItem.init(customView: overview)
+
         navItem?.rightBarButtonItem = gridB
     }
     
@@ -102,13 +111,14 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
         if(NSString(data: data, encoding: String.Encoding.utf8.rawValue)?.contains("[]"))! {
             //single album image
             DispatchQueue.main.async {
-                let urlStringkey = "https://imgur.com/\(self.hash).png"
+                let urlStringkey = "https://imgur.com/\(self.albumHash).png"
                 self.urlStringKeys.append(urlStringkey)
                 self.embeddableMediaDataCache[urlStringkey] = EmbeddableMediaDataModel(
                     baseURL: URL.init(string: urlStringkey)!,
-                    lqURL: URL.init(string: "https://imgur.com/\(self.hash)m.png"),
+                    lqURL: URL.init(string: "https://imgur.com/\(self.albumHash)m.png"),
                     text: nil,
-                    inAlbum: false
+                    inAlbum: false,
+                    buttons: true
                 )
                 let firstViewController = ModalMediaViewController(model: self.embeddableMediaDataCache[self.urlStringKeys[0]]!)
                 
@@ -134,7 +144,8 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
                             baseURL: URL.init(string: urlStringkey)!,
                             lqURL: URL.init(string: "https://imgur.com/\(image.hash!)\(image.ext! != ".gif" ? "m":"")\(image.ext!)"),
                             text: image.description,
-                            inAlbum: true
+                            inAlbum: true,
+                            buttons: true
                         )
                     }
                     let firstViewController = ModalMediaViewController(model: self.embeddableMediaDataCache[self.urlStringKeys[0]]!)
@@ -143,16 +154,20 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
                                             direction: .forward,
                                             animated: true,
                                             completion: nil)
-                    self.navItem?.title = "\(self.urlStringKeys.index(of: ((self.viewControllers!.first! as! ModalMediaViewController).embeddedVC.data.baseURL?.absoluteString)!)! + 1)/\(self.urlStringKeys.count)"
-                    let gridB = UIBarButtonItem(image: UIImage(named: "grid")?.navIcon(true).withRenderingMode(.alwaysOriginal), style: .plain, target: self, action: #selector(self.overview(_:)))
-                    
+                    self.navItem?.title = "\(self.urlStringKeys.firstIndex(of: ((self.viewControllers!.first! as! ModalMediaViewController).embeddedVC.data.baseURL?.absoluteString)!)! + 1)/\(self.urlStringKeys.count)"
+                    let overview = UIButton.init(type: .custom)
+                    overview.setImage(UIImage(sfString: SFSymbol.squareGrid2x2Fill, overrideString: "grid")?.navIcon(true), for: UIControl.State.normal)
+                    overview.addTarget(self, action: #selector(self.overview(_:)), for: UIControl.Event.touchUpInside)
+                    overview.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
+                    let gridB = UIBarButtonItem.init(customView: overview)
+
                     self.navItem?.rightBarButtonItem = gridB
                 }
-                let prefetcher = SDWebImagePrefetcher.shared()
+                let prefetcher = SDWebImagePrefetcher.shared
                 prefetcher.prefetchURLs(thumbs)
             } catch {
                 print(error)
-                //todo fallback
+               // TODO: - fallback
             }
         }
     }
@@ -162,6 +177,14 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
         if s.contains("/comment/") {
             s = s.substring(0, length: s.indexOf("/comment")!)
         }
+        print(s)
+        if s.endsWith("?") {
+            s = s.substring(0, length: s.length - 1)
+        }
+        if s.endsWith("/") {
+            s = s.substring(0, length: s.length - 1)
+        }
+        print(s)
         var next = s.substring(s.lastIndexOf("/")!, length: s.length - s.lastIndexOf("/")!)
         if next.contains(".") {
             next = next.substring(0, length: next.indexOf(".")!)
@@ -187,13 +210,17 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
         self.edgesForExtendedLayout = UIRectEdge.all
         self.extendedLayoutIncludesOpaqueBars = true
         self.view.backgroundColor = UIColor.clear
-        UIApplication.shared.statusBarStyle = .lightContent
+        setNeedsStatusBarAppearanceUpdate()
     }
-    
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        return .lightContent
+    }
+
     var navItem: UINavigationItem?
     var spinnerIndicator = UIActivityIndicatorView()
     
-    func exit() {
+    @objc func exit() {
         self.dismiss(animated: true, completion: nil)
     }
     
@@ -204,22 +231,22 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
         view.backgroundColor = UIColor.black.withAlphaComponent(0.7)
         self.navigationController?.view.backgroundColor = UIColor.clear
         
-        let navigationBar = UINavigationBar.init(frame: CGRect.init(x: 0, y: 5 + (UIApplication.shared.statusBarView?.frame.size.height ?? 20), width: self.view.frame.size.width, height: 56))
+        let navigationBar = UINavigationBar.init(frame: CGRect.init(x: 0, y: 5 + (UIApplication.shared.statusBarUIView?.frame.size.height ?? 20), width: self.view.frame.size.width, height: 56))
         navigationBar.setBackgroundImage(UIImage(), for: .default)
         navigationBar.shadowImage = UIImage()
         navigationBar.isTranslucent = true
         navigationBar.tintColor = .white
         navItem = UINavigationItem(title: "Loading album...")
-        navigationBar.titleTextAttributes = [NSForegroundColorAttributeName: UIColor.white]
+        navigationBar.titleTextAttributes = convertToOptionalNSAttributedStringKeyDictionary([NSAttributedString.Key.foregroundColor.rawValue: UIColor.white])
 
         let close = UIButton.init(type: .custom)
-        close.setImage(UIImage.init(named: "close")?.navIcon(true), for: UIControlState.normal)
-        close.addTarget(self, action: #selector(self.exit), for: UIControlEvents.touchUpInside)
+        close.setImage(UIImage(sfString: SFSymbol.xmark, overrideString: "close")?.navIcon(true), for: UIControl.State.normal)
+        close.addTarget(self, action: #selector(self.exit), for: UIControl.Event.touchUpInside)
         close.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
         let closeB = UIBarButtonItem.init(customView: close)
         navItem?.leftBarButtonItem = closeB
         
-        spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+        spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
         spinnerIndicator.center = self.view.center
         spinnerIndicator.color = UIColor.white
         self.view.addSubview(spinnerIndicator)
@@ -236,16 +263,21 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
         if url.contains("/layout/") {
             url = url.substring(0, length: (url.indexOf("/layout")!))
         }
+        if url.contains("/new") {
+            url = url.substring(0, length: (url.indexOf("/new")!))
+        }
         var rawDat = cutEnds(s: url)
-        
+
         if rawDat.endsWith("/") {
             rawDat = rawDat.substring(0, length: rawDat.length - 1)
         }
+        
         if rawDat.contains("/") && (rawDat.length - (rawDat.lastIndexOf("/")!+1)) < 4 {
             rawDat = rawDat.replacingOccurrences(of: rawDat.substring(rawDat.lastIndexOf("/")!, length: rawDat.length - (rawDat.lastIndexOf("/")!+1)), with: "")
         }
+
         if rawDat.contains("?") {
-            rawDat = rawDat.substring(0, length: rawDat.length - rawDat.indexOf("?")!)
+            rawDat = rawDat.substring(0, length: rawDat.indexOf("?")!)
         }
         
         if rawDat.contains(",") {
@@ -253,23 +285,33 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
             let split = rawDat.substring(index + 1, length: rawDat.length - index - 1)
             splitHashes(split)
         } else {
-            let hash = getHash(sS: rawDat)
-            getAlbum(hash: hash)
+            albumHash = getHash(sS: rawDat)
+            getAlbum(hash: albumHash)
         }
     }
     
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
-        SDImageCache.shared().clearMemory()
+        SDImageCache.shared.clearMemory()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        SDImageCache.shared().clearMemory()
+        SDImageCache.shared.clearMemory()
+        DispatchQueue.global(qos: .background).async {
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+                try AVAudioSession.sharedInstance().setActive(false, options: AVAudioSession.SetActiveOptions.notifyOthersOnDeactivation)
+            } catch {
+                NSLog(error.localizedDescription)
+            }
+        }
     }
     
-    func overview(_ sender: AnyObject) {
-        let alert = UIAlertController(style: .actionSheet)
+    @objc func overview(_ sender: UIBarButtonItem) {
+        let alert = AlertController(title: nil, message: nil, preferredStyle: .alert)
+
+        alert.setupTheme()
         alert.addAsyncImagePicker(
             flow: .vertical,
             paging: false,
@@ -284,17 +326,19 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
                 self.navItem?.title = "\((image ?? 0) + 1)/\(self.urlStringKeys.count)"
                 alert.dismiss(animated: true, completion: nil)
             }))
-        alert.addAction(title: "Close", style: .cancel)
+        
+        alert.addCloseButton()
         alert.showWindowless()
+        alert.addBlurView()
     }
     
     func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating: Bool, previousViewControllers: [UIViewController], transitionCompleted: Bool) {
-        navItem?.title = "\(urlStringKeys.index(of: ((viewControllers!.first! as! ModalMediaViewController).embeddedVC.data.baseURL?.absoluteString)!)! + 1)/\(urlStringKeys.count)"
+        navItem?.title = "\(urlStringKeys.firstIndex(of: ((viewControllers!.first! as! ModalMediaViewController).embeddedVC.data.baseURL?.absoluteString)!)! + 1)/\(urlStringKeys.count)"
     }
     
     func pageViewController(_ pageViewController: UIPageViewController,
                             viewControllerBefore viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = urlStringKeys.index(of: ((viewController as! ModalMediaViewController).embeddedVC.data.baseURL?.absoluteString)!) else {
+        guard let viewControllerIndex = urlStringKeys.firstIndex(of: ((viewController as! ModalMediaViewController).embeddedVC.data.baseURL?.absoluteString)!) else {
             return nil
         }
         
@@ -313,7 +357,7 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
     
     func pageViewController(_ pageViewController: UIPageViewController,
                             viewControllerAfter viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = urlStringKeys.index(of: ((viewController as! ModalMediaViewController).embeddedVC.data.baseURL?.absoluteString)!) else {
+        guard let viewControllerIndex = urlStringKeys.firstIndex(of: ((viewController as! ModalMediaViewController).embeddedVC.data.baseURL?.absoluteString)!) else {
             return nil
         }
         
@@ -340,8 +384,14 @@ class AlbumViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIP
         if key.length > 200 {
             key = key.substring(0, length: 200)
         }
-        
-        return (SDImageCache.shared().makeDiskCachePath(key) ?? "") + ".mp4"
+        let paths = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true)
+        return paths[0].appending(key + ".mp4")
     }
     
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
+	guard let input = input else { return nil }
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
 }

@@ -12,12 +12,62 @@ import MaterialComponents.MDCActivityIndicator
 import RealmSwift
 import reddift
 import RLBAlertsPickers
+import SDCAlertView
 import SloppySwiper
-import TTTAttributedLabel
 import UIKit
-import XLActionController
+import YYText
 
-class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate, LinkCellViewDelegate, UISearchBarDelegate, UINavigationControllerDelegate, TTTAttributedLabelDelegate, SubmissionMoreDelegate, ReplyDelegate {
+class CommentViewController: MediaViewController, UITableViewDelegate, UITableViewDataSource, TTTAttributedCellDelegate, LinkCellViewDelegate, UISearchBarDelegate, SubmissionMoreDelegate, ReplyDelegate, UIScrollViewDelegate {
+    
+    func hide(index: Int) {
+        if index >= 0 {
+            self.navigationController?.popViewController(animated: true)
+        }
+    }
+    
+    func subscribe(link: RSubmission) {
+        let sub = link.subreddit
+        let alrController = UIAlertController.init(title: "Follow r/\(sub)", message: nil, preferredStyle: .alert)
+        if AccountController.isLoggedIn {
+            let somethingAction = UIAlertAction(title: "Subscribe", style: UIAlertAction.Style.default, handler: { (_: UIAlertAction!) in
+                Subscriptions.subscribe(sub, true, session: self.session!)
+                self.subChanged = true
+                BannerUtil.makeBanner(text: "Subscribed to r/\(sub)", color: ColorUtil.accentColorForSub(sub: sub), seconds: 3, context: self, top: true)
+            })
+            alrController.addAction(somethingAction)
+        }
+        
+        let somethingAction = UIAlertAction(title: "Casually subscribe", style: UIAlertAction.Style.default, handler: { (_: UIAlertAction!) in
+            Subscriptions.subscribe(sub, false, session: self.session!)
+            self.subChanged = true
+            BannerUtil.makeBanner(text: "r/\(sub) added to your subreddit list", color: ColorUtil.accentColorForSub(sub: sub), seconds: 3, context: self, top: true)
+        })
+        alrController.addAction(somethingAction)
+        
+        alrController.addCancelButton()
+        
+        alrController.modalPresentationStyle = .fullScreen
+        self.present(alrController, animated: true, completion: {})
+    }
+
+    override var prefersStatusBarHidden: Bool {
+        return SettingValues.fullyHideNavbar
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        if isReply {
+            return []
+        } else {
+            return [
+                UIKeyCommand(input: " ", modifierFlags: [], action: #selector(spacePressed)),
+                UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(spacePressed)),
+                UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(spacePressedUp)),
+                UIKeyCommand(input: "l", modifierFlags: .command, action: #selector(upvote(_:)), discoverabilityTitle: "Like post"),
+                UIKeyCommand(input: "r", modifierFlags: .command, action: #selector(reply(_:)), discoverabilityTitle: "Reply to post"),
+                UIKeyCommand(input: "s", modifierFlags: .command, action: #selector(save(_:)), discoverabilityTitle: "Save post"),
+            ]
+        }
+    }
 
     var menuCell: CommentDepthCell?
     var menuId: String?
@@ -29,6 +79,12 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     var panGesture: UIPanGestureRecognizer!
     var translatingCell: CommentDepthCell?
     var didDisappearCompletely = false
+    var live = false
+    var liveTimer = Timer()
+    var refreshControl: UIRefreshControl!
+    var tableView: UITableView!
+
+    var jump: UIView!
 
     func isMenuShown() -> Bool {
         return menuCell != nil
@@ -37,9 +93,225 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     func getMenuShown() -> String? {
         return menuId
     }
+    
+    func createJumpButton() {
+        if SettingValues.commentJumpButton == .DISABLED {
+            return
+        }
+        if self.navigationController?.view != nil {
+            let view = self.navigationController!.view!
+            if jump == nil {
+                jump = UIView.init(frame: CGRect.init(x: 70, y: 70, width: 0, height: 0)).then {
+                    $0.clipsToBounds = true
+                    $0.backgroundColor = ColorUtil.theme.backgroundColor
+                    $0.layer.cornerRadius = 20
+                }
+                
+                let image = UIImageView.init(frame: CGRect.init(x: 50, y: 50, width: 0, height: 0)).then {
+                    $0.image = UIImage(sfString: SFSymbol.chevronDown, overrideString: "down")?.getCopy(withSize: CGSize.square(size: 30), withColor: ColorUtil.theme.navIconColor)
+                    $0.contentMode = .center
+                }
+                jump.addSubview(image)
+                image.edgeAnchors == jump.edgeAnchors
+                jump.addTapGestureRecognizer {
+                    self.goDown(self.jump)
+                }
+                jump.addLongTapGestureRecognizer {
+                    self.goUp(self.jump)
+                }
+            }
+            
+            view.addSubview(jump)
+            jump.bottomAnchor == view.bottomAnchor - 24
+            if SettingValues.commentJumpButton == .RIGHT {
+                jump.rightAnchor == view.rightAnchor - 24
+            } else {
+                jump.leftAnchor == view.leftAnchor + 24
+            }
+            jump.widthAnchor == 40
+            jump.heightAnchor == 40
+            jump.transform = CGAffineTransform(translationX: 0, y: 70)
+            
+            UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseInOut, animations: {
+                self.jump?.transform = .identity
+            }, completion: nil)
+
+        }
+    }
+    
+    func removeJumpButton() {
+        if SettingValues.commentJumpButton == .DISABLED {
+            return
+        }
+        if self.jump != nil {
+            UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseInOut, animations: {
+                self.jump?.transform = CGAffineTransform(translationX: 0, y: 70)
+            }, completion: { _ in
+                self.jump?.removeFromSuperview()
+            })
+        }
+    }
+    
+    override func prepareForPopoverPresentation(_ popoverPresentationController: UIPopoverPresentationController) {
+        self.setAlphaOfBackgroundViews(alpha: 0.25)
+       // self.setBackgroundView()
+    }
+    
+    func popoverPresentationControllerShouldDismissPopover(_ popoverPresentationController: UIPopoverPresentationController) -> Bool {
+        self.setAlphaOfBackgroundViews(alpha: 1)
+        return true
+    }
 
     func showFilterMenu(_ cell: LinkCellView) {
         //Not implemented
+    }
+    
+    func setLive() {
+        self.sort = .new
+        self.live = true
+        self.reset = true
+        self.activityIndicator.removeFromSuperview()
+        let barButton = UIBarButtonItem(customView: self.activityIndicator)
+        self.navigationItem.rightBarButtonItems = [barButton]
+        self.activityIndicator.startAnimating()
+        
+        self.refresh(self)
+    }
+    
+    var progressDot = UIView()
+    
+    func startPulse() {
+        self.progressDot = UIView()
+        progressDot.alpha = 0.7
+        progressDot.backgroundColor = .clear
+        
+        let startAngle = -CGFloat.pi / 2
+        
+        let center = CGPoint(x: 20 / 2, y: 20 / 2)
+        let radius = CGFloat(20 / 2)
+        let arc = CGFloat.pi * CGFloat(2) * 1
+        
+        let cPath = UIBezierPath()
+        cPath.move(to: center)
+        cPath.addLine(to: CGPoint(x: center.x + radius * cos(startAngle), y: center.y + radius * sin(startAngle)))
+        cPath.addArc(withCenter: center, radius: radius, startAngle: startAngle, endAngle: arc + startAngle, clockwise: true)
+        cPath.addLine(to: CGPoint(x: center.x, y: center.y))
+        
+        let circleShape = CAShapeLayer()
+        circleShape.path = cPath.cgPath
+        circleShape.strokeColor = GMColor.red500Color().cgColor
+        circleShape.fillColor = GMColor.red500Color().cgColor
+        circleShape.lineWidth = 1.5
+        // add sublayer
+        for layer in progressDot.layer.sublayers ?? [CALayer]() {
+            layer.removeFromSuperlayer()
+        }
+        progressDot.layer.removeAllAnimations()
+        progressDot.layer.addSublayer(circleShape)
+
+        let pulseAnimation = CABasicAnimation(keyPath: "transform.scale")
+        pulseAnimation.duration = 0.5
+        pulseAnimation.toValue = 1.2
+        pulseAnimation.fromValue = 0.2
+        pulseAnimation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut)
+        pulseAnimation.autoreverses = false
+        pulseAnimation.repeatCount = Float.greatestFiniteMagnitude
+        
+        let fadeAnimation = CABasicAnimation(keyPath: "opacity")
+        fadeAnimation.duration = 0.5
+        fadeAnimation.toValue = 0
+        fadeAnimation.fromValue = 2.5
+        fadeAnimation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut)
+        fadeAnimation.autoreverses = false
+        fadeAnimation.repeatCount = Float.greatestFiniteMagnitude
+        
+        progressDot.frame = CGRect(x: 0, y: 0, width: 20, height: 20)
+        liveB = UIBarButtonItem.init(customView: progressDot)
+
+        self.navigationItem.rightBarButtonItems = [self.sortB, self.searchB, self.liveB]
+        
+        progressDot.layer.add(pulseAnimation, forKey: "scale")
+        progressDot.layer.add(fadeAnimation, forKey: "fade")
+    }
+    
+    @objc func loadNewComments() {
+        var name = submission!.name
+        if name.contains("t3_") {
+            name = name.replacingOccurrences(of: "t3_", with: "")
+        }
+        do {
+            try session?.getArticles(name, sort: .new, completion: { (result) in
+                switch result {
+                case .failure(let error):
+                    print(error)
+                case .success(let tuple):
+                    DispatchQueue.main.async(execute: { () -> Void in
+                        
+                        var queue: [Object] = []
+                        let startDepth = 1
+                        let listing = tuple.1
+                        
+                        for child in listing.children {
+                            let incoming = self.extendKeepMore(in: child, current: startDepth)
+                            for i in incoming {
+                                if i.1 == 1 {
+                                    let item = RealmDataWrapper.commentToRealm(comment: i.0, depth: i.1)
+                                    if self.content[item.getIdentifier()] == nil {
+                                        self.content[item.getIdentifier()] = item
+                                        self.cDepth[item.getIdentifier()] = i.1
+                                        queue.append(item)
+                                        self.updateStrings([i])
+                                    }
+                                }
+                            }
+                        }
+
+                        let datasetPosition = 0
+                        let realPosition = 0
+                        var ids: [String] = []
+                        for item in queue {
+                            let id = item.getIdentifier()
+                            ids.append(id)
+                            self.content[id] = item
+                        }
+
+                        if queue.count != 0 {
+                            self.dataArray.insert(contentsOf: ids, at: datasetPosition)
+                            self.comments.insert(contentsOf: ids, at: realPosition)
+                            self.doArrays()
+                            var paths: [IndexPath] = []
+                            for i in stride(from: datasetPosition, to: datasetPosition + queue.count, by: 1) {
+                                paths.append(IndexPath.init(row: i, section: 0))
+                            }
+                            let contentHeight = self.tableView.contentSize.height
+                            let offsetY = self.tableView.contentOffset.y
+                            let bottomOffset = contentHeight - offsetY
+                            if #available(iOS 11.0, *) {
+                                CATransaction.begin()
+                                CATransaction.setDisableActions(true)
+                                self.tableView.performBatchUpdates({
+                                    self.tableView.insertRows(at: paths, with: .fade)
+                                }, completion: { (_) in
+                                    self.tableView.contentOffset = CGPoint(x: 0, y: self.tableView.contentSize.height - bottomOffset)
+                                    CATransaction.commit()
+                                })
+                            } else {
+                                self.tableView.insertRows(at: paths, with: .fade)
+                            }
+                        }
+                    })
+                }
+            })
+
+        } catch {
+            
+        }
+    }
+    
+    func applyFilters() {
+        if PostFilter.filter([submission!], previous: nil, baseSubreddit: "all").isEmpty {
+            self.navigationController?.popViewController(animated: true)
+        }
     }
 
     init(submission: RSubmission, single: Bool) {
@@ -88,7 +360,7 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         super.init(nibName: nil, bundle: nil)
         setBarColors(color: ColorUtil.getColorForSub(sub: subreddit))
     }
-
+    
     var parents: [String: String] = [:]
     var approved: [String] = []
     var removed: [String] = []
@@ -97,12 +369,12 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     var modLink = ""
     var swiper: SloppySwiper?
 
-    var authorColor: UIColor = ColorUtil.fontColor
+    var authorColor: UIColor = ColorUtil.theme.fontColor
 
     func replySent(comment: Comment?, cell: CommentDepthCell?) {
         if comment != nil && cell != nil {
             DispatchQueue.main.async(execute: { () -> Void in
-                let startDepth = self.cDepth[cell!.comment!.getIdentifier()]! + 1
+                let startDepth = (self.cDepth[cell!.comment!.getIdentifier()] ?? 0) + 1
 
                 let queue: [Object] = [RealmDataWrapper.commentToRComment(comment: comment!, depth: startDepth)]
                 self.cDepth[comment!.getId()] = startDepth
@@ -137,12 +409,13 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 self.updateStringsSingle(queue)
                 self.doArrays()
                 self.isReply = false
+                self.isEditing = false
                 self.tableView.reloadData()
 
             })
         } else if comment != nil && cell == nil {
             DispatchQueue.main.async(execute: { () -> Void in
-                let startDepth = 0
+                let startDepth = 1
 
                 let queue: [Object] = [RealmDataWrapper.commentToRComment(comment: comment!, depth: startDepth)]
                 self.cDepth[comment!.getId()] = startDepth
@@ -162,6 +435,7 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 self.updateStringsSingle(queue)
                 self.doArrays()
                 self.isReply = false
+                self.isEditing = false
                 self.tableView.reloadData()
             })
         }
@@ -194,7 +468,7 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                     insertIndex += 1
                 }
 
-                comment = RealmDataWrapper.commentToRComment(comment: cr!, depth: 0)
+                comment = RealmDataWrapper.commentToRComment(comment: cr!, depth: self.cDepth[comment.getIdentifier()] ?? 1)
                 self.dataArray.remove(at: insertIndex)
                 self.dataArray.insert(comment.getIdentifier(), at: insertIndex)
                 self.comments.remove(at: realPosition)
@@ -202,6 +476,8 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 self.content[comment.getIdentifier()] = comment
                 self.updateStringsSingle([comment])
                 self.doArrays()
+                self.isEditing = false
+                self.isReply = false
                 self.tableView.reloadData()
                 self.discard()
             })
@@ -218,12 +494,12 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         self.tableView.endUpdates()
         UIView.setAnimationsEnabled(true)
     }
-
+    
     internal func pushedMoreButton(_ cell: CommentDepthCell) {
 
     }
 
-    func save(_ cell: LinkCellView) {
+    @objc func save(_ cell: LinkCellView) {
         do {
             let state = !ActionStates.isSaved(s: cell.link!)
             print(cell.link!.id)
@@ -236,17 +512,20 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 }
             })
             ActionStates.setSaved(s: cell.link!, saved: !ActionStates.isSaved(s: cell.link!))
-            History.addSeen(s: cell.link!)
+            History.addSeen(s: cell.link!, skipDuplicates: true)
             cell.refresh()
+            if parent is PagingCommentViewController {
+                (parent as! PagingCommentViewController).reloadCallback?()
+            }
         } catch {
         }
     }
 
     func doHeadView(_ size: CGSize) {
         inHeadView.removeFromSuperview()
-        inHeadView = UIView.init(frame: CGRect.init(x: 0, y: 0, width: max(self.view.frame.size.width, self.view.frame.size.height), height: (UIApplication.shared.statusBarView?.frame.size.height ?? 20)))
+        inHeadView = UIView.init(frame: CGRect.init(x: 0, y: 0, width: max(self.view.frame.size.width, self.view.frame.size.height), height: (UIApplication.shared.statusBarUIView?.frame.size.height ?? 20)))
         if submission != nil {
-            self.inHeadView.backgroundColor = !SettingValues.reduceColor ? ColorUtil.getColorForSub(sub: submission!.subreddit) : ColorUtil.foregroundColor
+            self.inHeadView.backgroundColor = SettingValues.fullyHideNavbar ? .clear : (!SettingValues.reduceColor ? ColorUtil.getColorForSub(sub: submission!.subreddit) : ColorUtil.theme.foregroundColor)
         }
         
         let landscape = size.width > size.height || (self.navigationController is TapBehindModalViewController && self.navigationController!.modalPresentationStyle == .pageSheet)
@@ -278,6 +557,13 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
        // }
     }
     
+    func reloadHeightsNone() {
+        UIView.performWithoutAnimation {
+            tableView.beginUpdates()
+            tableView.endUpdates()
+        }
+    }
+
     func prepareReply() {
         tableView.beginUpdates()
         tableView.endUpdates()
@@ -298,20 +584,24 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
 
     }
 
-    func reply(_ cell: LinkCellView) {
+    @objc func reply(_ cell: LinkCellView) {
         if !offline {
             VCPresenter.presentAlert(TapBehindModalViewController.init(rootViewController: ReplyViewController.init(submission: cell.link!, sub: cell.link!.subreddit, delegate: self)), parentVC: self)
         }
     }
 
-    func upvote(_ cell: LinkCellView) {
+    @objc func upvote(_ cell: LinkCellView) {
         do {
             try session?.setVote(ActionStates.getVoteDirection(s: cell.link!) == .up ? .none : .up, name: (cell.link?.id)!, completion: { (_) in
 
             })
             ActionStates.setVoteDirection(s: cell.link!, direction: ActionStates.getVoteDirection(s: cell.link!) == .up ? .none : .up)
-            History.addSeen(s: cell.link!)
+            History.addSeen(s: cell.link!, skipDuplicates: true)
             cell.refresh()
+            if parent is PagingCommentViewController {
+                _ = (parent as! PagingCommentViewController).reloadCallback?()
+            }
+            _ = CachedTitle.getTitle(submission: cell.link!, full: false, true, gallery: false)
         } catch {
 
         }
@@ -336,7 +626,7 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     }
     
     var oldPosition: CGPoint = CGPoint.zero
-    override func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
+    func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
         if scrollView.contentOffset.y > oldPosition.y {
             oldPosition = scrollView.contentOffset
             return true
@@ -347,14 +637,19 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         return false
     }
     
+    var shouldAnimateLoad = false
+    
     func downvote(_ cell: LinkCellView) {
         do {
             try session?.setVote(ActionStates.getVoteDirection(s: cell.link!) == .down ? .none : .down, name: (cell.link?.id)!, completion: { (_) in
 
             })
             ActionStates.setVoteDirection(s: cell.link!, direction: ActionStates.getVoteDirection(s: cell.link!) == .down ? .none : .down)
-            History.addSeen(s: cell.link!)
+            History.addSeen(s: cell.link!, skipDuplicates: true)
             cell.refresh()
+            if parent is PagingCommentViewController {
+                (parent as! PagingCommentViewController).reloadCallback?()
+            }
         } catch {
 
         }
@@ -362,16 +657,19 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
 
     func more(_ cell: LinkCellView) {
         if !offline {
-            PostActions.showMoreMenu(cell: cell, parent: self, nav: self.navigationController!, mutableList: false, delegate: self)
+            PostActions.showMoreMenu(cell: cell, parent: self, nav: self.navigationController!, mutableList: false, delegate: self, index: 0)
         }
     }
 
     func readLater(_ cell: LinkCellView) {
         guard let link = cell.link else {
-            fatalError("Cell must have a link!")
+            return
         }
 
         ReadLater.toggleReadLater(link: link)
+        if parent is PagingCommentViewController {
+            (parent as! PagingCommentViewController).reloadCallback?()
+        }
         cell.refresh()
     }
 
@@ -405,12 +703,78 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
 
     var reset = false
     var indicatorSet = false
+    
+    func loadOffline() {
+        self.loaded = true
+        DispatchQueue.main.async {
+            self.offline = true
+            do {
+                
+                let realm = try Realm()
+                if let listing = realm.objects(RSubmission.self).filter({ (item) -> Bool in
+                    return item.id == self.submission!.id
+                }).first {
+                    self.comments = []
+                    self.hiddenPersons = []
+                    var temp: [Object] = []
+                    self.hidden = []
+                    self.text = [:]
+                    var currentIndex = 0
+                    self.parents = [:]
+                    var currentOP = ""
+                    for child in listing.comments {
+                        if child.depth == 1 {
+                            currentOP = child.author
+                        }
+                        self.parents[child.getIdentifier()] = currentOP
+                        currentIndex += 1
+                        
+                        temp.append(child)
+                        self.content[child.getIdentifier()] = child
+                        self.comments.append(child.getIdentifier())
+                        self.cDepth[child.getIdentifier()] = child.depth
+                    }
+                    if !self.comments.isEmpty {
+                        self.updateStringsSingle(temp)
+                        self.doArrays()
+                        if !self.offline {
+                            self.lastSeen = (self.context.isEmpty ? History.getSeenTime(s: self.link) : Double(0))
+                        }
+                    }
+                    
+                    DispatchQueue.main.async(execute: { () -> Void in
+                        self.refreshControl?.endRefreshing()
+                        self.indicator.stopAnimating()
+                        
+                        if !self.comments.isEmpty {
+                            var time = timeval(tv_sec: 0, tv_usec: 0)
+                            gettimeofday(&time, nil)
+                            
+                            self.tableView.reloadData()
+                        }
+                        if self.comments.isEmpty {
+                            BannerUtil.makeBanner(text: "No cached comments found!", color: ColorUtil.accentColorForSub(sub: self.subreddit), seconds: 3, context: self)
+                        } else {
+                           // BannerUtil.makeBanner(text: "Showing cached comments", color: ColorUtil.accentColorForSub(sub: self.subreddit), seconds: 5, context: self)
+                        }
+                        
+                    })
+                }
+            } catch {
+                BannerUtil.makeBanner(text: "No cached comments found!", color: ColorUtil.accentColorForSub(sub: self.subreddit), seconds: 3, context: self)
+            }
+        }
 
-    func refresh(_ sender: AnyObject) {
+    }
+    
+    @objc func refresh(_ sender: AnyObject) {
+        self.tableView.setContentOffset(CGPoint(x: 0, y: self.tableView.contentOffset.y - (self.refreshControl!.frame.size.height)), animated: true)
         session = (UIApplication.shared.delegate as! AppDelegate).session
         approved.removeAll()
         removed.removeAll()
+        self.shouldAnimateLoad = false
         content.removeAll()
+        self.liveTimer.invalidate()
         text.removeAll()
         dataArray.removeAll()
         cDepth.removeAll()
@@ -428,242 +792,213 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 if name.contains("t3_") {
                     name = name.replacingOccurrences(of: "t3_", with: "")
                 }
-                try session?.getArticles(name, sort: sort, comments: (context.isEmpty ? nil : [context]), context: 3, completion: { (result) -> Void in
-                    switch result {
-                    case .failure(let error):
-                        print(error)
-                        self.loaded = true
-                        DispatchQueue.main.async {
-                            self.offline = true
-                            do {
-
-                                let realm = try Realm()
-                                if let listing = realm.objects(RSubmission.self).filter({ (item) -> Bool in
-                                    return item.id == self.submission!.id
-                                }).first {
-                                    self.comments = []
-                                    self.hiddenPersons = []
-                                    var temp: [Object] = []
-                                    self.hidden = []
-                                    self.text = [:]
-                                    var currentIndex = 0
-                                    self.parents = [:]
-                                    var currentOP = ""
-                                    for child in listing.comments {
-                                        if child.depth == 1 {
-                                            currentOP = child.author
-                                        }
-                                        self.parents[child.getIdentifier()] = currentOP
-                                        currentIndex += 1
-
-                                        temp.append(child)
-                                        self.content[child.getIdentifier()] = child
-                                        self.comments.append(child.getIdentifier())
-                                        self.cDepth[child.getIdentifier()] = child.depth
-                                    }
-                                    if !self.comments.isEmpty {
-                                        self.updateStringsSingle(temp)
-                                        self.doArrays()
-                                        self.lastSeen = (self.context.isEmpty ? History.getSeenTime(s: link) : Double(0))
-                                    }
-
-                                    DispatchQueue.main.async(execute: { () -> Void in
-                                        self.refreshControl?.endRefreshing()
-                                        self.indicator.stopAnimating()
-
-                                        if !self.comments.isEmpty {
-                                            var time = timeval(tv_sec: 0, tv_usec: 0)
-                                            gettimeofday(&time, nil)
-
-                                            self.tableView.reloadData(with: .fade)
-                                        }
-                                        if self.comments.isEmpty {
-                                            BannerUtil.makeBanner(text: "No cached comments found!\nYou can set up auto-cache in Settings > Auto Cache", color: ColorUtil.accentColorForSub(sub: self.subreddit), seconds: 5, context: self)
-                                        } else {
-                                            BannerUtil.makeBanner(text: "Showing cached comments", color: ColorUtil.accentColorForSub(sub: self.subreddit), seconds: 5, context: self)
-                                        }
-
-                                    })
-                                }
-                            } catch {
-                                BannerUtil.makeBanner(text: "No cached comments found!\nYou can set up auto-cache in Settings > Auto Cache", color: ColorUtil.accentColorForSub(sub: self.subreddit), seconds: 5, context: self)
+                if offline {
+                    self.loadOffline()
+                } else {
+                    try session?.getArticles(name, sort: sort == .suggested ? nil : sort, comments: (context.isEmpty ? nil : [context]), context: 3, limit: SettingValues.commentLimit, completion: { (result) -> Void in
+                        switch result {
+                        case .failure(let error):
+                            print(error)
+                            self.loadOffline()
+                        case .success(let tuple):
+                            let startDepth = 1
+                            let listing = tuple.1
+                            self.comments = []
+                            self.hiddenPersons = []
+                            self.hidden = []
+                            self.text = [:]
+                            self.content = [:]
+                            
+                            if self.submission == nil || self.submission!.id.isEmpty() {
+                                self.submission = RealmDataWrapper.linkToRSubmission(submission: tuple.0.children[0] as! Link)
+                            } else {
+                                self.submission = RealmDataWrapper.updateSubmission(self.submission!, tuple.0.children[0] as! Link)
                             }
-                        }
-
-                    case .success(let tuple):
-                        let startDepth = 1
-                        let listing = tuple.1
-                        self.comments = []
-                        self.hiddenPersons = []
-                        self.hidden = []
-                        self.text = [:]
-                        self.content = [:]
-                        self.loaded = true
-                        if self.submission == nil {
-                            self.submission = RealmDataWrapper.linkToRSubmission(submission: tuple.0.children[0] as! Link)
-                        } else {
-                            self.submission = RealmDataWrapper.updateSubmission(self.submission!, tuple.0.children[0] as! Link)
-                        }
-                        
-                        var allIncoming: [(Thing, Int)] = []
-                        self.submission!.comments.removeAll()
-                        self.parents = [:]
-
-                        for child in listing.children {
-                            let incoming = self.extendKeepMore(in: child, current: startDepth)
-                            allIncoming.append(contentsOf: incoming)
-                            var currentIndex = 0
-                            var currentOP = ""
-
-                            for i in incoming {
-                                let item = RealmDataWrapper.commentToRealm(comment: i.0, depth: i.1)
-                                self.content[item.getIdentifier()] = item
-                                self.comments.append(item.getIdentifier())
-                                if item is RComment {
-                                    self.submission!.comments.append(item as! RComment)
-                                }
-                                if i.1 == 1 && item is RComment {
-                                    currentOP = (item as! RComment).author
-                                }
-                                self.parents[item.getIdentifier()] = currentOP
-                                currentIndex += 1
-
-                                self.cDepth[item.getIdentifier()] = i.1
-                            }
-                        }
-
-                        var time = timeval(tv_sec: 0, tv_usec: 0)
-                        gettimeofday(&time, nil)
-                        self.paginator = listing.paginator
-
-                        if !self.comments.isEmpty {
-                            do {
-                                let realm = try! Realm()
-                                //todo insert
-                                realm.beginWrite()
-                                for comment in self.comments {
-                                    realm.create(type(of: self.content[comment]!), value: self.content[comment]!, update: true)
-                                    if self.content[comment]! is RComment {
-                                        self.submission!.comments.append(self.content[comment] as! RComment)
+                            
+                            var allIncoming: [(Thing, Int)] = []
+                            self.submission!.comments.removeAll()
+                            self.parents = [:]
+                            
+                            for child in listing.children {
+                                let incoming = self.extendKeepMore(in: child, current: startDepth)
+                                allIncoming.append(contentsOf: incoming)
+                                var currentIndex = 0
+                                var currentOP = ""
+                                
+                                for i in incoming {
+                                    let item = RealmDataWrapper.commentToRealm(comment: i.0, depth: i.1)
+                                    self.content[item.getIdentifier()] = item
+                                    self.comments.append(item.getIdentifier())
+                                    if item is RComment {
+                                        self.submission!.comments.append(item as! RComment)
                                     }
+                                    if i.1 == 1 && item is RComment {
+                                        currentOP = (item as! RComment).author
+                                    }
+                                    self.parents[item.getIdentifier()] = currentOP
+                                    currentIndex += 1
+                                    
+                                    self.cDepth[item.getIdentifier()] = i.1
                                 }
-                                realm.create(type(of: self.submission!), value: self.submission!, update: true)
-                                try realm.commitWrite()
-                            } catch {
-
                             }
-                        }
+                            
+                            var time = timeval(tv_sec: 0, tv_usec: 0)
+                            gettimeofday(&time, nil)
+                            self.paginator = listing.paginator
+                            
+                            if !self.comments.isEmpty {
+                                do {
+                                    let realm = try Realm()
+                                   // TODO: - insert
+                                    realm.beginWrite()
+                                    for comment in self.comments {
+                                        if let content = self.content[comment] {
+                                            if content is RComment {
+                                                realm.create(RComment.self, value: content, update: .all)
+                                            } else {
+                                                realm.create(RMore.self, value: content, update: .all)
+                                            }
+                                            if content is RComment {
+                                                self.submission!.comments.append(content as! RComment)
+                                            }
+                                        }
+                                    }
+                                    realm.create(type(of: self.submission!), value: self.submission!, update: .all)
+                                    try realm.commitWrite()
+                                } catch {
+                                    
+                                }
+                            }
+                            
+                            if !allIncoming.isEmpty {
+                                self.updateStrings(allIncoming)
+                            }
+                            
+                            self.doArrays()
+                            self.lastSeen = (self.context.isEmpty ? History.getSeenTime(s: self.submission!) : Double(0))
+                            History.setComments(s: link)
+                            History.addSeen(s: link, skipDuplicates: false)
+                            DispatchQueue.main.async(execute: { () -> Void in
+                                if !self.hasSubmission {
+                                    self.headerCell = FullLinkCellView()
+                                    self.headerCell?.del = self
+                                    self.headerCell?.parentViewController = self
+                                    self.hasDone = true
+                                    self.headerCell?.aspectWidth = self.tableView.bounds.size.width
+                                    self.headerCell?.configure(submission: self.submission!, parent: self, nav: self.navigationController, baseSub: self.submission!.subreddit, parentWidth: self.view.frame.size.width, np: self.np)
+                                    if self.submission!.isSelf {
+                                        self.headerCell?.showBody(width: self.view.frame.size.width - 24)
+                                    }
+                                    self.tableView.tableHeaderView = UIView(frame: CGRect.init(x: 0, y: 0, width: self.tableView.frame.width, height: 0.01))
+                                    if let tableHeaderView = self.headerCell {
+                                        var frame = CGRect(x: 0, y: 0, width: self.tableView.bounds.size.width, height: tableHeaderView.estimateHeight(true, np: self.np))
+                                        // Add safe area insets to left and right if available
+                                        if #available(iOS 11.0, *) {
+                                            frame = frame.insetBy(dx: max(self.view.safeAreaInsets.left, self.view.safeAreaInsets.right), dy: 0)
+                                        }
+                                        if self.tableView.tableHeaderView == nil || !frame.equalTo(tableHeaderView.frame) {
+                                            tableHeaderView.frame = frame
+                                            tableHeaderView.layoutIfNeeded()
+                                            let view = UIView(frame: tableHeaderView.frame)
+                                            view.addSubview(tableHeaderView)
+                                            self.tableView.tableHeaderView = view
+                                        }
+                                    }
+                                    
+                                    self.setupTitleView(self.submission!.subreddit)
+                                    
+                                    self.navigationItem.backBarButtonItem?.title = ""
+                                    self.setBarColors(color: ColorUtil.getColorForSub(sub: self.submission!.subreddit))
+                                } else {
+                                    self.headerCell?.aspectWidth = self.tableView.bounds.size.width
+                                    self.headerCell?.refreshLink(self.submission!, np: self.np)
+                                    if self.submission!.isSelf {
+                                        self.headerCell?.showBody(width: self.view.frame.size.width - 24)
+                                    }
 
-                        if !allIncoming.isEmpty {
-                            self.updateStrings(allIncoming)
-                        }
-
-                        self.doArrays()
-                        self.lastSeen = (self.context.isEmpty ? History.getSeenTime(s: self.submission!) : Double(0))
-                        History.setComments(s: link)
-                        History.addSeen(s: link)
-                        DispatchQueue.main.async(execute: { () -> Void in
-                            if !self.hasSubmission {
-                                self.headerCell = FullLinkCellView()
-                                self.headerCell?.del = self
-                                self.headerCell?.parentViewController = self
-                                self.hasDone = true
-                                self.headerCell?.aspectWidth = self.tableView.bounds.size.width
-                                self.headerCell?.configure(submission: self.submission!, parent: self, nav: self.navigationController, baseSub: self.submission!.subreddit, parentWidth: self.view.frame.size.width)
-                                self.headerCell?.showBody(width: self.view.frame.size.width - 24)
-                                self.tableView.tableHeaderView = UIView(frame: CGRect.init(x: 0, y: 0, width: self.tableView.frame.width, height: 0.01))
-                                if let tableHeaderView = self.headerCell {
-                                    var frame = CGRect(x: 0, y: 0, width: self.tableView.bounds.size.width, height: tableHeaderView.estimateHeight(true))
+                                    var frame = CGRect(x: 0, y: 0, width: self.tableView.bounds.size.width, height: self.headerCell!.estimateHeight(true, true, np: self.np))
                                     // Add safe area insets to left and right if available
                                     if #available(iOS 11.0, *) {
                                         frame = frame.insetBy(dx: max(self.view.safeAreaInsets.left, self.view.safeAreaInsets.right), dy: 0)
                                     }
-                                    if self.tableView.tableHeaderView == nil || !frame.equalTo(tableHeaderView.frame) {
-                                        tableHeaderView.frame = frame
-                                        tableHeaderView.layoutIfNeeded()
-                                        let view = UIView(frame: tableHeaderView.frame)
-                                        view.addSubview(tableHeaderView)
-                                        self.tableView.tableHeaderView = view
+                                    
+                                    self.headerCell!.contentView.frame = frame
+                                    self.headerCell!.contentView.layoutIfNeeded()
+                                    let view = UIView(frame: self.headerCell!.contentView.frame)
+                                    view.addSubview(self.headerCell!.contentView)
+                                    self.tableView.tableHeaderView = view
+                                }
+                                self.refreshControl?.endRefreshing()
+                                self.activityIndicator.stopAnimating()
+                                if self.live {
+                                    self.liveTimer = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(self.loadNewComments), userInfo: nil, repeats: true)
+                                    self.startPulse()
+                                } else {
+                                    if self.sortB != nil && self.searchB != nil {
+                                        self.navigationItem.rightBarButtonItems = [self.sortB, self.searchB]
                                     }
                                 }
+                                self.indicator.stopAnimating()
+                                self.indicator.isHidden = true
                                 
-                                self.setupTitleView(self.submission!.subreddit)
+                                var index = 0
+                                var loaded = true
                                 
-                                self.navigationItem.backBarButtonItem?.title = ""
-                                self.setBarColors(color: ColorUtil.getColorForSub(sub: self.submission!.subreddit))
-                            } else {
-
-                                self.headerCell?.refreshLink(self.submission!)
-                                self.headerCell?.showBody(width: self.view.frame.size.width - 24)
-                                
-                                var frame = CGRect(x: 0, y: 0, width: self.tableView.bounds.size.width, height: self.headerCell!.estimateHeight(true, true))
-                                // Add safe area insets to left and right if available
-                                if #available(iOS 11.0, *) {
-                                    frame = frame.insetBy(dx: max(self.view.safeAreaInsets.left, self.view.safeAreaInsets.right), dy: 0)
-                                }
-                                
-                                self.headerCell!.contentView.frame = frame
-                                self.headerCell!.contentView.layoutIfNeeded()
-                                let view = UIView(frame: self.headerCell!.contentView.frame)
-                                view.addSubview(self.headerCell!.contentView)
-                                self.tableView.tableHeaderView = view
-                            }
-                            self.refreshControl?.endRefreshing()
-                            self.indicator.stopAnimating()
-                            self.indicator.isHidden = true
-                            self.doBanner(self.submission!)
-
-                            var index = 0
-                            var loaded = false
-                            
-                            if SettingValues.hideAutomod && self.context.isEmpty() && self.submission!.author != AccountController.currentName && !self.comments.isEmpty {
-                                if let comment = self.content[self.comments[0]] as? RComment {
-                                    if comment.author == "AutoModerator" {
-                                        var toRemove = [String]()
-                                        toRemove.append(comment.getIdentifier())
-                                        self.modLink = comment.permalink
-                                        self.hidden.insert(comment.getIdentifier())
-                                        
-                                        for next in self.walkTreeFlat(n: comment.getIdentifier()) {
-                                            toRemove.append(next)
-                                            self.hidden.insert(next)
+                                if SettingValues.hideAutomod && self.context.isEmpty() && self.submission!.author != AccountController.currentName && !self.comments.isEmpty {
+                                    if let comment = self.content[self.comments[0]] as? RComment {
+                                        if comment.author == "AutoModerator" {
+                                            var toRemove = [String]()
+                                            toRemove.append(comment.getIdentifier())
+                                            self.modLink = comment.permalink
+                                            self.hidden.insert(comment.getIdentifier())
+                                            
+                                            for next in self.walkTreeFlat(n: comment.getIdentifier()) {
+                                                toRemove.append(next)
+                                                self.hidden.insert(next)
+                                            }
+                                            self.dataArray = self.dataArray.filter({ (comment) -> Bool in
+                                                return !toRemove.contains(comment)
+                                            })
+                                            self.modB.customView?.alpha = 1
                                         }
-                                        self.dataArray = self.dataArray.filter({ (comment) -> Bool in
-                                            return !toRemove.contains(comment)
-                                        })
-                                        self.modB.customView?.alpha = 1
                                     }
                                 }
-                            }
-                            if !self.context.isEmpty() {
-                                for comment in self.comments {
-                                    if comment.contains(self.context) {
-                                        self.menuId = comment
+                                if !self.context.isEmpty() {
+                                    for comment in self.comments {
+                                        if comment.contains(self.context) {
+                                            self.menuId = comment
+                                            self.tableView.reloadData()
+                                            loaded = true
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                                                self.goToCell(i: index)
+                                            }
+                                            break
+                                        } else {
+                                            index += 1
+                                        }
+                                    }
+                                    if !loaded {
                                         self.tableView.reloadData()
-                                        loaded = true
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                            self.goToCell(i: index)
-                                        }
-                                        break
+                                    }
+                                } else if SettingValues.collapseDefault {
+                                    self.tableView.reloadData()
+                                    self.collapseAll()
+                                } else {
+                                    if self.finishedPush {
+                                        self.reloadTableViewAnimated()
                                     } else {
-                                        index += 1
+                                        self.shouldAnimateLoad = true
                                     }
                                 }
-                                if !loaded {
-                                    self.tableView.reloadData()
-                                }
-                            } else if SettingValues.collapseDefault {
-                                self.tableView.reloadData()
-                                self.collapseAll()
-                            } else {
-                                self.tableView.reloadData()
-                            }
-                        })
-                    }
-                })
+                                self.loaded = true
+                            })
+                        }
+                    })
+                }
             } catch {
                 print(error)
-            }
+        }
+
         }
     }
 
@@ -684,10 +1019,13 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     func setupTitleView(_ sub: String) {
         let titleView = UILabel()
         titleView.text = sub
-        titleView.textColor = SettingValues.reduceColor ? ColorUtil.fontColor : .white
+        titleView.textColor = SettingValues.reduceColor ? ColorUtil.theme.fontColor : .white
         titleView.font = UIFont.boldSystemFont(ofSize: 17)
         let width = titleView.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)).width
         titleView.frame = CGRect(origin: CGPoint.zero, size: CGSize(width: width, height: 500))
+        titleView.accessibilityTraits = UIAccessibilityTraits(rawValue: UIAccessibilityTraits.header.rawValue | UIAccessibilityTraits.link.rawValue)
+        titleView.accessibilityHint = "Opens the sub red it r \(sub)"
+        titleView.accessibilityLabel = "Sub red it: r \(sub)"
         self.navigationItem.titleView = titleView
         
         titleView.addTapGestureRecognizer(action: {
@@ -704,107 +1042,28 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
             sideView.clipsToBounds = true
         }
     }
-
-    var popup: UILabel!
     
-    func doBanner(_ link: RSubmission) {
-        if popup != nil {
-            popup.removeFromSuperview()
-        }
-        var text = ""
-        if np {
-            text = "This is a no participation link.\nPlease don't vote or comment"
-        }
-        if link.archived {
-            text = "This is an archived post.\nYou won't be able to vote or comment"
-        } else if link.locked {
-            text = "This is a locked post.\nYou won't be able to comment"
-        }
-
-        if !text.isEmpty && self.navigationController != nil {
-            var top = CGFloat(64)
-            var bottom = CGFloat(45)
-            if #available(iOS 11.0, *) {
-                top = 0
-                bottom = 0
-            }
-            bottom += 64
-            normalInsets = UIEdgeInsets.init(top: top, left: 0, bottom: bottom, right: 0)
-
-            var width = UIScreen.main.bounds.width - 24
-            if width > 375 {
-                width = 375
-            }
-            popup = UILabel.init(frame: CGRect.init(x: 0, y: 0, width: width, height: 48))
-            popup.backgroundColor = ColorUtil.accentColorForSub(sub: link.subreddit)
-            popup.textAlignment = .center
-            popup.isUserInteractionEnabled = true
-
-            let textParts = text.components(separatedBy: "\n")
-
-            let finalText: NSMutableAttributedString!
-            if textParts.count > 1 {
-                let firstPart = NSMutableAttributedString.init(string: textParts[0], attributes: [NSForegroundColorAttributeName: UIColor.white, NSFontAttributeName: UIFont.boldSystemFont(ofSize: 14)])
-                let secondPart = NSMutableAttributedString.init(string: "\n" + textParts[1], attributes: [NSForegroundColorAttributeName: UIColor.white, NSFontAttributeName: UIFont.systemFont(ofSize: 12)])
-                firstPart.append(secondPart)
-                finalText = firstPart
-            } else {
-                finalText = NSMutableAttributedString.init(string: text, attributes: [NSForegroundColorAttributeName: UIColor.white, NSFontAttributeName: UIFont.boldSystemFont(ofSize: 14)])
-            }
-            popup.attributedText = finalText
-
-            popup.numberOfLines = 0
-
-            popup.elevate(elevation: 2)
-            popup.layer.cornerRadius = 5
-            popup.clipsToBounds = true
-            popup.transform = CGAffineTransform.init(scaleX: 0.001, y: 0.001)
-            
-            if let view = self.navigationController?.view {
-                view.addSubview(popup)
-                let bottomHeight: CGFloat
-                if #available(iOS 11.0, *) {
-                    bottomHeight = self.additionalSafeAreaInsets.bottom
-                } else {
-                    bottomHeight = 0
-                }
-                popup.bottomAnchor == self.navigationController!.view.safeBottomAnchor - 8 - 48 - bottomHeight
-                popup.widthAnchor == width
-                popup.heightAnchor == 48
-                popup.centerXAnchor == self.navigationController!.view.centerXAnchor
-                self.navigationController!.view.bringSubview(toFront: popup)
-                
-                UIView.animate(withDuration: 0.25, delay: 0.0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.2, options: .curveEaseInOut, animations: {
-                    self.popup.transform = CGAffineTransform.identity.scaledBy(x: 1.0, y: 1.0)
-                }, completion: nil)
-            }
-        } else {
-            var top = CGFloat(64)
-            let bottom = CGFloat(45)
-            if #available(iOS 11.0, *) {
-                top = 0
-            }
-            normalInsets = UIEdgeInsets.init(top: top, left: 0, bottom: bottom, right: 0)
-        }
-        self.tableView.contentInset = normalInsets
-    }
-    
-    var savedBack = UIBarButtonItem()
+    var savedBack: UIBarButtonItem?
 
     func showSearchBar() {
         searchBar.alpha = 0
+        
+        let cancelButtonAttributes = [NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor]
+        UIBarButtonItem.appearance().setTitleTextAttributes(cancelButtonAttributes, for: .normal)
+
+        isSearch = true
         savedHeaderView = tableView.tableHeaderView
         tableView.tableHeaderView = UIView()
         savedTitleView = navigationItem.titleView
         navigationItem.titleView = searchBar
-        savedBack = navigationItem.leftBarButtonItem!
+        savedBack = navigationItem.leftBarButtonItem
         navigationItem.setRightBarButtonItems(nil, animated: true)
         navigationItem.setLeftBarButtonItems(nil, animated: true)
         self.navigationItem.setHidesBackButton(true, animated: false)
         UIView.animate(withDuration: 0.5, animations: {
             self.searchBar.alpha = 1
         }, completion: { _ in
-            if ColorUtil.theme != .LIGHT {
+            if !ColorUtil.theme.isLight {
                 self.searchBar.keyboardAppearance = .dark
             }
             self.searchBar.becomeFirstResponder()
@@ -817,16 +1076,18 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     func hideSearchBar() {
         navigationController?.setNavigationBarHidden(false, animated: true)
         tableView.tableHeaderView = savedHeaderView!
-
+        isSearch = false
+        
+        searchBar.tintColor = ColorUtil.theme.fontColor
         let sort = UIButton.init(type: .custom)
-        sort.setImage(UIImage.init(named: "ic_sort_white")?.navIcon(), for: UIControlState.normal)
-        sort.addTarget(self, action: #selector(self.sort(_:)), for: UIControlEvents.touchUpInside)
+        sort.setImage(UIImage(sfString: SFSymbol.arrowUpArrowDownCircle, overrideString: "ic_sort_white")?.navIcon(), for: UIControl.State.normal)
+        sort.addTarget(self, action: #selector(self.sort(_:)), for: UIControl.Event.touchUpInside)
         sort.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
         let sortB = UIBarButtonItem.init(customView: sort)
 
         let search = UIButton.init(type: .custom)
-        search.setImage(UIImage.init(named: "search")?.navIcon(), for: UIControlState.normal)
-        search.addTarget(self, action: #selector(self.search(_:)), for: UIControlEvents.touchUpInside)
+        search.setImage(UIImage.init(sfString: SFSymbol.magnifyingglass, overrideString: "search")?.navIcon(), for: UIControl.State.normal)
+        search.addTarget(self, action: #selector(self.search(_:)), for: UIControl.Event.touchUpInside)
         search.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
         let searchB = UIBarButtonItem.init(customView: search)
 
@@ -843,87 +1104,85 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         hideSearchBar()
     }
 
-    func sort(_ selector: UIButton?) {
+    @objc func sort(_ selector: UIButton?) {
         if !offline {
-            let actionSheetController: UIAlertController = UIAlertController(title: "Default comment sorting", message: "", preferredStyle: .actionSheet)
+            let actionSheetController = DragDownAlertMenu(title: "Comment sorting", subtitle: "", icon: nil, themeColor: ColorUtil.accentColorForSub(sub: submission?.subreddit ?? ""), full: true)
 
-            let cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-                print("Cancel")
-            }
-            actionSheetController.addAction(cancelActionButton)
-            let selected = UIImage.init(named: "selected")!.getCopy(withSize: .square(size: 20), withColor: .blue)
+            let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.menuIcon()
 
             for c in CommentSort.cases {
-                let saveActionButton: UIAlertAction = UIAlertAction(title: c.description, style: .default) { _ -> Void in
+                actionSheetController.addAction(title: c.description, icon: sort == c ? selected : nil) {
                     self.sort = c
                     self.reset = true
+                    self.live = false
+                    self.activityIndicator.removeFromSuperview()
+                    let barButton = UIBarButtonItem(customView: self.activityIndicator)
+                    self.navigationItem.rightBarButtonItems = [barButton]
+                    self.activityIndicator.startAnimating()
+                    
                     self.refresh(self)
                 }
-                if sort == c {
-                    saveActionButton.setValue(selected, forKey: "image")
-                }
-
-                actionSheetController.addAction(saveActionButton)
             }
 
-            if let presenter = actionSheetController.popoverPresentationController {
-                presenter.sourceView = selector!
-                presenter.sourceRect = selector!.bounds
+            actionSheetController.addAction(title: "Live (beta)", icon: live ? selected : nil) {
+                self.setLive()
             }
-
-            self.present(actionSheetController, animated: true, completion: nil)
+            
+            actionSheetController.show(self)
         }
     }
-
+    
     var indicator: MDCActivityIndicator = MDCActivityIndicator()
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        self.tableView = UITableView(frame: CGRect.zero, style: UITableView.Style.plain)
+        self.tableView.delegate = self
+        self.tableView.dataSource = self
+        self.view = UIView.init(frame: CGRect.zero)
+        self.view.addSubview(tableView)
+
+        tableView.verticalAnchors == view.verticalAnchors
+        tableView.horizontalAnchors == view.safeHorizontalAnchors
+
         self.automaticallyAdjustsScrollViewInsets = false
-        
+        self.registerForPreviewing(with: self, sourceView: self.tableView)
+
         self.tableView.allowsSelection = false
-        self.tableView.layer.speed = 1.5
-        
-        tableView.backgroundColor = ColorUtil.backgroundColor
+        //self.tableView.layer.speed = 1.5
+        self.view.backgroundColor = ColorUtil.theme.backgroundColor
+        self.tableView.backgroundColor = ColorUtil.theme.backgroundColor
+        self.navigationController?.view.backgroundColor = ColorUtil.theme.backgroundColor
         refreshControl = UIRefreshControl()
-        self.tableView.contentOffset = CGPoint.init(x: 0, y: -self.refreshControl!.frame.size.height)
-        refreshControl?.tintColor = ColorUtil.fontColor
+        refreshControl?.tintColor = ColorUtil.theme.fontColor
         refreshControl?.attributedTitle = NSAttributedString(string: "")
-        refreshControl?.addTarget(self, action: #selector(CommentViewController.refresh(_:)), for: UIControlEvents.valueChanged)
+        refreshControl?.addTarget(self, action: #selector(CommentViewController.refresh(_:)), for: UIControl.Event.valueChanged)
         var top = CGFloat(64)
         let bottom = CGFloat(45)
         if #available(iOS 11.0, *) {
             top = 0
         }
         tableView.contentInset = UIEdgeInsets(top: top, left: 0, bottom: bottom, right: 0)
-        if #available(iOS 10.0, *) {
-        } else {
-            tableView.addSubview(refreshControl!)
-        }
+        tableView.addSubview(refreshControl!)
 
-        //Disabled for now, need to figure out why this breaks inbox and profile views
-//        if false && (self.navigationController != nil && (parent == nil || (parent != nil && !(parent! is PagingCommentViewController)))) && SettingValues.commentGesturesEnabled {
-//            swiper = SloppySwiper.init(navigationController: self.navigationController!)
-//            self.navigationController!.delegate = swiper!
-//            for view in view.subviews {
-//                if view is UIScrollView {
-//                    let scrollView = view as! UIScrollView
-//                    scrollView.panGestureRecognizer.require(toFail: swiper!.panRecognizer)
-//                    break
-//                }
-//            }
-//        }
-
-        self.navigationItem.backBarButtonItem = UIBarButtonItem(title: "", style: UIBarButtonItemStyle.plain, target: nil, action: nil)
+        self.navigationItem.backBarButtonItem = UIBarButtonItem(title: "", style: UIBarButtonItem.Style.plain, target: nil, action: nil)
 
         searchBar.delegate = self
-        searchBar.searchBarStyle = UISearchBarStyle.minimal
-        searchBar.textColor = .white
+        searchBar.searchBarStyle = UISearchBar.Style.minimal
+        searchBar.textColor = SettingValues.reduceColor && ColorUtil.theme.isLight ? ColorUtil.theme.fontColor : .white
         searchBar.showsCancelButton = true
+        if !ColorUtil.theme.isLight {
+            searchBar.keyboardAppearance = .dark
+        }
+
         UIBarButtonItem.appearance(whenContainedInInstancesOf: [UISearchBar.self]).tintColor = UIColor.white
 
         tableView.estimatedRowHeight = 200
-        tableView.rowHeight = UITableViewAutomaticDimension
+        tableView.rowHeight = UITableView.automaticDimension
 
         self.tableView.register(CommentDepthCell.classForCoder(), forCellReuseIdentifier: "Cell")
         self.tableView.register(CommentDepthCell.classForCoder(), forCellReuseIdentifier: "MoreCell")
@@ -932,31 +1191,32 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(keyboardWillShow(_:)),
-                name: NSNotification.Name.UIKeyboardWillShow,
+                name: UIResponder.keyboardWillShowNotification,
                 object: nil
         )
         NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(keyboardWillHide(_:)),
-                name: NSNotification.Name.UIKeyboardWillHide,
+                name: UIResponder.keyboardWillHideNotification,
                 object: nil)
 
         headerCell = FullLinkCellView()
         headerCell!.del = self
         headerCell!.parentViewController = self
         headerCell!.aspectWidth = self.tableView.bounds.size.width
-        headerCell!.configure(submission: submission!, parent: self, nav: self.navigationController, baseSub: submission!.subreddit, parentWidth: self.view.frame.size.width)
-        headerCell!.showBody(width: self.view.frame.size.width - 24)
 
         panGesture = UIPanGestureRecognizer(target: self, action: #selector(self.panCell))
         panGesture.direction = .horizontal
         panGesture.delegate = self
-        
+        self.presentationController?.delegate  = self
 //        pan = UIPanGestureRecognizer(target: self, action: #selector(self.handlePop(_:)))
 //        pan.direction = .horizontal
+        if !loaded && (single || forceLoad) {
+            refresh(self)
+        }
         
         self.tableView.addGestureRecognizer(panGesture)
-        if navigationController != nil {
+        if navigationController != nil && !(navigationController!.delegate is CommentViewController) {
             panGesture.require(toFail: navigationController!.interactivePopGestureRecognizer!)
         }
     }
@@ -994,25 +1254,35 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
 
     var keyboardHeight = CGFloat(0)
 
-    func keyboardWillShow(_ notification: Notification) {
-        if let keyboardFrame: NSValue = notification.userInfo?[UIKeyboardFrameEndUserInfoKey] as? NSValue {
+    @objc func keyboardWillShow(_ notification: Notification) {
+        if let keyboardFrame: NSValue = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue {
             let keyboardRectangle = keyboardFrame.cgRectValue
-            if keyboardHeight == 0 {
-                keyboardHeight = keyboardRectangle.height
+            let keyboardHeight = keyboardRectangle.height
+            if keyboardHeight != 0 {
+                var top = CGFloat(64)
+                let bottom = CGFloat(45)
+                if #available(iOS 11.0, *) {
+                    top = 0
+                }
+                tableView.contentInset = UIEdgeInsets(top: top, left: 0, bottom: bottom + keyboardHeight, right: 0)
             }
-//todo content insets
-
         }
     }
 
     var normalInsets = UIEdgeInsets(top: 0, left: 0, bottom: 45, right: 0)
 
-    func keyboardWillHide(_ notification: Notification) {
-        tableView.contentInset = normalInsets
+    @objc func keyboardWillHide(_ notification: Notification) {
+        var top = CGFloat(64)
+        let bottom = CGFloat(45)
+        if #available(iOS 11.0, *) {
+            top = 0
+        }
+        tableView.contentInset = UIEdgeInsets(top: top, left: 0, bottom: bottom, right: 0)
     }
 
     var single = true
     var hasDone = false
+    var configuredOnce = false
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
@@ -1021,8 +1291,16 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
             guard let headerCell = headerCell else {
                 return
             }
+            if !configuredOnce {
+                headerCell.aspectWidth = self.view.frame.size.width
+                headerCell.configure(submission: submission!, parent: self, nav: self.navigationController, baseSub: submission!.subreddit, parentWidth: self.navigationController?.view.bounds.size.width ?? self.tableView.frame.size.width, np: np)
+                if submission!.isSelf {
+                    headerCell.showBody(width: self.view.frame.size.width - 24)
+                }
+                configuredOnce = true
+            }
 
-            var frame = CGRect(x: 0, y: 0, width: self.tableView.bounds.size.width, height: headerCell.estimateHeight(true))
+            var frame = CGRect(x: 0, y: 0, width: self.tableView.bounds.size.width, height: headerCell.estimateHeight(true, np: self.np))
             // Add safe area insets to left and right if available
             if #available(iOS 11.0, *) {
                 frame = frame.insetBy(dx: max(view.safeAreaInsets.left, view.safeAreaInsets.right), dy: 0)
@@ -1078,6 +1356,10 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
             self.isToolbarHidden = false
         }
     }
+    
+    var sortB: UIBarButtonItem!
+    var searchB: UIBarButtonItem!
+    var liveB: UIBarButtonItem!
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -1085,28 +1367,47 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         
         if navigationController != nil {
             let sort = UIButton.init(type: .custom)
-            sort.setImage(UIImage.init(named: "ic_sort_white")?.navIcon(), for: UIControlState.normal)
-            sort.addTarget(self, action: #selector(self.sort(_:)), for: UIControlEvents.touchUpInside)
+            sort.accessibilityLabel = "Change sort type"
+            sort.setImage(UIImage(sfString: SFSymbol.arrowUpArrowDownCircle, overrideString: "ic_sort_white")?.navIcon(), for: UIControl.State.normal)
+            sort.addTarget(self, action: #selector(self.sort(_:)), for: UIControl.Event.touchUpInside)
             sort.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-            let sortB = UIBarButtonItem.init(customView: sort)
+            sortB = UIBarButtonItem.init(customView: sort)
             
             let search = UIButton.init(type: .custom)
-            search.setImage(UIImage.init(named: "search")?.navIcon(), for: UIControlState.normal)
-            search.addTarget(self, action: #selector(self.search(_:)), for: UIControlEvents.touchUpInside)
+            search.accessibilityLabel = "Search"
+            search.setImage(UIImage.init(sfString: SFSymbol.magnifyingglass, overrideString: "search")?.navIcon(), for: UIControl.State.normal)
+            search.addTarget(self, action: #selector(self.search(_:)), for: UIControl.Event.touchUpInside)
             search.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-            let searchB = UIBarButtonItem.init(customView: search)
+            searchB = UIBarButtonItem.init(customView: search)
             
-            navigationItem.rightBarButtonItems = [sortB, searchB]
             navigationItem.rightBarButtonItem?.imageInsets = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: -20)
+            if !loaded {
+                activityIndicator = UIActivityIndicatorView(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+                activityIndicator.color = SettingValues.reduceColor && ColorUtil.theme.isLight ? ColorUtil.theme.fontColor : .white
+                if self.navigationController == nil {
+                    self.view.addSubview(activityIndicator)
+                    activityIndicator.centerAnchors == self.view.centerAnchors
+                } else {
+                    let barButton = UIBarButtonItem(customView: activityIndicator)
+                    navigationItem.rightBarButtonItems = [barButton]
+                }
+                activityIndicator.startAnimating()
+            } else {
+                navigationItem.rightBarButtonItems = [sortB, searchB]
+            }
+        } else {
+            if !loaded {
+                activityIndicator = UIActivityIndicatorView(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+                activityIndicator.color = ColorUtil.theme.navIconColor
+                self.view.addSubview(activityIndicator)
+                activityIndicator.centerAnchors == self.view.centerAnchors
+                activityIndicator.startAnimating()
+            }
         }
         
         doStartupItems()
 
-        if !loaded && (single || forceLoad) {
-            refresh(self)
-        }
-
-        if headerCell.videoView != nil {
+        if headerCell.videoView != nil && !(headerCell?.videoView?.isHidden ?? true) {
             headerCell.videoView?.player?.play()
         }
         
@@ -1115,113 +1416,139 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
             tableView.reloadData()
         }
         
-        if SettingValues.reduceColor && ColorUtil.theme.isLight() {
-            UIApplication.shared.statusBarStyle = .default
-        } else {
-            UIApplication.shared.statusBarStyle = .lightContent
-        }
+        setNeedsStatusBarAppearanceUpdate()
         if navigationController != nil && (didDisappearCompletely || !loaded) {
             self.setupTitleView(submission == nil ? subreddit : submission!.subreddit)
             self.updateToolbar()
         }
-        
-        if popup != nil {
-            var width = UIScreen.main.bounds.width - 24
-            if width > 375 {
-                width = 375
+    }
+    
+    var activityIndicator = UIActivityIndicatorView()
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
             }
-            self.navigationController!.view.addSubview(popup)
-            popup.transform = .identity
-            popup.bottomAnchor == self.navigationController!.view.safeBottomAnchor - 8
-            popup.widthAnchor == width
-            popup.heightAnchor == 48
-            popup.centerXAnchor == self.navigationController!.view.centerXAnchor
-            self.navigationController!.view.bringSubview(toFront: popup)
-            
-            UIView.animate(withDuration: 0.25, delay: 0.0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.2, options: .curveEaseInOut, animations: {
-                self.popup.transform = CGAffineTransform.identity.scaledBy(x: 1.0, y: 1.0)
-            }, completion: nil)
-        }
-        
-        if !loaded {
-            refreshControl?.beginRefreshing()
-        }
-        
-        if !(parent is PagingCommentViewController) {
-            if SettingValues.commentGesturesMode == .SWIPE_ANYWHERE && !(self.navigationController?.delegate is SloppySwiper) {
-                swiper = SloppySwiper.init(navigationController: self.navigationController!)
-                self.navigationController!.delegate = swiper!
-            }
-        }
-        
-        if let interactiveGesture = self.navigationController?.interactivePopGestureRecognizer {
-            self.tableView.panGestureRecognizer.require(toFail: interactiveGesture)
+
+        } else {
+            return .lightContent
         }
     }
 
-    var originalPosition: CGPoint?
-    var currentPositionTouched: CGPoint?
-
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-
+        
         if UIScreen.main.traitCollection.userInterfaceIdiom == .pad && Int(round(self.view.bounds.width / CGFloat(320))) > 1 && false {
             self.navigationController!.view.backgroundColor = .clear
         }
         self.isHiding = false
         didDisappearCompletely = false
+        let isModal = navigationController?.presentingViewController != nil || self.modalPresentationStyle == .fullScreen
+
+        if !isModal && !(parent is PagingCommentViewController) && self.navigationController != nil && !(self.navigationController!.delegate is SloppySwiper) {
+            if (SettingValues.commentGesturesMode == .SWIPE_ANYWHERE || SettingValues.commentGesturesMode == .GESTURES) && !(self.navigationController?.delegate is SloppySwiper) {
+                swiper = SloppySwiper.init(navigationController: self.navigationController!)
+                self.navigationController!.delegate = swiper!
+            }
+            if let interactiveGesture = self.navigationController?.interactivePopGestureRecognizer {
+                self.tableView.panGestureRecognizer.require(toFail: interactiveGesture)
+            }
+        } else {
+            if isModal {
+                self.navigationController?.delegate = self
+                if self.navigationController is TapBehindModalViewController {
+                    (self.navigationController as! TapBehindModalViewController).del = self
+                }
+            }
+        }
+        
+        self.navigationController?.setNavigationBarHidden(false, animated: true)
+        
+        if self.shouldAnimateLoad {
+            self.reloadTableViewAnimated()
+            self.shouldAnimateLoad = false
+        }
+        self.finishedPush = true
+    }
+ 
+    var duringAnimation = false
+    var finishedPush = false
+    
+    func reloadTableViewAnimated() {
+        self.tableView.reloadData()
+
+        let cells = self.tableView.visibleCells
+        for cell in cells {
+            cell.alpha = 0
+        }
+        var row = Double(0)
+        for cell in cells {
+            UIView.animate(withDuration: 0.5, delay: 0, options: .curveEaseInOut, animations: {
+                cell.alpha = 1
+            }, completion: nil)
+            row += 1
+        }
     }
 
-    var duringAnimation = false
-
-    func close(_ sender: AnyObject) {
+    @objc func close(_ sender: AnyObject) {
         self.navigationController?.popViewController(animated: true)
     }
     
-    func showMod(_ sender: AnyObject) {
+    @objc func showMod(_ sender: AnyObject) {
         if !modLink.isEmpty() {
             VCPresenter.openRedditLink(self.modLink, self.navigationController, self)
         }
     }
     
-    func showMenu(_ sender: AnyObject) {
+    @objc func showMenu(_ sender: AnyObject) {
         if !offline {
             let link = submission!
 
-            let alertController: BottomSheetActionController = BottomSheetActionController()
-            alertController.headerData = "Comment actions"
+            let alertController = DragDownAlertMenu(title: "Comment actions", subtitle: self.submission?.title ?? "", icon: self.submission?.thumbnailUrl)
 
-            alertController.addAction(Action(ActionData(title: "Refresh", image: UIImage(named: "sync")!.menuIcon()), style: .default, handler: { _ in
+            alertController.addAction(title: "Refresh comments", icon: UIImage(sfString: SFSymbol.arrowClockwise, overrideString: "sync")!.menuIcon()) {
                 self.reset = true
                 self.refresh(self)
-            }))
+            }
 
-            alertController.addAction(Action(ActionData(title: "r/\(link.subreddit)", image: UIImage(named: "subs")!.menuIcon()), style: .default, handler: { _ in
+            alertController.addAction(title: "Reply to submission", icon: UIImage(sfString: SFSymbol.arrowshapeTurnUpLeftFill, overrideString: "reply")!.menuIcon()) {
+                self.reply(self.headerCell)
+            }
+
+            alertController.addAction(title: "Go to r/\(link.subreddit)", icon: UIImage(sfString: .rCircleFill, overrideString: "subs")!.menuIcon()) {
                 VCPresenter.openRedditLink("www.reddit.com/r/\(link.subreddit)", self.navigationController, self)
-            }))
+            }
 
-            alertController.addAction(Action(ActionData(title: "Related submissions", image: UIImage(named: "size")!.menuIcon()), style: .default, handler: { _ in
+            alertController.addAction(title: "View related submissions", icon: UIImage(sfString: SFSymbol.squareStackFill, overrideString: "size")!.menuIcon()) {
                 let related = RelatedViewController.init(thing: self.submission!)
                 VCPresenter.showVC(viewController: related, popupIfPossible: false, parentNavigationController: self.navigationController, parentViewController: self)
-            }))
+            }
 
-            alertController.addAction(Action(ActionData(title: "r/\(link.subreddit) sidebar", image: UIImage(named: "info")!.menuIcon()), style: .default, handler: { _ in
+            alertController.addAction(title: "View r/\(link.subreddit)'s sidebar", icon: UIImage(sfString: SFSymbol.infoCircle, overrideString: "info")!.menuIcon()) {
                 Sidebar.init(parent: self, subname: self.submission!.subreddit).displaySidebar()
-            }))
+            }
 
-            alertController.addAction(Action(ActionData(title: "Collapse child comments", image: UIImage(named: "comments")!.menuIcon()), style: .default, handler: { _ in
-                self.collapseAll()
-            }))
-
-            VCPresenter.presentAlert(alertController, parentVC: self)
+            alertController.addAction(title: allCollapsed ? "Expand child comments" : "Collapse child comments", icon: UIImage(sfString: SFSymbol.bubbleLeftAndBubbleRightFill, overrideString: "comments")!.menuIcon()) {
+                if self.allCollapsed {
+                    self.expandAll()
+                } else {
+                    self.collapseAll()
+                }
+            }
+            
+            alertController.show(self)
         }
     }
 
     var sub: String = ""
+    var allCollapsed = false
 
     var subInfo: Subreddit?
 
-    func search(_ sender: AnyObject) {
+    @objc func search(_ sender: AnyObject) {
         if !dataArray.isEmpty {
             showSearchBar()
         }
@@ -1272,7 +1599,27 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         }
         return buf
     }
-
+    
+    private var blurView: UIVisualEffectView?
+    private let blurEffect = (NSClassFromString("_UICustomBlurEffect") as! UIBlurEffect.Type).init()
+    private var blackView = UIView()
+    
+    func setBackgroundView() {
+        blackView.backgroundColor = .black
+        blackView.alpha = 0
+        blurView = UIVisualEffectView(frame: self.navigationController!.view!.bounds)
+        self.blurView!.effect = self.blurEffect
+        self.blurEffect.setValue(10, forKeyPath: "blurRadius")
+        self.navigationController!.view!.insertSubview(blackView, at: self.navigationController!.view!.subviews.count)
+        self.navigationController!.view!.insertSubview(blurView!, at: self.navigationController!.view!.subviews.count)
+        blurView!.edgeAnchors == self.navigationController!.view!.edgeAnchors
+        blackView.edgeAnchors == self.navigationController!.view!.edgeAnchors
+        
+        UIView.animate(withDuration: 0.2, delay: 1, options: .curveEaseInOut, animations: {
+            self.blackView.alpha = 0.2
+        })
+    }
+    
     func updateStrings(_ newComments: [(Thing, Int)]) {
         var color = UIColor.black
         var first = true
@@ -1282,11 +1629,10 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 first = false
             }
             if let comment = thing.0 as? Comment {
-                let html = comment.bodyHtml.preprocessedHTMLStringBeforeNSAttributedStringParsing
-                self.text[comment.getId()] = TextDisplayStackView.createAttributedChunk(baseHTML: html, fontSize: 16, submission: false, accentColor: color)
+                self.text[comment.getId()] = TextDisplayStackView.createAttributedChunk(baseHTML: comment.bodyHtml, fontSize: 16, submission: false, accentColor: color, fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
             } else {
                 let attr = NSMutableAttributedString(string: "more")
-                self.text[(thing.0 as! More).getId()] = LinkParser.parse(attr, color)
+                self.text[(thing.0 as! More).getId()] = LinkParser.parse(attr, color, font: UIFont.systemFont(ofSize: 16), fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
             }
         }
     }
@@ -1298,10 +1644,10 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         for thing in newComments {
             if let comment = thing as? RComment {
                 let html = comment.htmlText
-                self.text[comment.getIdentifier()] = TextDisplayStackView.createAttributedChunk(baseHTML: html, fontSize: 16, submission: false, accentColor: color)
+                self.text[comment.getIdentifier()] = TextDisplayStackView.createAttributedChunk(baseHTML: html, fontSize: 16, submission: false, accentColor: color, fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
             } else {
                 let attr = NSMutableAttributedString(string: "more")
-                self.text[(thing as! RMore).getIdentifier()] = LinkParser.parse(attr, color)
+                self.text[(thing as! RMore).getIdentifier()] = LinkParser.parse(attr, color, font: UIFont.systemFont(ofSize: 16), fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
             }
 
         }
@@ -1324,26 +1670,26 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         }
     }
 
-    func downVote(_ sender: AnyObject?) {
+    @objc func downVote(_ sender: AnyObject?) {
         vote(.down)
     }
 
-    func upVote(_ sender: AnyObject?) {
+    @objc func upVote(_ sender: AnyObject?) {
         vote(.up)
     }
 
-    func cancelVote(_ sender: AnyObject?) {
+    @objc func cancelVote(_ sender: AnyObject?) {
         vote(.none)
     }
 
-    func loadAll(_ sender: AnyObject) {
+    @objc func loadAll(_ sender: AnyObject) {
         context = ""
         reset = true
         refreshControl?.beginRefreshing()
         refresh(sender)
         updateToolbar()
     }
-
+    
     var currentSort: CommentNavType = .PARENTS
 
     enum CommentNavType {
@@ -1365,15 +1711,15 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         return count
     }
     
-    override func prefersHomeIndicatorAutoHidden() -> Bool {
+    override var prefersHomeIndicatorAutoHidden: Bool {
         return true
     }
 
-    func showNavTypes(_ sender: UIView) {
+    @objc func showNavTypes(_ sender: UIView) {
         if !loaded {
             return
         }
-        let actionSheetController: UIAlertController = UIAlertController(title: "Navigation type", message: "", preferredStyle: .actionSheet)
+        let alertController = DragDownAlertMenu(title: "Comment navigation", subtitle: "Select a navigation type", icon: nil)
 
         let link = getCount(sort: .LINK)
         let parents = getCount(sort: .PARENTS)
@@ -1381,62 +1727,51 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         let gilded = getCount(sort: .GILDED)
         let you = getCount(sort: .YOU)
 
-        var cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-            print("Cancel")
-        }
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Parent comment (\(parents))", style: .default) { _ -> Void in
+        alertController.addAction(title: "Top-level comments (\(parents))", icon: UIImage()) {
             self.currentSort = .PARENTS
         }
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "OP (\(op))", style: .default) { _ -> Void in
+        alertController.addAction(title: "Submission OP (\(op))", icon: UIImage()) {
             self.currentSort = .OP
         }
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Link (\(link))", style: .default) { _ -> Void in
+        alertController.addAction(title: "Links in comment (\(link))", icon: UIImage()) {
             self.currentSort = .LINK
         }
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "You (\(you))", style: .default) { _ -> Void in
+        alertController.addAction(title: "Your comments (\(you))", icon: UIImage()) {
             self.currentSort = .YOU
         }
-        actionSheetController.addAction(cancelActionButton)
-
-        cancelActionButton = UIAlertAction(title: "Gilded (\(gilded))", style: .default) { _ -> Void in
+        alertController.addAction(title: "Gilded comments (\(gilded))", icon: UIImage()) {
             self.currentSort = .GILDED
         }
-        actionSheetController.addAction(cancelActionButton)
-
-        if let presenter = actionSheetController.popoverPresentationController {
-            presenter.sourceView = sender
-            presenter.sourceRect = sender.bounds
-        }
-
-        self.present(actionSheetController, animated: true, completion: nil)
+        alertController.show(self)
     }
 
     func goToCell(i: Int) {
-        let indexPath = IndexPath.init(row: i, section: 0)
-        self.tableView.scrollToRow(at: indexPath,
-                at: UITableViewScrollPosition.none, animated: true)
+        let indexPath = IndexPath(row: i, section: 0)
+        self.tableView.scrollToRow(at: indexPath, at: .top, animated: true)
 
     }
     
     var goingToCell = false
     
     func goToCellTop(i: Int) {
-        let indexPath = IndexPath.init(row: i, section: 0)
-        self.tableView.scrollToRow(at: indexPath,
-                                   at: UITableViewScrollPosition.top, animated: true)
+        isGoingDown = true
+        let indexPath = IndexPath(row: i, section: 0)
         goingToCell = true
+        self.tableView.scrollToRow(at: indexPath, at: .top, animated: true)
     }
-
-    func goUp(_ sender: AnyObject) {
-        if !loaded {
+    
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        self.goingToCell = false
+        self.isGoingDown = false
+    }
+    
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        self.goingToCell = false
+        self.isGoingDown = false
+    }
+    
+    @objc func goUp(_ sender: AnyObject) {
+        if !loaded || content.isEmpty {
             return
         }
         var topCell = 0
@@ -1459,9 +1794,10 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     }
 
     var lastMoved = -1
-
-    func goDown(_ sender: AnyObject) {
-        if !loaded {
+    var isGoingDown = false
+    
+    @objc func goDown(_ sender: AnyObject) {
+        if !loaded || content.isEmpty {
             return
         }
         var topCell = 0
@@ -1482,7 +1818,10 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 topCell += 1
                 contents = content[dataArray[topCell]]
             }
-            for i in (topCell + 1)...(dataArray.count - 1) {
+            if (topCell + 1) > (dataArray.count - 1) {
+                return
+            }
+            for i in (topCell + 1)..<(dataArray.count - 1) {
                 contents = content[dataArray[i]]
                 if contents is RComment && matches(comment: contents as! RComment, sort: currentSort) && i > lastMoved {
                     goToCellTop(i: i)
@@ -1502,7 +1841,7 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 return false
             }
         case .GILDED:
-            if comment.gilded > 0 {
+            if comment.gilded {
                 return true
             } else {
                 return false
@@ -1536,39 +1875,45 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         var items: [UIBarButtonItem] = []
         if !context.isEmpty() {
             items.append(space)
-            items.append(UIBarButtonItem.init(title: "Load full thread", style: .plain, target: self, action: #selector(CommentViewController.loadAll(_:))))
+            let loadFullThreadButton = UIBarButtonItem.init(title: "Load full thread", style: .plain, target: self, action: #selector(CommentViewController.loadAll(_:)))
+            loadFullThreadButton.accessibilityLabel = "Load full thread"
+            items.append(loadFullThreadButton)
             items.append(space)
         } else {
+            let up = UIButton(type: .custom)
+            up.accessibilityLabel = "Navigate up one comment thread"
+            up.setImage(UIImage(sfString: SFSymbol.chevronCompactUp, overrideString: "up")?.toolbarIcon(), for: UIControl.State.normal)
+            up.addTarget(self, action: #selector(CommentViewController.goUp(_:)), for: UIControl.Event.touchUpInside)
+            up.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
+            let upB = UIBarButtonItem(customView: up)
 
-            let up = UIButton.init(type: .custom)
-            up.setImage(UIImage.init(named: "up")?.toolbarIcon(), for: UIControlState.normal)
-            up.addTarget(self, action: #selector(CommentViewController.goUp(_:)), for: UIControlEvents.touchUpInside)
-            up.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-            let upB = UIBarButtonItem.init(customView: up)
+            let nav = UIButton(type: .custom)
+            nav.accessibilityLabel = "Change criteria for comment thread navigation"
+            nav.setImage(UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")?.toolbarIcon(), for: UIControl.State.normal)
+            nav.addTarget(self, action: #selector(CommentViewController.showNavTypes(_:)), for: UIControl.Event.touchUpInside)
+            nav.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
+            let navB = UIBarButtonItem(customView: nav)
 
-            let nav = UIButton.init(type: .custom)
-            nav.setImage(UIImage.init(named: "nav")?.toolbarIcon(), for: UIControlState.normal)
-            nav.addTarget(self, action: #selector(CommentViewController.showNavTypes(_:)), for: UIControlEvents.touchUpInside)
-            nav.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-            let navB = UIBarButtonItem.init(customView: nav)
+            let down = UIButton(type: .custom)
+            down.accessibilityLabel = "Navigate down one comment thread"
+            down.setImage(UIImage(sfString: SFSymbol.chevronCompactDown, overrideString: "down")?.toolbarIcon(), for: UIControl.State.normal)
+            down.addTarget(self, action: #selector(CommentViewController.goDown(_:)), for: UIControl.Event.touchUpInside)
+            down.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
+            let downB = UIBarButtonItem(customView: down)
 
-            let down = UIButton.init(type: .custom)
-            down.setImage(UIImage.init(named: "down")?.toolbarIcon(), for: UIControlState.normal)
-            down.addTarget(self, action: #selector(CommentViewController.goDown(_:)), for: UIControlEvents.touchUpInside)
-            down.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-            let downB = UIBarButtonItem.init(customView: down)
-
-            let more = UIButton.init(type: .custom)
-            more.setImage(UIImage.init(named: "moreh")?.toolbarIcon(), for: UIControlState.normal)
-            more.addTarget(self, action: #selector(self.showMenu(_:)), for: UIControlEvents.touchUpInside)
-            more.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-            moreB = UIBarButtonItem.init(customView: more)
+            let more = UIButton(type: .custom)
+            more.accessibilityLabel = "Post options"
+            more.setImage(UIImage(sfString: SFSymbol.ellipsis, overrideString: "moreh")?.toolbarIcon(), for: UIControl.State.normal)
+            more.addTarget(self, action: #selector(self.showMenu(_:)), for: UIControl.Event.touchUpInside)
+            more.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
+            moreB = UIBarButtonItem(customView: more)
             
-            let mod = UIButton.init(type: .custom)
-            mod.setImage(UIImage.init(named: "mod")?.toolbarIcon(), for: UIControlState.normal)
-            mod.addTarget(self, action: #selector(self.showMod(_:)), for: UIControlEvents.touchUpInside)
-            mod.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-            modB = UIBarButtonItem.init(customView: mod)
+            let mod = UIButton(type: .custom)
+            mod.accessibilityLabel = "Moderator options"
+            mod.setImage(UIImage(sfString: SFSymbol.shieldLefthalfFill, overrideString: "mod")?.toolbarIcon(), for: UIControl.State.normal)
+            mod.addTarget(self, action: #selector(self.showMod(_:)), for: UIControl.Event.touchUpInside)
+            mod.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
+            modB = UIBarButtonItem(customView: mod)
             if modLink.isEmpty() && modB.customView != nil {
                 modB.customView? = UIView(frame: modB.customView!.frame)
             }
@@ -1588,27 +1933,27 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
 
         if parent != nil && parent is PagingCommentViewController {
             parent?.toolbarItems = items
-            parent?.navigationController?.toolbar.barTintColor = ColorUtil.backgroundColor
-            parent?.navigationController?.toolbar.tintColor = ColorUtil.fontColor
+            parent?.navigationController?.toolbar.barTintColor = ColorUtil.theme.backgroundColor
+            parent?.navigationController?.toolbar.tintColor = ColorUtil.theme.fontColor
         } else {
             toolbarItems = items
-            navigationController?.toolbar.barTintColor = ColorUtil.backgroundColor
-            navigationController?.toolbar.tintColor = ColorUtil.fontColor
+            navigationController?.toolbar.barTintColor = ColorUtil.theme.backgroundColor
+            navigationController?.toolbar.tintColor = ColorUtil.theme.fontColor
         }
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int {
+    func numberOfSections(in tableView: UITableView) -> Int {
         return 1
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return (isSearching ? self.filteredData.count : self.comments.count - self.hidden.count)
     }
-    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         if SettingValues.collapseFully {
             let datasetPosition = (indexPath as NSIndexPath).row
             if dataArray.isEmpty {
-                return UITableViewAutomaticDimension
+                return UITableView.automaticDimension
             }
             let thing = isSearching ? filteredData[datasetPosition] : dataArray[datasetPosition]
             if !hiddenPersons.contains(thing) && thing != self.menuId {
@@ -1617,59 +1962,55 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
                 }
             }
         }
-        return UITableViewAutomaticDimension
+        return UITableView.automaticDimension
     }
 
     var tagText: String?
 
     func tagUser(name: String) {
-        let alertController = UIAlertController(title: "Tag \(AccountController.formatUsernamePosessive(input: name, small: true)) profile", message: nil, preferredStyle: UIAlertControllerStyle.alert)
-        let confirmAction = UIAlertAction(title: "Set", style: .default) { (_) in
-            if let text = self.tagText {
-                ColorUtil.setTagForUser(name: name, tag: text)
-                self.tableView.reloadData()
-            } else {
-                // user did not fill field
-            }
-        }
+        let alert = DragDownAlertMenu(title: AccountController.formatUsername(input: name, small: true), subtitle: "Tag profile", icon: nil, full: true)
+        
+        alert.addTextInput(title: "Set tag", icon: UIImage(sfString: SFSymbol.tagFill, overrideString: "save-1")?.menuIcon(), action: {
+            ColorUtil.setTagForUser(name: name, tag: alert.getText() ?? "")
+            self.tableView.reloadData()
+        }, inputPlaceholder: "Enter a tag...", inputValue: ColorUtil.getTagForUser(name: name), inputIcon: UIImage(sfString: SFSymbol.tagFill, overrideString: "subs")!.menuIcon(), textRequired: true, exitOnAction: true)
 
-        if !ColorUtil.getTagForUser(name: name).isEmpty {
-            let removeAction = UIAlertAction(title: "Remove tag", style: .default) { (_) in
+        if !(ColorUtil.getTagForUser(name: name) ?? "").isEmpty {
+            alert.addAction(title: "Remove tag", icon: UIImage(sfString: SFSymbol.trashFill, overrideString: "delete")?.menuIcon(), enabled: true) {
                 ColorUtil.removeTagForUser(name: name)
                 self.tableView.reloadData()
             }
-            alertController.addAction(removeAction)
         }
+        
+        alert.show(self)
+    }
 
-        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel) { (_) in
-        }
-
-        let config: TextField.Config = { textField in
-            textField.becomeFirstResponder()
-            textField.textColor = .black
-            textField.placeholder = "Tag"
-            textField.left(image: UIImage.init(named: "flag"), color: .black)
-            textField.leftViewPadding = 12
-            textField.borderWidth = 1
-            textField.cornerRadius = 8
-            textField.borderColor = UIColor.lightGray.withAlphaComponent(0.5)
-            textField.backgroundColor = .white
-            textField.keyboardAppearance = .default
-            textField.keyboardType = .default
-            textField.returnKeyType = .done
-            textField.text = ColorUtil.getTagForUser(name: name)
-            textField.action { textField in
-                self.tagText = textField.text
+    func blockUser(name: String) {
+        let alert = AlertController(title: "", message: nil, preferredStyle: .alert)
+        let confirmAction = AlertAction(title: "Block", style: .preferred, handler: {(_) in
+            PostFilter.profiles.append(name as NSString)
+            PostFilter.saveAndUpdate()
+            BannerUtil.makeBanner(text: "User blocked", color: GMColor.red500Color(), seconds: 3, context: self, top: true, callback: nil)
+            if AccountController.isLoggedIn {
+                do {
+                    try (UIApplication.shared.delegate as! AppDelegate).session?.blockViaUsername(name, completion: { (result) in
+                        print(result)
+                    })
+                } catch {
+                    print(error)
+                }
             }
-        }
-
-        alertController.addOneTextField(configuration: config)
-
-        alertController.addAction(confirmAction)
-        alertController.addAction(cancelAction)
-
-        self.present(alertController, animated: true, completion: nil)
-
+        })
+            
+        alert.setupTheme()
+        
+        alert.attributedTitle = NSAttributedString(string: "Are you sure you want to block u/\(name)?", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+        
+        alert.addAction(confirmAction)
+        alert.addCancelButton()
+        
+        alert.addBlurView()
+        self.present(alert, animated: true, completion: nil)
     }
 
     var isCurrentlyChanging = false
@@ -1677,24 +2018,19 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         inHeadView.removeFromSuperview()
-        headerCell.videoView?.player?.pause()
+        headerCell.endVideos()
         self.didDisappearCompletely = true
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         self.isHiding = true
-        self.inHeadView.removeFromSuperview()
-        if popup != nil {
-            UIView.animate(withDuration: 0.15, delay: 0.0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.2, options: .curveEaseInOut, animations: {
-                self.popup.transform = CGAffineTransform.identity.scaledBy(x: 0.001, y: 0.001)
-            }, completion: { (_) in
-                self.popup.removeFromSuperview()
-            })
-        }
+        self.liveTimer.invalidate()
+        self.removeJumpButton()
     }
 
     func collapseAll() {
+        self.allCollapsed = true
         if dataArray.count > 0 {
             for i in 0...dataArray.count - 1 {
                 if content[dataArray[i]] is RComment && matches(comment: content[dataArray[i]] as! RComment, sort: .PARENTS) {
@@ -1710,23 +2046,42 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
             tableView.reloadData()
         }
     }
+    
+    func expandAll() {
+        self.allCollapsed = false
+        if dataArray.count > 0 {
+            for i in 0...dataArray.count - 1 {
+                if content[dataArray[i]] is RComment && matches(comment: content[dataArray[i]] as! RComment, sort: .PARENTS) {
+                    _ = unhideNumber(n: dataArray[i], iB: i)
+                    let t = content[dataArray[i]]
+                    let id = (t is RComment) ? (t as! RComment).getIdentifier() : (t as! RMore).getIdentifier()
+                    if hiddenPersons.contains(id) {
+                        hiddenPersons.remove(id)
+                    }
+                }
+            }
+            doArrays()
+            tableView.reloadData()
+        }
+    }
 
     func hideAll(comment: String, i: Int) {
         if !isCurrentlyChanging {
             isCurrentlyChanging = true
-            DispatchQueue.global(qos: .background).async {
-                let counter = self.hideNumber(n: comment, iB: i) - 1
-                self.doArrays()
+            DispatchQueue.global(qos: .background).async { [weak self] in
+                guard let strongSelf = self else { return }
+                let counter = strongSelf.hideNumber(n: comment, iB: i) - 1
+                strongSelf.doArrays()
                 DispatchQueue.main.async {
-                    self.tableView.beginUpdates()
+                    strongSelf.tableView.beginUpdates()
 
                     var indexPaths: [IndexPath] = []
                     for row in i...counter {
                         indexPaths.append(IndexPath(row: row, section: 0))
                     }
-                    self.tableView.deleteRows(at: indexPaths, with: .fade)
-                    self.tableView.endUpdates()
-                    self.isCurrentlyChanging = false
+                    strongSelf.tableView.deleteRows(at: indexPaths, with: .fade)
+                    strongSelf.tableView.endUpdates()
+                    strongSelf.isCurrentlyChanging = false
                 }
             }
         }
@@ -1735,19 +2090,21 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     func unhideAll(comment: String, i: Int) {
         if !isCurrentlyChanging {
             isCurrentlyChanging = true
-            DispatchQueue.global(qos: .background).async {
-                let counter = self.unhideNumber(n: comment, iB: i)
-                self.doArrays()
+            DispatchQueue.global(qos: .background).async { [weak self] in
+                guard let strongSelf = self else { return }
+
+                let counter = strongSelf.unhideNumber(n: comment, iB: i)
+                strongSelf.doArrays()
                 DispatchQueue.main.async {
-                    self.tableView.beginUpdates()
+                    strongSelf.tableView.beginUpdates()
 
                     var indexPaths: [IndexPath] = []
                     for row in (i + 1)...counter {
                         indexPaths.append(IndexPath(row: row, section: 0))
                     }
-                    self.tableView.insertRows(at: indexPaths, with: .fade)
-                    self.tableView.endUpdates()
-                    self.isCurrentlyChanging = false
+                    strongSelf.tableView.insertRows(at: indexPaths, with: .fade)
+                    strongSelf.tableView.endUpdates()
+                    strongSelf.isCurrentlyChanging = false
                 }
             }
         }
@@ -1766,7 +2123,7 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     func walkTree(n: String) -> [String] {
         var toReturn: [String] = []
         if content[n] is RComment {
-            let bounds = comments.index(where: { ($0 == n) })! + 1
+            let bounds = comments.firstIndex(where: { ($0 == n) })! + 1
             let parentDepth = (cDepth[n] ?? 0)
             for obj in stride(from: bounds, to: comments.count, by: 1) {
                 if (cDepth[comments[obj]] ?? 0) > parentDepth {
@@ -1782,7 +2139,7 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     func walkTreeFlat(n: String) -> [String] {
         var toReturn: [String] = []
         if content[n] is RComment {
-            let bounds = comments.index(where: { ($0 == n) })! + 1
+            let bounds = comments.firstIndex(where: { ($0 == n) })! + 1
             let parentDepth = (cDepth[n] ?? 0)
             for obj in stride(from: bounds, to: comments.count, by: 1) {
                 let depth = (cDepth[comments[obj]] ?? 0)
@@ -1800,7 +2157,7 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
         var toReturn: [String] = []
         toReturn.append(n)
         if content[n] is RComment {
-            let bounds = comments.index(where: { $0 == n })! + 1
+            let bounds = comments.firstIndex(where: { $0 == n })! + 1
             let parentDepth = (cDepth[n] ?? 0)
             for obj in stride(from: bounds, to: comments.count, by: 1) {
                 let currentDepth = cDepth[comments[obj]] ?? 0
@@ -1886,9 +2243,19 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     }
 
     @objc func spacePressed() {
-        UIView.animate(withDuration: 0.2, delay: 0, options: UIViewAnimationOptions.curveEaseOut, animations: {
-            self.tableView.contentOffset.y += 350
-        }, completion: nil)
+        if !isReply {
+            UIView.animate(withDuration: 0.2, delay: 0, options: UIView.AnimationOptions.curveEaseOut, animations: {
+                self.tableView.contentOffset.y = min(self.tableView.contentOffset.y + 350, self.tableView.contentSize.height - self.tableView.frame.size.height)
+            }, completion: nil)
+        }
+    }
+    
+    @objc func spacePressedUp() {
+        if !isReply {
+            UIView.animate(withDuration: 0.2, delay: 0, options: UIView.AnimationOptions.curveEaseOut, animations: {
+                self.tableView.contentOffset.y = max(self.tableView.contentOffset.y - 350, -64)
+            }, completion: nil)
+        }
     }
 
     func unhideNumber(n: String, iB: Int) -> Int {
@@ -1930,29 +2297,34 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        if let header = self.tableView.tableHeaderView {
-            var frame = header.frame
-            var leftInset: CGFloat = 0
-            var rightInset: CGFloat = 0
-            
-            if #available(iOS 11.0, *) {
-                leftInset = self.tableView.safeAreaInsets.left
-                rightInset = self.tableView.safeAreaInsets.right
-                frame.origin.x = leftInset
-            } else {
-                // Fallback on earlier versions
-            }
-            
-            self.headerCell!.aspectWidth = size.width - (leftInset + rightInset)
-            
-            frame.size.width = size.width - (leftInset + rightInset)
-            frame.size.height = self.headerCell!.estimateHeight(true, true)
-            
-            self.headerCell!.contentView.frame = frame
-            self.tableView.tableHeaderView!.frame = frame
-            tableView.reloadData(with: .none)
-            doHeadView(size)
-        }
+
+        coordinator.animate(
+            alongsideTransition: { [unowned self] _ in
+                if let header = self.tableView.tableHeaderView {
+                    var frame = header.frame
+                    var leftInset: CGFloat = 0
+                    var rightInset: CGFloat = 0
+
+                    if #available(iOS 11.0, *) {
+                        leftInset = self.tableView.safeAreaInsets.left
+                        rightInset = self.tableView.safeAreaInsets.right
+                        frame.origin.x = leftInset
+                    } else {
+                        // Fallback on earlier versions
+                    }
+
+                    self.headerCell!.aspectWidth = size.width - (leftInset + rightInset)
+
+                    frame.size.width = size.width - (leftInset + rightInset)
+                    frame.size.height = self.headerCell!.estimateHeight(true, true, np: self.np)
+
+                    self.headerCell!.contentView.frame = frame
+                    self.tableView.tableHeaderView!.frame = frame
+                    //self.tableView.reloadData(with: .none)
+                    self.doHeadView(size)
+                    self.view.setNeedsLayout()
+                }
+            }, completion: nil)
     }
     
     var lastYUsed = CGFloat(0)
@@ -1960,18 +2332,19 @@ class CommentViewController: MediaTableViewController, TTTAttributedCellDelegate
     var isHiding = false
     var lastY = CGFloat(0)
     var oldY = CGFloat(0)
+    
+    var isSearch = false
 
-override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        //self.tableView.endEditing(true)
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
         let currentY = scrollView.contentOffset.y
-        if !SettingValues.lockCommentBars {
+
+        if !SettingValues.pinToolbar && !isReply && !isSearch {
             if currentY > lastYUsed && currentY > 60 {
-                if navigationController != nil && !isHiding && !goingToCell && !isToolbarHidden && !(scrollView.contentOffset.y >= (scrollView.contentSize.height - scrollView.frame.size.height)) {
+                if navigationController != nil && !isHiding && !isToolbarHidden && !(scrollView.contentOffset.y >= (scrollView.contentSize.height - scrollView.frame.size.height)) {
                     hideUI(inHeader: true)
                 }
-            } else if (currentY < lastYUsed + 20) && !isHiding && navigationController != nil && (isToolbarHidden) {
+            } else if (currentY < lastYUsed - 15 || currentY < 100) && !isHiding && navigationController != nil && (isToolbarHidden) {
                 showUI()
-                goingToCell = false
             }
         }
         lastYUsed = currentY
@@ -1984,12 +2357,13 @@ override func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if inHeadView.superview == nil {
             doHeadView(self.view.frame.size)
         }
-        (navigationController)?.setNavigationBarHidden(true, animated: true)
         
-        if popup == nil {
+        if !isGoingDown {
+            (navigationController)?.setNavigationBarHidden(true, animated: true)
+            
             (self.navigationController)?.setToolbarHidden(true, animated: true)
+            self.createJumpButton()
         }
-        
         self.isToolbarHidden = true
         isHiding = false
     }
@@ -1997,39 +2371,63 @@ override func scrollViewDidScroll(_ scrollView: UIScrollView) {
     func showUI() {
         (navigationController)?.setNavigationBarHidden(false, animated: true)
         (navigationController)?.setToolbarHidden(false, animated: true)
+        if live {
+            progressDot.layer.removeAllAnimations()
+            let pulseAnimation = CABasicAnimation(keyPath: "transform.scale")
+            pulseAnimation.duration = 0.5
+            pulseAnimation.toValue = 1.2
+            pulseAnimation.fromValue = 0.2
+            pulseAnimation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut)
+            pulseAnimation.autoreverses = false
+            pulseAnimation.repeatCount = Float.greatestFiniteMagnitude
+            
+            let fadeAnimation = CABasicAnimation(keyPath: "opacity")
+            fadeAnimation.duration = 0.5
+            fadeAnimation.toValue = 0
+            fadeAnimation.fromValue = 2.5
+            fadeAnimation.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut)
+            fadeAnimation.autoreverses = false
+            fadeAnimation.repeatCount = Float.greatestFiniteMagnitude
+            
+            progressDot.layer.add(pulseAnimation, forKey: "scale")
+            progressDot.layer.add(fadeAnimation, forKey: "fade")
+        }
         self.isToolbarHidden = false
+        self.removeJumpButton()
     }
 
-override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-    var cell: UITableViewCell! = nil
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        var cell: UITableViewCell! = nil
 
-    let datasetPosition = (indexPath as NSIndexPath).row
+        let datasetPosition = (indexPath as NSIndexPath).row
 
-    cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath) as UITableViewCell
-    if content.isEmpty || text.isEmpty || cDepth.isEmpty || dataArray.isEmpty {
-        self.refresh(self)
-        return cell
-    }
-    let thing = isSearching ? filteredData[datasetPosition] : dataArray[datasetPosition]
-    let parentOP = parents[thing]
+        cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath) as UITableViewCell
+        if content.isEmpty || text.isEmpty || cDepth.isEmpty || dataArray.isEmpty {
+            self.refresh(self)
+            return cell
+        }
+        let thing = isSearching ? filteredData[datasetPosition] : dataArray[datasetPosition]
+        let parentOP = parents[thing]
         if let cell = cell as? CommentDepthCell {
-            if content[thing] is RComment {
+            let innerContent = content[thing]
+            if innerContent is RComment {
                 var count = 0
                 let hiddenP = hiddenPersons.contains(thing)
                 if hiddenP {
-                    count = getChildNumber(n: content[thing]!.getIdentifier())
+                    count = getChildNumber(n: innerContent!.getIdentifier())
                 }
                 var t = text[thing]!
                 if isSearching {
                     t = highlight(t)
                 }
 
-                cell.setComment(comment: content[thing] as! RComment, depth: cDepth[thing]!, parent: self, hiddenCount: count, date: lastSeen, author: submission?.author, text: t, isCollapsed: hiddenP, parentOP: parentOP ?? "", depthColors: commentDepthColors, indexPath: indexPath)
+                cell.setComment(comment: innerContent as! RComment, depth: cDepth[thing]!, parent: self, hiddenCount: count, date: lastSeen, author: submission?.author, text: t, isCollapsed: hiddenP, parentOP: parentOP ?? "", depthColors: commentDepthColors, indexPath: indexPath, width: self.tableView.frame.size.width)
             } else {
-                cell.setMore(more: (content[thing] as! RMore), depth: cDepth[thing]!, depthColors: commentDepthColors, parent: self)
+                cell.setMore(more: (innerContent as! RMore), depth: cDepth[thing]!, depthColors: commentDepthColors, parent: self)
             }
             cell.content = content[thing]
         }
+        
         return cell
     }
 
@@ -2045,7 +2443,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
 //                    self.doAction(cell: cell as! CommentDepthCell, action: SettingValues.commentActionRightRight, indexPath: indexPath)
 //                })
 //                action.backgroundColor = SettingValues.commentActionRightRight.getColor()
-//                action.image = UIImage.init(named: SettingValues.commentActionRightRight.getPhoto())?.navIcon()
+//                action.image = UIImage(named: SettingValues.commentActionRightRight.getPhoto())?.navIcon()
 //
 //                actions.append(action)
 //            }
@@ -2055,7 +2453,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
 //                    self.doAction(cell: cell as! CommentDepthCell, action: SettingValues.commentActionRightLeft, indexPath: indexPath)
 //                })
 //                action.backgroundColor = SettingValues.commentActionRightLeft.getColor()
-//                action.image = UIImage.init(named: SettingValues.commentActionRightLeft.getPhoto())?.navIcon()
+//                action.image = UIImage(named: SettingValues.commentActionRightLeft.getPhoto())?.navIcon()
 //
 //                actions.append(action)
 //            }
@@ -2080,7 +2478,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
 //                    self.doAction(cell: cell as! CommentDepthCell, action: SettingValues.commentActionLeftLeft, indexPath: indexPath)
 //                })
 //                action.backgroundColor = SettingValues.commentActionLeftLeft.getColor()
-//                action.image = UIImage.init(named: SettingValues.commentActionLeftLeft.getPhoto())?.navIcon()
+//                action.image = UIImage(named: SettingValues.commentActionLeftLeft.getPhoto())?.navIcon()
 //
 //                actions.append(action)
 //            }
@@ -2090,7 +2488,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
 //                    self.doAction(cell: cell as! CommentDepthCell, action: SettingValues.commentActionLeftRight, indexPath: indexPath)
 //                })
 //                action.backgroundColor = SettingValues.commentActionLeftRight.getColor()
-//                action.image = UIImage.init(named: SettingValues.commentActionLeftRight.getPhoto())?.navIcon()
+//                action.image = UIImage(named: SettingValues.commentActionLeftRight.getPhoto())?.navIcon()
 //
 //                actions.append(action)
 //            }
@@ -2110,7 +2508,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
         case .DOWNVOTE:
             cell.downvote(cell)
         case .SAVE:
-            cell.save()
+            cell.save(cell)
         case .MENU:
             cell.menu(cell)
         case .COLLAPSE:
@@ -2125,6 +2523,8 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
             }
         case .NONE:
             break
+        case .PARENT_PREVIEW:
+            break
         }
     }
 
@@ -2132,7 +2532,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
         var topCell = indexPath.row
         var contents = content[dataArray[topCell]]
         var id = ""
-        if (contents as! RComment).depth == 1 {
+        if contents is RComment && (contents as! RComment).depth == 1 {
             //collapse self
             id = baseCell.comment!.getIdentifier()
         } else {
@@ -2151,7 +2551,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
             
             if !skipTop {
                 self.tableView.scrollToRow(at: indexPath,
-                                           at: UITableViewScrollPosition.none, animated: false)
+                                           at: UITableView.ScrollPosition.none, animated: false)
             }
             
             id = (contents as! RComment).getIdentifier()
@@ -2200,7 +2600,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
         let base = NSMutableAttributedString.init(attributedString: cc)
         let r = base.mutableString.range(of: "\(searchBar.text!)", options: .caseInsensitive, range: NSRange(location: 0, length: base.string.length))
         if r.length > 0 {
-            base.addAttribute(NSForegroundColorAttributeName, value: ColorUtil.accentColorForSub(sub: subreddit), range: r)
+            base.addAttribute(NSAttributedString.Key.foregroundColor, value: ColorUtil.accentColorForSub(sub: subreddit), range: r)
         }
         return base.attributedSubstring(from: NSRange.init(location: 0, length: base.length))
     }
@@ -2265,14 +2665,25 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
                         if !SettingValues.collapseFully {
                             cell.showMenu(nil)
                         } else if cell.isCollapsed {
-                            self.tableView.beginUpdates()
-                            cell.expandSingle()
-                            self.tableView.endUpdates()
                             if hiddenPersons.contains((id)) {
-                                hiddenPersons.remove(at: hiddenPersons.index(of: id)!)
+                                hiddenPersons.remove(at: hiddenPersons.firstIndex(of: id)!)
+                            }
+                            if let oldHeight = oldHeights[id] {
+                                UIView.animate(withDuration: 0.25, delay: 0, options: UIView.AnimationOptions.curveEaseInOut, animations: {
+                                    cell.contentView.frame = CGRect(x: 0, y: 0, width: cell.contentView.frame.size.width, height: oldHeight)
+                                }, completion: { (_) in
+                                    cell.expandSingle()
+                                    self.oldHeights.removeValue(forKey: id)
+                                })
+                                tableView.beginUpdates()
+                                tableView.endUpdates()
+                            } else {
+                                cell.expandSingle()
+                                tableView.beginUpdates()
+                                tableView.endUpdates()
                             }
                         } else {
-                            oldHeights[cell.comment!.getIdentifier()] = cell.contentView.frame.size.height
+                            oldHeights[id] = cell.contentView.frame.size.height
                             if !hiddenPersons.contains(id) {
                                 hiddenPersons.insert(id)
                             }
@@ -2280,22 +2691,43 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
                             self.tableView.beginUpdates()
                             cell.collapse(childNumber: 0)
                             self.tableView.endUpdates()
+                            /* disable for now
+                            if SettingValues.collapseFully, let path = tableView.indexPath(for: cell) {
+                                self.tableView.scrollToRow(at: path,
+                                                           at: UITableView.ScrollPosition.none, animated: true)
+                            }*/
                         }
                     } else {
                         if hiddenPersons.contains((id)) && childNumber > 0 {
-                            hiddenPersons.remove(at: hiddenPersons.index(of: id)!)
+                            hiddenPersons.remove(at: hiddenPersons.firstIndex(of: id)!)
+                            if let oldHeight = oldHeights[id] {
+                                UIView.animate(withDuration: 0.25, delay: 0, options: UIView.AnimationOptions.curveEaseInOut, animations: {
+                                    cell.contentView.frame = CGRect(x: 0, y: 0, width: cell.contentView.frame.size.width, height: oldHeight)
+                                }, completion: { (_) in
+                                    cell.expand()
+                                    self.oldHeights.removeValue(forKey: id)
+                                })
+                            } else {
+                                cell.expand()
+                                tableView.beginUpdates()
+                                tableView.endUpdates()
+                            }
                             unhideAll(comment: comment.getId(), i: row!)
-                            cell.expand()
-                            //todo hide child number
+                           // TODO: - hide child number
                         } else {
                             if childNumber > 0 {
+                                if childNumber > 0 {
+                                    oldHeights[id] = cell.contentView.frame.size.height
+                                    cell.collapse(childNumber: childNumber)
+                                    /* disable for now
+                                    if SettingValues.collapseFully, let path = tableView.indexPath(for: cell) {
+                                        self.tableView.scrollToRow(at: path,
+                                                                   at: UITableView.ScrollPosition.none, animated: false)
+                                    }*/
+                                }
                                 hideAll(comment: comment.getIdentifier(), i: row! + 1)
                                 if !hiddenPersons.contains(id) {
                                     hiddenPersons.insert(id)
-                                }
-                                if childNumber > 0 {
-                                    oldHeights[cell.comment!.getIdentifier()] = cell.contentView.frame.size.height
-                                    cell.collapse(childNumber: childNumber)
                                 }
                             }
                         }
@@ -2315,7 +2747,7 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
                                     strings.append(c.value)
                                 }
                                 cell.animateMore()
-                                try session?.getMoreChildren(strings, name: link.id, sort: .new, id: more.id, completion: { (result) -> Void in
+                                try session?.getMoreChildren(strings, name: link.id, sort: .top, id: more.id, completion: { (result) -> Void in
                                     switch result {
                                     case .failure(let error):
                                         print(error)
@@ -2339,7 +2771,11 @@ override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexP
                                                 realPosition += 1
                                             }
 
-                                            self.comments.remove(at: realPosition)
+                                            if self.comments[realPosition] != nil {
+                                                self.comments.remove(at: realPosition)
+                                            } else {
+                                                return
+                                            }
                                             self.dataArray.remove(at: datasetPosition)
                                             
                                             let currentParent = self.parents[more.getIdentifier()]
@@ -2400,11 +2836,7 @@ extension CommentViewController: UIGestureRecognizerDelegate {
     
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         if gestureRecognizer == panGesture {
-            if SettingValues.commentGesturesMode != .GESTURES {
-                return false
-            }
-            
-            if SettingValues.commentActionLeftLeft == .NONE && SettingValues.commentActionRightLeft == .NONE && SettingValues.commentActionRightRight == .NONE && SettingValues.commentActionLeftRight == .NONE {
+            if SettingValues.commentGesturesMode == .NONE || SettingValues.commentGesturesMode == .SWIPE_ANYWHERE {
                 return false
             }
         }
@@ -2421,11 +2853,7 @@ extension CommentViewController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         // Limit angle of pan gesture recognizer to avoid interfering with scrolling
         if gestureRecognizer == panGesture {
-            if SettingValues.commentGesturesMode != .GESTURES {
-                return false
-            }
-            
-            if SettingValues.commentActionLeftLeft == .NONE && SettingValues.commentActionRightLeft == .NONE && SettingValues.commentActionRightRight == .NONE && SettingValues.commentActionLeftRight == .NONE {
+            if SettingValues.commentGesturesMode == .NONE || SettingValues.commentGesturesMode == .SWIPE_ANYWHERE {
                 return false
             }
         }
@@ -2437,29 +2865,203 @@ extension CommentViewController: UIGestureRecognizerDelegate {
         return true
     }
     
-    func panCell(_ recognizer: UIPanGestureRecognizer) {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        return SettingValues.commentActionRightLeft == .NONE && SettingValues.commentActionRightRight == .NONE && translatingCell == nil
+    }
+    
+    @objc func panCell(_ recognizer: UIPanGestureRecognizer) {
         
         if recognizer.view != nil {
             let velocity = recognizer.velocity(in: recognizer.view!).x
-            if (velocity > 0 && (SettingValues.commentActionLeftLeft == .NONE && SettingValues.commentActionLeftRight == .NONE)) || (velocity < 0 && (SettingValues.commentActionRightLeft == .NONE && SettingValues.commentActionRightRight == .NONE)) {
+            if (velocity < 0 && (SettingValues.commentActionLeftLeft == .NONE && SettingValues.commentActionLeftRight == .NONE) && translatingCell == nil) || (velocity > 0 && (SettingValues.commentActionRightLeft == .NONE && SettingValues.commentActionRightRight == .NONE) && translatingCell == nil) {
                 return
             }
         }
+
         if recognizer.state == .began || translatingCell == nil {
             let point = recognizer.location(in: self.tableView)
             let indexpath = self.tableView.indexPathForRow(at: point)
             if indexpath == nil {
                 return
             }
-            
-            guard let cell = self.tableView.cellForRow(at: indexpath!) as? CommentDepthCell else {
-                return
-        }
+
+            guard let cell = self.tableView.cellForRow(at: indexpath!) as? CommentDepthCell else { return }
+            for view in cell.commentBody.subviews {
+                let cellPoint = recognizer.location(in: view)
+                if (view is UIScrollView || view is CodeDisplayView || view is TableDisplayView) && view.bounds.contains(cellPoint) {
+                    recognizer.cancel()
+                    return
+                }
+            }
             translatingCell = cell
         }
+        
         translatingCell?.handlePan(recognizer)
         if recognizer.state == .ended {
             translatingCell = nil
         }
+    }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
+	guard let input = input else { return nil }
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringKey(_ input: NSAttributedString.Key) -> String {
+	return input.rawValue
+}
+
+class ParentCommentViewController: UIViewController {
+    var childView = UIView()
+    var scrollView = UIScrollView()
+    var estimatedSize: CGSize
+    var dismissHandler: (() -> Void)?
+    init(view: UIView, size: CGSize) {
+        self.estimatedSize = size
+        super.init(nibName: nil, bundle: nil)
+        self.childView = view
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        scrollView = UIScrollView().then {
+            $0.backgroundColor = ColorUtil.theme.foregroundColor
+            $0.isUserInteractionEnabled = true
+        }
+        self.view.addSubview(scrollView)
+        scrollView.edgeAnchors == self.view.edgeAnchors
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        scrollView.addSubview(childView)
+        childView.widthAnchor == estimatedSize.width
+        childView.heightAnchor == estimatedSize.height
+        childView.topAnchor == scrollView.topAnchor
+        scrollView.contentSize = estimatedSize
+    }
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        dismissHandler?()
+    }
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+extension CommentViewController: UIViewControllerPreviewingDelegate {
+        
+    func previewingContext(_ previewingContext: UIViewControllerPreviewing, viewControllerForLocation location: CGPoint) -> UIViewController? {
+        guard let indexPath = self.tableView.indexPathForRow(at: location) else {
+            return nil
+        }
+        
+        guard let cell = self.tableView.cellForRow(at: indexPath) as? CommentDepthCell else {
+            return nil
+        }
+        
+        if SettingValues.commentActionForceTouch != .PARENT_PREVIEW {
+           // TODO: - maybe
+            /*let textView =
+            let locationInTextView = textView.convert(location, to: textView)
+            
+            if let (url, rect) = getInfo(locationInTextView: locationInTextView) {
+                previewingContext.sourceRect = textView.convert(rect, from: textView)
+                if let controller = parentViewController?.getControllerForUrl(baseUrl: url) {
+                    return controller
+                }
+            }*/
+            return nil
+        }
+        
+        if cell.depth == 1 {
+            return nil
+        }
+        self.setAlphaOfBackgroundViews(alpha: 0.5)
+
+        var topCell = (indexPath as NSIndexPath).row
+        
+        var contents = content[dataArray[topCell]]
+        
+        while (contents is RComment ? (contents as! RComment).depth >= cell.depth : true) && dataArray.count > topCell && topCell - 1 >= 0 {
+            topCell -= 1
+            contents = content[dataArray[topCell]]
+        }
+
+        let parentCell = CommentDepthCell(style: .default, reuseIdentifier: "test")
+        if let comment = contents as? RComment {
+            parentCell.contentView.layer.cornerRadius = 10
+            parentCell.contentView.clipsToBounds = true
+            parentCell.commentBody.ignoreHeight = false
+            parentCell.commentBody.estimatedWidth = UIScreen.main.bounds.size.width * 0.85 - 36
+            if contents is RComment {
+                var count = 0
+                let hiddenP = hiddenPersons.contains(comment.getIdentifier())
+                if hiddenP {
+                    count = getChildNumber(n: comment.getIdentifier())
+                }
+                var t = text[comment.getIdentifier()]!
+                if isSearching {
+                    t = highlight(t)
+                }
+                
+                parentCell.setComment(comment: contents as! RComment, depth: 0, parent: self, hiddenCount: count, date: lastSeen, author: submission?.author, text: t, isCollapsed: hiddenP, parentOP: "", depthColors: commentDepthColors, indexPath: indexPath, width: UIScreen.main.bounds.size.width * 0.85)
+            } else {
+                parentCell.setMore(more: (contents as! RMore), depth: cDepth[comment.getIdentifier()]!, depthColors: commentDepthColors, parent: self)
+            }
+            parentCell.content = comment
+            parentCell.contentView.isUserInteractionEnabled = false
+
+            var size = CGSize(width: UIScreen.main.bounds.size.width * 0.85, height: CGFloat.greatestFiniteMagnitude)
+            let layout = YYTextLayout(containerSize: size, text: parentCell.title.attributedText!)!
+            let textSize = layout.textBoundingSize
+
+            size = CGSize(width: UIScreen.main.bounds.size.width * 0.85, height: parentCell.commentBody.estimatedHeight + 24 + textSize.height)// TODO: - fix height
+            let detailViewController = ParentCommentViewController(view: parentCell.contentView, size: size)
+            detailViewController.preferredContentSize = CGSize(width: size.width, height: min(size.height, 300))
+
+            previewingContext.sourceRect = cell.frame
+            detailViewController.dismissHandler = {() in
+                self.setAlphaOfBackgroundViews(alpha: 1)
+            }
+            return detailViewController
+        }
+        return nil
+    }
+        
+    func previewingContext(_ previewingContext: UIViewControllerPreviewing, commit viewControllerToCommit: UIViewController) {
+        viewControllerToCommit.modalPresentationStyle = .popover
+        if let popover = viewControllerToCommit.popoverPresentationController {
+            popover.sourceView = self.tableView
+            popover.permittedArrowDirections = UIPopoverArrowDirection(rawValue: 0)
+            popover.backgroundColor = ColorUtil.theme.foregroundColor
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+            //detailViewController.frame = CGRect(x: (self.view.frame.bounds.width / 2 - (UIScreen.main.bounds.size.width * 0.85)), y: (self.view.frame.bounds.height / 2 - (cell2.title.estimatedHeight + 12)), width: UIScreen.main.bounds.size.width * 0.85, height: cell2.title.estimatedHeight + 12)
+            popover.delegate = self
+            viewControllerToCommit.preferredContentSize = (viewControllerToCommit as! ParentCommentViewController).estimatedSize
+        }
+
+        self.present(viewControllerToCommit, animated: true, completion: {
+        })
+    }
+}
+
+extension CommentViewController: UINavigationControllerDelegate {
+    func navigationController(_ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool) {
+        // Fixes bug with corrupt nav stack
+        // https://stackoverflow.com/a/39457751/7138792
+        navigationController.interactivePopGestureRecognizer?.isEnabled = navigationController.viewControllers.count > 1
+        if navigationController.viewControllers.count == 1 {
+            self.navigationController?.interactivePopGestureRecognizer?.delegate = nil
+        }
+    }
+}
+
+extension CommentViewController: TapBehindModalViewControllerDelegate {
+    func shouldDismiss() -> Bool {
+        return false
     }
 }

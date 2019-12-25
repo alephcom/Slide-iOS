@@ -7,47 +7,63 @@
 //
 
 import Anchorage
+import AVKit
+import reddift
 import UIKit
-import UIKit.UIGestureRecognizerSubclass
 
 class ShadowboxViewController: SwipeDownModalVC, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
     
-    var vCs: [UIViewController] = []
     var baseSubmissions: [RSubmission] = []
+    var paginator: Paginator
+    var sort: LinkSortType
+    var time: TimeFilterWithin
     var subreddit: String
+    var index: Int
 
     func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) {
         color2 = (pendingViewControllers[0] as! ShadowboxLinkViewController).backgroundColor
         color1 = (currentVc as! ShadowboxLinkViewController).backgroundColor
     }
     
-    func getURLToLoad(_ submission: RSubmission) -> URL {
-        let url = submission.url!
-        if ContentType.isGif(uri: url) {
-            if !submission.videoPreview.isEmpty() && !ContentType.isGfycat(uri: url) {
+    func getURLToLoad(_ submission: RSubmission) -> URL? {
+        let url = submission.url
+        if url != nil && ContentType.isGif(uri: url!) {
+            if !submission.videoPreview.isEmpty() && !ContentType.isGfycat(uri: url!) {
                 return URL.init(string: submission.videoPreview)!
             } else {
-                return url
+                return url!
             }
         } else {
             return url
         }
     }
     
-    public init(submissions: [RSubmission], subreddit: String) {
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        DispatchQueue.global(qos: .background).async {
+            do {
+                try AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+                try AVAudioSession.sharedInstance().setActive(false, options: AVAudioSession.SetActiveOptions.notifyOthersOnDeactivation)
+            } catch {
+                NSLog(error.localizedDescription)
+            }
+        }
+    }
+    
+    public init(submissions: [RSubmission], subreddit: String, index: Int, paginator: Paginator, sort: LinkSortType, time: TimeFilterWithin) {
         self.subreddit = subreddit
+        self.sort = sort
+        self.time = time
+        self.index = index
+        self.paginator = paginator
         super.init(transitionStyle: .scroll, navigationOrientation: .horizontal, options: nil)
         
         self.baseSubmissions = submissions
         
-        for s in baseSubmissions {
-            if !(s.nsfw && !SettingValues.nsfwPreviews) {
-                self.vCs.append(ShadowboxLinkViewController(url: getURLToLoad(s), content: s, parent: self))
-            }
-        }
-        
-        let firstViewController = self.vCs[0]
+        let s = baseSubmissions[index]
+        let firstViewController = ShadowboxLinkViewController(url: self.getURLToLoad(s), content: s, parent: self)
         currentVc = firstViewController
+        (currentVc as! ShadowboxLinkViewController).populateContent()
         
         self.setViewControllers([firstViewController],
                                 direction: .forward,
@@ -70,7 +86,7 @@ class ShadowboxViewController: SwipeDownModalVC, UIPageViewControllerDataSource,
     var navItem: UINavigationItem?
     var navigationBar = UINavigationBar()
     
-    func exit() {
+    @objc func exit() {
         self.dismiss(animated: true, completion: nil)
     }
     
@@ -94,7 +110,7 @@ class ShadowboxViewController: SwipeDownModalVC, UIPageViewControllerDataSource,
         navigationBar.horizontalAnchors == self.view.horizontalAnchors
     }
     
-    func color() {
+    @objc func color() {
         SettingValues.blackShadowbox = !SettingValues.blackShadowbox
         UserDefaults.standard.set(SettingValues.blackShadowbox, forKey: SettingValues.pref_blackShadowbox)
         UserDefaults.standard.synchronize()
@@ -106,25 +122,20 @@ class ShadowboxViewController: SwipeDownModalVC, UIPageViewControllerDataSource,
         } else {
             (currentVc as! ShadowboxLinkViewController).doBackground()
         }
-        for vc in vCs {
-            if let shadowbox = vc as? ShadowboxLinkViewController {
-                shadowbox.doBackground()
-            }
-        }
     }
     
     func doButtons() {
         navItem = UINavigationItem(title: "")
         let close = UIButton.init(type: .custom)
-        close.setImage(UIImage.init(named: "close")?.navIcon(), for: UIControlState.normal)
-        close.addTarget(self, action: #selector(self.exit), for: UIControlEvents.touchUpInside)
+        close.setImage(UIImage(sfString: SFSymbol.xmark, overrideString: "close")?.navIcon().getCopy(withColor: .white), for: UIControl.State.normal)
+        close.addTarget(self, action: #selector(self.exit), for: UIControl.Event.touchUpInside)
         close.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
         let closeB = UIBarButtonItem.init(customView: close)
         navItem?.leftBarButtonItem = closeB
         
         let shadowbox = UIButton.init(type: .custom)
-        shadowbox.setImage(UIImage.init(named: !SettingValues.blackShadowbox ? "colors" : "nocolors")?.navIcon(), for: UIControlState.normal)
-        shadowbox.addTarget(self, action: #selector(self.color), for: UIControlEvents.touchUpInside)
+        shadowbox.setImage(UIImage(named: !SettingValues.blackShadowbox ? "colors" : "nocolors")?.navIcon().getCopy(withColor: .white), for: UIControl.State.normal)
+        shadowbox.addTarget(self, action: #selector(self.color), for: UIControl.Event.touchUpInside)
         shadowbox.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
         let shadowboxB = UIBarButtonItem.init(customView: shadowbox)
         navItem?.rightBarButtonItem = shadowboxB
@@ -140,9 +151,68 @@ class ShadowboxViewController: SwipeDownModalVC, UIPageViewControllerDataSource,
         currentVc = self.viewControllers!.first!
     }
     
+    var loading = false
+    var nomore = false
+    func loadMore() {
+        if !loading {
+            do {
+                loading = true
+                var path: SubredditURLPath = Subreddit.init(subreddit: self.subreddit)
+                
+                if subreddit.hasPrefix("/m/") {
+                    path = Multireddit.init(name: subreddit.substring(3, length: subreddit.length - 3), user: AccountController.currentName)
+                }
+                if subreddit.contains("/u/") {
+                    path = Multireddit.init(name: subreddit.split("/")[3], user: subreddit.split("/")[1])
+                }
+                
+                try (UIApplication.shared.delegate as? AppDelegate)?.session?.getList(paginator, subreddit: path, sort: sort, timeFilterWithin: time, completion: { (result) in
+                    switch result {
+                    case .failure:
+                        print(result.error!)
+                        //Loading failed, ignore
+                    case .success(let listing):
+                        let newLinks = listing.children.compactMap({ $0 as? Link })
+                        var converted: [RSubmission] = []
+                        for link in newLinks {
+                            let newRS = RealmDataWrapper.linkToRSubmission(submission: link)
+                            converted.append(newRS)
+                        }
+                        
+                        let values = PostFilter.filter(converted, previous: self.baseSubmissions, baseSubreddit: self.subreddit).map { $0 as! RSubmission }
+                        
+                        self.baseSubmissions += values
+                        self.paginator = listing.paginator
+                        self.nomore = !listing.paginator.hasMore() || values.isEmpty
+                        
+                        DispatchQueue.main.async {
+                            self.setViewControllers([self.currentVc],
+                                                    direction: .forward,
+                                                    animated: false ,
+                                                    completion: nil)
+                        }
+                    }
+                })
+            } catch {
+                print(error)
+            }
+            
+        }
+    }
+    
     func pageViewController(_ pageViewController: UIPageViewController,
                             viewControllerBefore viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = vCs.index(of: viewController) else {
+        let id = (viewController as! ShadowboxLinkViewController).submission.getId()
+        var viewControllerIndex = -1
+        
+        for item in baseSubmissions {
+            viewControllerIndex += 1
+            if item.getId() == id {
+                break
+            }
+        }
+        
+        if viewControllerIndex < 0 || viewControllerIndex > baseSubmissions.count {
             return nil
         }
         
@@ -152,45 +222,80 @@ class ShadowboxViewController: SwipeDownModalVC, UIPageViewControllerDataSource,
             return nil
         }
         
-        guard vCs.count > previousIndex else {
+        guard baseSubmissions.count > previousIndex else {
             return nil
         }
         
-        return vCs[previousIndex]
+        let s = baseSubmissions[previousIndex]
+        let shadowbox = ShadowboxLinkViewController(url: self.getURLToLoad(s), content: s, parent: self)
+        if !shadowbox.populated {
+            shadowbox.populated = true
+            shadowbox.populateContent()
+        }
+        
+        return shadowbox
     }
     
     func pageViewController(_ pageViewController: UIPageViewController,
                             viewControllerAfter viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = vCs.index(of: viewController) else {
+        let id = (viewController as! ShadowboxLinkViewController).submission.getId()
+        var viewControllerIndex = -1
+        
+        for item in baseSubmissions {
+            viewControllerIndex += 1
+            if item.getId() == id {
+                break
+            }
+        }
+        
+        if viewControllerIndex < 0 || viewControllerIndex > baseSubmissions.count {
             return nil
         }
         
         let nextIndex = viewControllerIndex + 1
-        let orderedViewControllersCount = vCs.count
+        let orderedViewControllersCount = baseSubmissions.count
         
         guard orderedViewControllersCount != nextIndex else {
             return nil
         }
-
+        
         guard orderedViewControllersCount > nextIndex else {
             return nil
         }
         
-        return vCs[nextIndex]
+        if nextIndex == baseSubmissions.count - 2 && !loading {
+            loadMore()
+        }
+        
+        let s = baseSubmissions[nextIndex]
+        let shadowbox = ShadowboxLinkViewController(url: self.getURLToLoad(s), content: s, parent: self)
+        if !shadowbox.populated {
+            shadowbox.populated = true
+            shadowbox.populateContent()
+        }
+
+        return shadowbox
     }
     
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        return .lightContent
+    }
+
     var selected = false
     var currentVc = UIViewController()
-    override func prefersHomeIndicatorAutoHidden() -> Bool {
+    override var prefersHomeIndicatorAutoHidden: Bool {
         return true
     }
 
 }
 
+private var hasSwizzled = false
+
 extension UIPanGestureRecognizer {
-    
-    override open class func initialize() {
-        super.initialize()
+    final public class func swizzle() {
+        guard !hasSwizzled else { return }
+        
+        hasSwizzled = true
         guard self === UIPanGestureRecognizer.self else {
             return
         }
@@ -198,11 +303,11 @@ extension UIPanGestureRecognizer {
         func replace(_ method: Selector, with anotherMethod: Selector, for clаss: AnyClass) {
             let original = class_getInstanceMethod(clаss, method)
             let swizzled = class_getInstanceMethod(clаss, anotherMethod)
-            switch class_addMethod(clаss, method, method_getImplementation(swizzled), method_getTypeEncoding(swizzled)) {
+            switch class_addMethod(clаss, method, method_getImplementation(swizzled!), method_getTypeEncoding(swizzled!)) {
             case true:
-                class_replaceMethod(clаss, anotherMethod, method_getImplementation(original), method_getTypeEncoding(original))
+                class_replaceMethod(clаss, anotherMethod, method_getImplementation(original!), method_getTypeEncoding(original!))
             case false:
-                method_exchangeImplementations(original, swizzled)
+                method_exchangeImplementations(original!, swizzled!)
             }
         }
         
@@ -231,7 +336,7 @@ extension UIPanGestureRecognizer {
             touchesBegan = false
         }
         let forbiddenDirectionsCount = touches
-            .flatMap({ ($0.location(in: $0.view) - $0.previousLocation(in: $0.view)).direction })
+            .compactMap({ ($0.location(in: $0.view) - $0.previousLocation(in: $0.view)).direction })
             .filter({ $0 != direction })
             .count
         if forbiddenDirectionsCount > 0 {
@@ -242,7 +347,7 @@ extension UIPanGestureRecognizer {
 
 public extension UIPanGestureRecognizer {
     
-    public enum Direction: Int {
+    enum Direction: Int {
         
         case horizontal = 0
         case vertical
@@ -253,7 +358,7 @@ public extension UIPanGestureRecognizer {
         static var touchesBegan = "\(#file)+\(#line)"
     }
     
-    public var direction: UIPanGestureRecognizer.Direction? {
+    var direction: UIPanGestureRecognizer.Direction? {
         get {
             let object = objc_getAssociatedObject(self, &UIPanGestureRecognizerRuntimeKeys.directions)
             return object as? UIPanGestureRecognizer.Direction
@@ -264,7 +369,7 @@ public extension UIPanGestureRecognizer {
         }
     }
     
-    fileprivate var touchesBegan: Bool {
+    private var touchesBegan: Bool {
         get {
             let object = objc_getAssociatedObject(self, &UIPanGestureRecognizerRuntimeKeys.touchesBegan)
             return (object as? Bool) ?? false
@@ -276,13 +381,13 @@ public extension UIPanGestureRecognizer {
     }
 }
 
-fileprivate extension CGPoint {
+private extension CGPoint {
     
     var direction: UIPanGestureRecognizer.Direction? {
         guard self != .zero else {
             return nil
         }
-        switch fabs(x) > fabs(y) {
+        switch abs(x) > abs(y) {
         case true:  return .horizontal
         case false: return .vertical
         }

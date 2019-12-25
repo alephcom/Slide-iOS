@@ -82,7 +82,7 @@ class ContentType {
         let host = uri.host?.lowercased()
         let path = uri.path.lowercased()
         
-        return hostContains(host: host, bases: ["gfycat.com", "v.redd.it"]) || (hostContains(host: host, bases: ["redditmedia.com", "imgur.com"]) && path.endsWith(".gif") || path.endsWith(".gifv") || path.endsWith(".webm")) || path.endsWith(".mp4")
+        return hostContains(host: host, bases: ["gfycat.com", "v.redd.it"]) || ((hostContains(host: host, bases: ["preview.redd.it", "external-preview.redd.it"]) && uri.absoluteString.contains("format=mp4"))) || (hostContains(host: host, bases: ["redditmedia.com", "imgur.com"]) && path.endsWith(".gif") || path.endsWith(".gifv") || path.endsWith(".webm")) || path.endsWith(".mp4")
 
     }
     
@@ -91,7 +91,7 @@ class ContentType {
         let path = uri.path.lowercased()
 
         return hostContains(host: host, bases: ["gfycat.com", "v.redd.it"]) || path.hasSuffix(".gif") || path.hasSuffix(
-            ".gifv") || path.hasSuffix(".webm") || path.hasSuffix(".mp4")
+            ".gifv") || path.hasSuffix(".webm") || path.hasSuffix(".mp4") || ((hostContains(host: host, bases: ["preview.redd.it", "external-preview.redd.it"]) && uri.absoluteString.contains("format=mp4")))
     }
     
     public static func isGfycat(uri: URL) -> Bool {
@@ -223,9 +223,10 @@ class ContentType {
         if hostContains(host: host, bases: ["xkcd.com"]) && !(host == ("imgs.xkcd.com")) && !(host == ("what-if.xkcd.com")) {
             return CType.XKCD
         }
+        /* Currently doesn't work
         if hostContains(host: host, bases: ["tumblr.com"]) && (url?.path.contains("post"))! {
             return CType.TUMBLR
-        }
+        }*/
         if hostContains(host: host, bases: ["reddit.com", "redd.it"]) {
             return CType.REDDIT
         }
@@ -263,8 +264,8 @@ class ContentType {
         if (submission?.isSelf)! {
             return CType.SELF
         }
-        // TODO: Decide whether internal youtube links should be EMBEDDED or LINK
-        /* todo this if (basicType == (CType.LINK) && submission?.mediaEmbed != nil && !submission?.mediaEmbed!.content.isEmpty{
+        // TODO: - Decide whether internal youtube links should be EMBEDDED or LINK
+        /* if (basicType == (CType.LINK) && submission?.mediaEmbed != nil && !submission?.mediaEmbed!.content.isEmpty{
          return CType.EMBEDDED;
          }*/
         
@@ -321,26 +322,79 @@ class ContentType {
      * @param submission Submission to get the description for
      * @return the String identifier
      */
-    enum CType {
-        case UNKNOWN
-        case ALBUM
-        case DEVIANTART
-        case EMBEDDED
-        case EXTERNAL
-        case GIF
-        case IMAGE
-        case IMGUR
-        case LINK
-        case NONE
-        case SPOILER
-        case REDDIT
-        case SELF
-        case STREAMABLE
-        case VIDEO
-        case XKCD
-        case TUMBLR
-        case VID_ME
-        case TABLE
+    enum CType: String {
+        case UNKNOWN = "Unknown"
+        case ALBUM = "Album"
+        case DEVIANTART = "DeviantArt"
+        case EMBEDDED = "Embedded"
+        case EXTERNAL = "External"
+        case GIF = "Gif"
+        case IMAGE = "Image"
+        case IMGUR = "Imgur"
+        case LINK = "Link"
+        case NONE = "None"
+        case SPOILER = "Spoiler"
+        case REDDIT = "Reddit"
+        case SELF = "Selftext"
+        case STREAMABLE = "Streamable"
+        case VIDEO = "Video"
+        case XKCD = "XKCD"
+        case TUMBLR = "Tumblr"
+        case VID_ME = "Vid.me"
+        case TABLE = "Table"
+        
+        func getTitle(_ url: URL?) -> String {
+            switch self {
+            case .UNKNOWN, .LINK, .NONE, .SPOILER, .TABLE, .EMBEDDED:
+                return "Link"
+            case .ALBUM:
+                return "Imgur Album"
+            case .DEVIANTART:
+                return "Deviantart"
+            case .IMAGE:
+                return "Direct Image"
+            case .IMGUR:
+                return "Imgur Image"
+            case .TUMBLR:
+                return "Tumblr"
+            case .XKCD:
+                return "XKCD"
+            case .EXTERNAL:
+                return "External Link"
+            case .GIF:
+                if url != nil && url!.absoluteString.contains("v.redd.it") {
+                    return "Reddit Video"
+                }
+                return "Gif"
+            case .STREAMABLE:
+                return "Streamable.com Video"
+            case .VIDEO:
+                return "YouTube Video"
+            case .VID_ME:
+                return "Vid.me Video"
+            case .REDDIT:
+                return "Reddit Link"
+            case .SELF:
+                return "Selftext Post"
+            }
+        }
+        
+        func getImage() -> String {
+            switch self {
+            case .UNKNOWN, .LINK, .NONE, .SPOILER, .TABLE, .EMBEDDED:
+                return "world"
+            case .ALBUM, .DEVIANTART, .IMAGE, .IMGUR, .TUMBLR, .XKCD:
+                return "image"
+            case .EXTERNAL:
+                return "crosspost"
+            case .GIF, .STREAMABLE, .VIDEO, .VID_ME:
+                return "play"
+            case .REDDIT:
+                return "reddit"
+            case .SELF:
+                return "size"
+            }
+        }
     }
     
     static func getThumbnailType(submission: Link) -> ThumbnailType {

@@ -8,13 +8,16 @@ import SafariServices
 
 class SFHideSafariViewController: SFSafariViewController {
     
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(true)
-        UIApplication.shared.statusBarStyle = ColorUtil.theme.isLight() ? .default : .lightContent
-    }
-    
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(true)
-        UIApplication.shared.statusBarStyle = .lightContent
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+
+        } else {
+            return .lightContent
+        }
     }
 }

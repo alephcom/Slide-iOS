@@ -68,7 +68,7 @@ class ContentType {
         let host = uri.host?.lowercased()
         let path = uri.path.lowercased()
         
-        return hostContains(host: host, bases: ["gfycat.com", "v.redd.it"]) || (hostContains(host: host, bases: ["redditmedia.com", "imgur.com"]) && path.endsWith(".gif") || path.endsWith(".gifv") || path.endsWith(".webm")) || path.endsWith(".mp4")
+        return hostContains(host: host, bases: ["gfycat.com", "v.redd.it"]) || ((hostContains(host: host, bases: ["preview.redd.it", "external-preview.redd.it"]) && uri.absoluteString.contains("format=mp4"))) || (hostContains(host: host, bases: ["redditmedia.com", "imgur.com"]) && path.endsWith(".gif") || path.endsWith(".gifv") || path.endsWith(".webm")) || path.endsWith(".mp4")
         
     }
     
@@ -178,7 +178,7 @@ class ContentType {
         }
         
         if isVideo(uri: url!) {
-            return CType.VIDEO
+            return CType.YOUTUBE
         }
         if isGif(uri: url!) {
             return CType.GIF
@@ -195,9 +195,10 @@ class ContentType {
         if hostContains(host: host, bases: ["xkcd.com"]) && !(host == ("imgs.xkcd.com")) && !(host == ("what-if.xkcd.com")) {
             return CType.XKCD
         }
+        /* Currently doesn't work
         if hostContains(host: host, bases: ["tumblr.com"]) && (url?.path.contains("post"))! {
             return CType.TUMBLR
-        }
+        }*/
         if hostContains(host: host, bases: ["reddit.com", "redd.it"]) {
             return CType.REDDIT
         }
@@ -231,8 +232,8 @@ class ContentType {
         if (dict["is_self"] as? Bool ?? false)! {
             return CType.SELF
         }
-        // TODO: Decide whether internal youtube links should be EMBEDDED or LINK
-        /* todo this if (basicType == (CType.LINK) && submission?.mediaEmbed != nil && !submission?.mediaEmbed!.content.isEmpty{
+        // TODO: - Decide whether internal youtube links should be EMBEDDED or LINK
+        /* if (basicType == (CType.LINK) && submission?.mediaEmbed != nil && !submission?.mediaEmbed!.content.isEmpty{
          return CType.EMBEDDED;
          }*/
         
@@ -251,7 +252,7 @@ class ContentType {
     
     public static func displayVideo(t: CType) -> Bool {
         switch t {
-        case CType.STREAMABLE, CType.VID_ME, CType.VIDEO, CType.GIF:
+        case CType.STREAMABLE, CType.VID_ME, CType.YOUTUBE, CType.GIF:
             return true
         default:
             return false
@@ -265,7 +266,7 @@ class ContentType {
     public static func fullImage(t: CType) -> Bool {
         switch t {
             
-        case CType.ALBUM, CType.DEVIANTART, CType.GIF, CType.IMAGE, CType.IMGUR, CType.STREAMABLE, CType.TUMBLR, CType.XKCD, CType.VIDEO, CType.SELF, CType.VID_ME:
+        case CType.ALBUM, CType.DEVIANTART, CType.GIF, CType.IMAGE, CType.IMGUR, CType.STREAMABLE, CType.TUMBLR, CType.XKCD, CType.YOUTUBE, CType.SELF, CType.VID_ME:
             return true
             
         case CType.EMBEDDED, CType.EXTERNAL, CType.LINK, CType.NONE, CType.REDDIT, CType.SPOILER, CType.TABLE, CType.UNKNOWN:
@@ -304,7 +305,7 @@ class ContentType {
         case REDDIT
         case SELF
         case STREAMABLE
-        case VIDEO
+        case YOUTUBE
         case XKCD
         case TUMBLR
         case VID_ME

@@ -7,126 +7,212 @@
 //
 
 import Anchorage
+import AudioToolbox
 import BadgeSwift
 import MaterialComponents.MaterialTabs
 import RealmSwift
 import reddift
+import SDCAlertView
 import StoreKit
 import UIKit
 import WatchConnectivity
 
-class MainViewController: ColorMuxPagingViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UINavigationControllerDelegate, ReadLaterDelegate {
+class MainViewController: ColorMuxPagingViewController, UINavigationControllerDelegate, ReadLaterDelegate {
+
+    override var prefersStatusBarHidden: Bool {
+        return SettingValues.fullyHideNavbar
+    }
     
     func didUpdate() {
         let count = ReadLater.readLaterIDs.count
         if count > 0 {
             let readLater = UIButton.init(type: .custom)
-            readLater.setImage(UIImage.init(named: "bin")?.navIcon(), for: UIControlState.normal)
-            readLater.addTarget(self, action: #selector(self.showReadLater(_:)), for: UIControlEvents.touchUpInside)
-
+            readLater.setImage(UIImage(named: "bin")?.navIcon(), for: UIControl.State.normal)
+            readLater.addTarget(self, action: #selector(self.showReadLater(_:)), for: UIControl.Event.touchUpInside)
+            
             readLaterBadge?.removeFromSuperview()
             readLaterBadge = nil
-
+            
             readLaterBadge = BadgeSwift()
             readLater.addSubview(readLaterBadge!)
             readLaterBadge!.centerXAnchor == readLater.centerXAnchor
             readLaterBadge!.centerYAnchor == readLater.centerYAnchor - 2
-
+            
             readLaterBadge!.text = "\(count)"
             readLaterBadge!.insets = CGSize.zero
-            readLaterBadge!.font = UIFont.systemFont(ofSize: 12)
-            readLaterBadge!.textColor = ColorUtil.fontColor
+            readLaterBadge!.font = UIFont.boldSystemFont(ofSize: 10)
+            readLaterBadge!.textColor = SettingValues.reduceColor ? ColorUtil.theme.navIconColor : UIColor.white
             readLaterBadge!.badgeColor = .clear
             readLaterBadge!.shadowOpacityBadge = 0
+            readLater.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
 
             readLaterB = UIBarButtonItem.init(customView: readLater)
             
-            if SettingValues.viewType {
-                navigationItem.rightBarButtonItems = [sortB]
-                navigationItem.leftBarButtonItems = [readLaterB]
+            if SettingValues.subredditBar {
+                navigationItem.leftBarButtonItem = accountB
+                navigationItem.rightBarButtonItems = [sortB, readLaterB]
             } else {
                 navigationItem.rightBarButtonItems = [sortB, readLaterB]
+                doLeftItem()
             }
         } else {
-            navigationItem.rightBarButtonItems = [sortB]
+            if SettingValues.subredditBar {
+                navigationItem.leftBarButtonItems = [accountB]
+                navigationItem.rightBarButtonItems = [sortB]
+            } else {
+                navigationItem.rightBarButtonItems = [sortB]
+                doLeftItem()
+            }
         }
     }
-
+    
     var isReload = false
     var readLaterBadge: BadgeSwift?
-    public static var vCs: [UIViewController] = []
     public static var current: String = ""
     public static var needsRestart = false
+    public static var needsReTheme = false
     public var toolbar: UIView?
     var more = UIButton()
     var menu = UIButton()
     var readLaterB = UIBarButtonItem()
-    var sortB = UIBarButtonItem()
-    var readLater = UIButton()
-    
-    var menuPresentationController: BottomMenuPresentationController?
+    var sortB = UIBarButtonItem().then {
+        $0.accessibilityLabel = "Change Post Sorting Order"
+    }
+    var readLater = UIButton().then {
+        $0.accessibilityLabel = "Open Read Later List"
+    }
+    var accountB = UIBarButtonItem()
+
+    lazy var currentAccountTransitioningDelegate = CurrentAccountPresentationManager()
     
     override func viewWillAppear(_ animated: Bool) {
-        menuNav?.view.isHidden = false
         super.viewWillAppear(animated)
         self.viewWillAppearActions()
         self.navigationController?.setToolbarHidden(true, animated: false)
         ReadLater.delegate = self
-        didUpdate()
-    }
-    
-    public func viewWillAppearActions() {
-        self.edgesForExtendedLayout = UIRectEdge.all
-        self.extendedLayoutIncludesOpaqueBars = true
+        if Reachability().connectionStatus().description == ReachabilityStatus.Offline.description {
+            MainViewController.isOffline = true
+            let offlineVC = OfflineOverviewViewController(subs: finalSubs)
+            VCPresenter.showVC(viewController: offlineVC, popupIfPossible: false, parentNavigationController: nil, parentViewController: self)
+        }
         
         if MainViewController.needsRestart {
             MainViewController.needsRestart = false
-            hardReset()
-            return
+            tabBar.removeFromSuperview()
+            self.navigationItem.leftBarButtonItems = []
+            self.navigationItem.rightBarButtonItems = []
+            if SettingValues.subredditBar {
+                setupTabBar(finalSubs)
+                self.dataSource = self
+            } else {
+                self.navigationItem.titleView = nil
+                self.dataSource = nil
+            }
+        } else if MainViewController.needsReTheme {
+            doRetheme()
         }
+        didUpdate()
+    }
+    
+    func redoSubs() {
+        menuNav?.subsSource.reload()
+        setupTabBar(finalSubs)
+    }
+    
+    func doRetheme() {
+        (viewControllers?[0] as? SingleSubredditViewController)?.reTheme()
+        tabBar.removeFromSuperview()
+        if SettingValues.subredditBar {
+            setupTabBar(finalSubs)
+        }
+        setupBaseBarColors()
+        menuNav?.setColors("")
+        toolbar?.backgroundColor = ColorUtil.theme.foregroundColor.add(overlay: ColorUtil.theme.isLight ? UIColor.black.withAlphaComponent(0.05) : UIColor.white.withAlphaComponent(0.05))
+        self.doButtons()
+        MainViewController.needsReTheme = false
+    }
+    
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if #available(iOS 13.0, *) {
+            if let themeChanged = previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) {
+                if themeChanged {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        self.viewWillAppearActions(override: true)
+                    }
+                }
+            }
+        }
+    }
+
+    public func viewWillAppearActions(override: Bool = false) {
+        self.edgesForExtendedLayout = UIRectEdge.all
+        self.extendedLayoutIncludesOpaqueBars = true
+        self.splitViewController?.navigationController?.setNavigationBarHidden(true, animated: false)
+        self.setNeedsStatusBarAppearanceUpdate()
+        self.inHeadView.backgroundColor = SettingValues.fullyHideNavbar ? .clear : ColorUtil.getColorForSub(sub: self.currentTitle, true)
         
-        if SubredditReorderViewController.changed || ColorUtil.shouldBeNight() {
+        let shouldBeNight = ColorUtil.shouldBeNight()
+        if SubredditReorderViewController.changed || (shouldBeNight && ColorUtil.theme.title != SettingValues.nightTheme) || (!shouldBeNight && ColorUtil.theme.title != UserDefaults.standard.string(forKey: "theme") ?? "light") {
             var subChanged = false
             if finalSubs.count != Subscriptions.subreddits.count {
                 subChanged = true
             } else {
-                for i in 0 ..< finalSubs.count {
-                    if finalSubs[i] != Subscriptions.subreddits[i] {
+                for i in 0 ..< Subscriptions.pinned.count {
+                    if finalSubs[i] != Subscriptions.pinned[i] {
                         subChanged = true
                         break
                     }
                 }
             }
-            if ColorUtil.doInit() || subChanged {
-                restartVC()
-            } else if SubredditReorderViewController.changed {
-                doButtons()
+            
+            if ColorUtil.doInit() {
+                SingleSubredditViewController.cellVersion += 1
+                MainViewController.needsReTheme = true
+                if override {
+                    doRetheme()
+                }
+            }
+            
+            if subChanged || SubredditReorderViewController.changed {
+                finalSubs = []
+                finalSubs.append(contentsOf: Subscriptions.pinned)
+                finalSubs.append(contentsOf: Subscriptions.subreddits.sorted(by: { $0.caseInsensitiveCompare($1) == .orderedAscending }).filter({ return !Subscriptions.pinned.contains($0) }))
+                redoSubs()
             }
         }
         
         self.navigationController?.navigationBar.shadowImage = UIImage()
         navigationController?.navigationBar.isTranslucent = false
         
-        navigationController?.toolbar.barTintColor = ColorUtil.backgroundColor
+        navigationController?.toolbar.barTintColor = ColorUtil.theme.backgroundColor
         
         self.navigationController?.navigationBar.barTintColor = ColorUtil.getColorForSub(sub: getSubredditVC()?.sub ?? "", true)
-        menuNav?.header.doColors()
         if menuNav?.tableView != nil {
             menuNav?.tableView.reloadData()
         }
         
-        if SettingValues.reduceColor && ColorUtil.theme.isLight() {
-            UIApplication.shared.statusBarStyle = .default
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+
         } else {
-            UIApplication.shared.statusBarStyle = .lightContent
+            return .lightContent
         }
     }
     
-//    override func preferredScreenEdgesDeferringSystemGestures() -> UIRectEdge {
-//        return .bottom
-//    }
+    //    override func preferredScreenEdgesDeferringSystemGestures() -> UIRectEdge {
+    //        return .bottom
+    //    }
     
-    override func prefersHomeIndicatorAutoHidden() -> Bool {
+    override var prefersHomeIndicatorAutoHidden: Bool {
         return true
     }
     
@@ -155,7 +241,7 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
         let build = dictionary["CFBundleVersion"] as! String
         return "\(version) build \(build)"
     }
-
+    
     func hardReset() {
         PagingCommentViewController.savedComment = nil
         navigationController?.popViewController(animated: false)
@@ -166,8 +252,17 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
         // Fixes bug with corrupt nav stack
         // https://stackoverflow.com/a/39457751/7138792
         navigationController.interactivePopGestureRecognizer?.isEnabled = navigationController.viewControllers.count > 1
+        if navigationController.viewControllers.count == 1 {
+            self.navigationController?.interactivePopGestureRecognizer?.delegate = nil
+        }
     }
 
+    @objc func onAccountRefreshRequested(_ notification: NSNotification) {
+        DispatchQueue.main.async { [weak self] in
+            self?.checkForMail()
+        }
+    }
+    
     var checkedClipboardOnce = false
     func checkForMail() {
         DispatchQueue.main.async {
@@ -196,7 +291,11 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
                     })
                 }
             }
-
+            
+            if !AccountController.isLoggedIn {
+                return
+            }
+            
             let lastMail = UserDefaults.standard.integer(forKey: "mail")
             let session = (UIApplication.shared.delegate as! AppDelegate).session
             
@@ -206,6 +305,7 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
                     case .failure(let error):
                         print(error)
                     case .success(let profile):
+                        AccountController.current = profile
                         SettingValues.nsfwEnabled = profile.over18
                         if let nsfw = UserDefaults.standard.object(forKey: SettingValues.pref_hideNSFWCollection + AccountController.currentName) {
                             SettingValues.hideNSFWCollection = nsfw as! Bool
@@ -217,16 +317,14 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
                         } else {
                             SettingValues.nsfwPreviews = UserDefaults.standard.bool(forKey: SettingValues.pref_nsfwPreviews)
                         }
-
+                        
                         let unread = profile.inboxCount
                         let diff = unread - lastMail
                         if profile.isMod && AccountController.modSubs.isEmpty {
-                            self.menuNav?.setMod(profile.hasModMail)
                             print("Getting mod subs")
                             AccountController.doModOf()
                         }
                         DispatchQueue.main.async {
-                            self.menuNav?.setmail(mailcount: unread)
                             if diff > 0 {
                                 BannerUtil.makeBanner(text: "\(diff) new message\(diff > 1 ? "s" : "")!", seconds: 5, context: self, top: true, callback: {
                                     () in
@@ -235,6 +333,9 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
                                 })
                             }
                             UserDefaults.standard.set(unread, forKey: "mail")
+                            NotificationCenter.default.post(name: .onAccountMailCountChanged, object: nil, userInfo: [
+                                "Count": unread,
+                                ])
                             UserDefaults.standard.synchronize()
                         }
                     }
@@ -244,48 +345,82 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
             }
         }
     }
-
+    
     func splitViewController(_ svc: UISplitViewController, shouldHide vc: UIViewController, in orientation: UIInterfaceOrientation) -> Bool {
         return false
     }
     
     public static var first = true
-
+    
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         if AccountController.isLoggedIn && !MainViewController.first {
             checkForMail()
         }
         self.navigationController?.delegate = self
+        if !MainViewController.first {
+            menuNav?.animateIn()
+        }
     }
-
-    func addAccount() {
+    
+    func addAccount(register: Bool) {
         menuNav?.dismiss(animated: true)
-        doLogin(token: nil)
+        doLogin(token: nil, register: register)
+    }
+    
+    static func doAddAccount(register: Bool) {
+        guard let window = UIApplication.shared.keyWindow else {
+            fatalError("Window must exist when resetting the stack!")
+        }
+
+        let main = MainViewController(transitionStyle: .scroll, navigationOrientation: .horizontal, options: nil)
+        let rootController: UIViewController
+        if UIDevice.current.userInterfaceIdiom == .pad && SettingValues.appMode == .SPLIT {
+            let split = UISplitViewController()
+            rootController = split
+            split.preferredDisplayMode = .allVisible
+            
+            (rootController as! UISplitViewController).viewControllers = [UINavigationController(rootViewController: main)]
+        } else {
+            rootController = UINavigationController(rootViewController: main)
+        }
+        
+        window.setRootViewController(rootController, animated: false)
+
+        (UIApplication.shared.delegate as! AppDelegate).login = main
+        AccountController.addAccount(context: main, register: register)
     }
 
-    func addAccount(token: OAuth2Token) {
+    func addAccount(token: OAuth2Token, register: Bool) {
         menuNav?.dismiss(animated: true)
-        doLogin(token: token)
+        doLogin(token: token, register: register)
     }
-
+    
     func goToSubreddit(subreddit: String) {
         menuNav?.dismiss(animated: true) {
-            if Subscriptions.subreddits.contains(subreddit) {
-                let index = Subscriptions.subreddits.index(of: subreddit)
-                let firstViewController = MainViewController.vCs[index!]
+            if self.finalSubs.contains(subreddit) {
+                let index = self.finalSubs.firstIndex(of: subreddit)
+                if index == nil {
+                    return
+                }
+
+                let firstViewController = SingleSubredditViewController(subName: self.finalSubs[index!], parent: self)
+                
+                if SettingValues.subredditBar && !SettingValues.reduceColor {
+                    self.color1 = ColorUtil.baseColor
+                    self.color2 = ColorUtil.getColorForSub(sub: (firstViewController ).sub)
+                } else {
+                    self.color1 = ColorUtil.theme.backgroundColor
+                    self.color2 = ColorUtil.theme.backgroundColor
+                }
                 
                 self.setViewControllers([firstViewController],
                                         direction: index! > self.currentPage ? .forward : .reverse,
-                                        animated: SettingValues.viewType ? true : false,
-                                   completion: nil)
-
+                                        animated: SettingValues.subredditBar ? true : false,
+                                        completion: nil)
                 self.doCurrentPage(index!)
-                self.navigationController?.navigationBar.barTintColor = ColorUtil.getColorForSub(sub: subreddit, true)
-                self.inHeadView.backgroundColor = ColorUtil.getColorForSub(sub: subreddit, true)
-                self.tabBar.backgroundColor = ColorUtil.getColorForSub(sub: subreddit, true)
             } else {
-                //todo better sanitation
+               // TODO: - better sanitation
                 VCPresenter.openRedditLink("/r/" + subreddit.replacingOccurrences(of: " ", with: ""), self.navigationController, self)
             }
         }
@@ -296,20 +431,20 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
             VCPresenter.openRedditLink("/u/" + profile.replacingOccurrences(of: " ", with: ""), self.navigationController, self)
         }
     }
-
+    
     func goToSubreddit(index: Int) {
-        let firstViewController = MainViewController.vCs[index]
-
+        let firstViewController = SingleSubredditViewController(subName: finalSubs[index], parent: self)
+        
         setViewControllers([firstViewController],
-                direction: .forward,
-                animated: false,
-                completion: nil)
+                           direction: .forward,
+                           animated: false,
+                           completion: nil)
         self.doCurrentPage(index)
     }
-
+    
     var alertController: UIAlertController?
     var tempToken: OAuth2Token?
-
+    
     func setToken(token: OAuth2Token) {
         print("Setting token")
         alertController?.dismiss(animated: false, completion: nil)
@@ -322,12 +457,12 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
             AccountController.switchAccount(name: token.name)
             (UIApplication.shared.delegate as! AppDelegate).syncColors(subredditController: self)
         } else {
-            alertController = UIAlertController(title: nil, message: "Syncing subscriptions...\n\n", preferredStyle: .alert)
+            alertController = UIAlertController(title: "Syncing subscriptions...\n\n\n", message: nil, preferredStyle: .alert)
             
-            let spinnerIndicator = UIActivityIndicatorView(activityIndicatorStyle: .whiteLarge)
+            let spinnerIndicator = UIActivityIndicatorView(style: .whiteLarge)
             UserDefaults.standard.setValue(true, forKey: "done" + token.name)
             spinnerIndicator.center = CGPoint(x: 135.0, y: 65.5)
-            spinnerIndicator.color = UIColor.black
+            spinnerIndicator.color = ColorUtil.theme.fontColor
             spinnerIndicator.startAnimating()
             
             alertController?.view.addSubview(spinnerIndicator)
@@ -340,7 +475,7 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
             (UIApplication.shared.delegate as! AppDelegate).syncColors(subredditController: self)
         }
     }
-
+    
     func complete(subs: [String]) {
         var finalSubs = subs
         if !subs.contains("slide_ios") {
@@ -377,123 +512,116 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
         Subscriptions.set(name: (tempToken?.name)!, subs: subs, completion: {
             self.menuNav?.view.removeFromSuperview()
             self.menuNav?.backgroundView.removeFromSuperview()
-            self.menuNav?.removeFromParentViewController()
+            self.menuNav?.removeFromParent()
             self.menuNav = nil
             self.hardReset()
         })
     }
     
     var finalSubs = [String]()
-
+    
     func makeMenuNav() {
         if menuNav != nil {
+            more.removeFromSuperview()
+            menu.removeFromSuperview()
             menuNav?.view.removeFromSuperview()
             menuNav?.backgroundView.removeFromSuperview()
-            menuNav?.removeFromParentViewController()
+            menuNav?.removeFromParent()
             menuNav = nil
         }
         menuNav = NavigationSidebarViewController(controller: self)
+
         toolbar = UITouchCapturingView()
         toolbar!.layer.cornerRadius = 15
+
         menuNav?.topView = toolbar
         menuNav?.view.addSubview(toolbar!)
-        menuNav?.muxColor = ColorUtil.foregroundColor.add(overlay: ColorUtil.theme.isLight() ? UIColor.black.withAlphaComponent(0.05) : UIColor.white.withAlphaComponent(0.05))
-        toolbar!.backgroundColor = ColorUtil.foregroundColor.add(overlay: ColorUtil.theme.isLight() ? UIColor.black.withAlphaComponent(0.05) : UIColor.white.withAlphaComponent(0.05))
+        menuNav?.muxColor = ColorUtil.theme.foregroundColor.add(overlay: ColorUtil.theme.isLight ? UIColor.black.withAlphaComponent(0.05) : UIColor.white.withAlphaComponent(0.05))
+
+        toolbar!.backgroundColor = ColorUtil.theme.foregroundColor.add(overlay: ColorUtil.theme.isLight ? UIColor.black.withAlphaComponent(0.05) : UIColor.white.withAlphaComponent(0.05))
         toolbar!.horizontalAnchors == menuNav!.view.horizontalAnchors
         toolbar!.topAnchor == menuNav!.view.topAnchor
         toolbar!.heightAnchor == 90
+
         //toolbar!.roundCorners([UIRectCorner.topLeft, UIRectCorner.topRight], radius: 15)
         self.menuNav?.setSubreddit(subreddit: MainViewController.current)
-//        menuNav?.modalPresentationStyle = .overCurrentContext
-
-//        bottomSheetTransitioningDelegate.direction = .bottom
-//        bottomSheetTransitioningDelegate.coverageRatio = 0.85
-//        bottomSheetTransitioningDelegate.draggingView = menuNav?.view
-//        bottomSheetTransitioningDelegate.scrollView = menuNav?.tableView
-//        bottomSheetTransitioningDelegate.menuViewController = menuNav
-//        menuNav?.transitioningDelegate = bottomSheetTransitioningDelegate
-
-//        slideInTransitioningDelegate.coverageRatio = 0.85
-//        slideInTransitioningDelegate.direction = .bottom
-//        menuNav?.transitioningDelegate = slideInTransitioningDelegate
-
-//        self.coverPartiallyDelegate = CoverPartiallyPresentationController(presentedViewController: menuNav!, presenting: self, coverDirection: .down)
-//        menuNav?.transitioningDelegate = coverPartiallyDelegate
-
-        self.addChildViewController(menuNav!)
+        //        menuNav?.modalPresentationStyle = .overCurrentContext
+        
+        //        bottomSheetTransitioningDelegate.direction = .bottom
+        //        bottomSheetTransitioningDelegate.coverageRatio = 0.85
+        //        bottomSheetTransitioningDelegate.draggingView = menuNav?.view
+        //        bottomSheetTransitioningDelegate.scrollView = menuNav?.tableView
+        //        bottomSheetTransitioningDelegate.menuViewController = menuNav
+        //        menuNav?.transitioningDelegate = bottomSheetTransitioningDelegate
+        
+        //        slideInTransitioningDelegate.coverageRatio = 0.85
+        //        slideInTransitioningDelegate.direction = .bottom
+        //        menuNav?.transitioningDelegate = slideInTransitioningDelegate
+        
+        //        self.coverPartiallyDelegate = CoverPartiallyPresentationController(presentedViewController: menuNav!, presenting: self, coverDirection: .down)
+        //        menuNav?.transitioningDelegate = coverPartiallyDelegate
+        
+        self.addChild(menuNav!)
         self.view.addSubview(menuNav!.view)
-        menuNav!.didMove(toParentViewController: self)
+        menuNav!.didMove(toParent: self)
         
         // 3- Adjust bottomSheet frame and initial position.
         let height = view.frame.height
-        let width = splitViewController == nil ? view.frame.width : splitViewController!.primaryColumnWidth
-        menuNav!.view.frame = CGRect(x: 0, y: self.view.frame.maxY - CGFloat(menuNav!.bottomOffset), width: width, height: height * 0.9)
+        let width = view.frame.width
+        var nextOffset = CGFloat(0)
+        if self.splitViewController != nil && UIDevice.current.orientation == .portrait {
+            nextOffset = 64
+        }
+        
+        menuNav!.view.frame = CGRect(x: 0, y: self.view.frame.maxY - CGFloat(menuNav!.bottomOffset) - nextOffset, width: width, height: min(height - menuNav!.minTopOffset, height * 0.9))
     }
-
-    func restartVC() {
-        let saved = currentPage
-
-        if SettingValues.viewType {
+    
+    @objc func restartVC() {
+        if (splitViewController != nil && SettingValues.appMode != .SPLIT) || (splitViewController == nil && SettingValues.appMode == .SPLIT) {
+            (UIApplication.shared.delegate as! AppDelegate).resetStack()
+            //return
+        }
+        
+        let saved = getSubredditVC()
+        let savedPage = saved?.sub ?? ""
+        
+        self.makeMenuNav()
+        self.doButtons()
+        
+        if SettingValues.subredditBar {
             self.dataSource = self
         } else {
             self.dataSource = nil
         }
-        self.delegate = self
-        if subs != nil {
-            subs!.removeFromSuperview()
-            subs = nil
+        
+        if self.subs != nil {
+            self.subs!.removeFromSuperview()
+            self.subs = nil
         }
-
+        
         CachedTitle.titles.removeAll()
-        view.backgroundColor = ColorUtil.backgroundColor
-        splitViewController?.view.backgroundColor = ColorUtil.foregroundColor
+        view.backgroundColor = ColorUtil.theme.backgroundColor
+        splitViewController?.view.backgroundColor = ColorUtil.theme.foregroundColor
         SubredditReorderViewController.changed = false
-
-        MainViewController.vCs = []
+        
         finalSubs = []
         LinkCellView.cachedInternet = nil
         
-        if Reachability().connectionStatus().description == ReachabilityStatus.Offline.description {
-            MainViewController.isOffline = true
-            menu.removeFromSuperview()
-            more.removeFromSuperview()
-            let baseSubs = Subscriptions.subreddits
-            do {
-            let realm = try Realm()
-            for subname in baseSubs {
-                var hasLinks = false
-                if let listing = realm.objects(RListing.self).filter({ (item) -> Bool in
-                    return item.subreddit == subname
-                }).first {
-                    hasLinks = !listing.links.isEmpty
-                }
-                if hasLinks {
-                    finalSubs.append(subname)
-                }
-            }
-            } catch {
-                
-            }
-            for subname in finalSubs {
-                MainViewController.vCs.append(SingleSubredditViewController(subName: subname, parent: self))
-            }
+        finalSubs.append(contentsOf: Subscriptions.pinned)
+        finalSubs.append(contentsOf: Subscriptions.subreddits.sorted(by: { $0.caseInsensitiveCompare($1) == .orderedAscending }).filter({ return !Subscriptions.pinned.contains($0) }))
 
-        } else {
-            finalSubs = Subscriptions.subreddits
-            MainViewController.isOffline = false
-            var subs = [UIMutableApplicationShortcutItem]()
-            for subname in finalSubs {
-                MainViewController.vCs.append(SingleSubredditViewController(subName: subname, parent: self))
-                if subs.count < 2 && !subname.contains("/") {
-                    subs.append(UIMutableApplicationShortcutItem.init(type: "me.ccrama.redditslide.subreddit", localizedTitle: subname, localizedSubtitle: nil, icon: UIApplicationShortcutIcon.init(templateImageName: "subs"), userInfo: [ "sub": "\(subname)" ]))
-                }
+        MainViewController.isOffline = false
+        var subs = [UIMutableApplicationShortcutItem]()
+        for subname in finalSubs {
+            if subs.count < 2 && !subname.contains("/") {
+                subs.append(UIMutableApplicationShortcutItem.init(type: "me.ccrama.redditslide.subreddit", localizedTitle: subname, localizedSubtitle: nil, icon: UIApplicationShortcutIcon.init(templateImageName: "subs"), userInfo: [ "sub": "\(subname)" as NSSecureCoding ]))
             }
-            
-            subs.append(UIMutableApplicationShortcutItem.init(type: "me.ccrama.redditslide.subreddit", localizedTitle: "Open link", localizedSubtitle: "Open current clipboard url", icon: UIApplicationShortcutIcon.init(templateImageName: "nav"), userInfo: [ "clipboard": "true" ]))
-            subs.reverse()
-            UIApplication.shared.shortcutItems = subs
         }
-
+        
+        subs.append(UIMutableApplicationShortcutItem.init(type: "me.ccrama.redditslide.subreddit", localizedTitle: "Open link", localizedSubtitle: "Open current clipboard url", icon: UIApplicationShortcutIcon.init(templateImageName: "nav"), userInfo: [ "clipboard": "true" as NSSecureCoding ]))
+        subs.reverse()
+        UIApplication.shared.shortcutItems = subs
+        
         if SettingValues.submissionGesturesEnabled {
             for view in view.subviews {
                 if view is UIScrollView {
@@ -505,147 +633,176 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
                 }
             }
         }
-
-        let firstViewController = MainViewController.vCs[0]
-
-        setViewControllers([firstViewController],
-                direction: .forward,
-                animated: true,
-                completion: nil)
-
-        self.doCurrentPage(saved)
-
-        if let nav = self.menuNav {
-            nav.tableView.reloadData()
+        
+        var newIndex = 0
+        
+        for sub in self.finalSubs {
+            if sub == savedPage {
+                newIndex = finalSubs.lastIndex(of: sub)!
+            }
         }
-        menuNav?.dismiss(animated: true)
-
+        
+        let firstViewController = SingleSubredditViewController(subName: finalSubs[newIndex], parent: self)
+        
+        setViewControllers([firstViewController],
+                           direction: .forward,
+                           animated: true,
+                           completion: nil)
+        
+        self.doCurrentPage(newIndex)
+        
+        self.makeMenuNav()
+        
         doButtons()
         
         tabBar.removeFromSuperview()
-        if SettingValues.viewType {
+        self.navigationItem.leftBarButtonItems = []
+        self.navigationItem.rightBarButtonItems = []
+        self.delegate = self
+        if SettingValues.subredditBar {
             setupTabBar(finalSubs)
+            self.dataSource = self
+        } else {
+            self.navigationItem.titleView = nil
+            self.dataSource = nil
         }
     }
-
+    
     var tabBar = MDCTabBar()
     var subs: UIView?
-
+    
     func setupTabBar(_ subs: [String]) {
-        tabBar = MDCTabBar.init(frame: CGRect.init(x: 0, y: 0, width: self.view.frame.size.width, height: 44))
-        tabBar.backgroundColor = ColorUtil.getColorForSub(sub: MainViewController.current, true)
+        if !SettingValues.subredditBar {
+            return
+        }
+        tabBar.removeFromSuperview()
+        tabBar = MDCTabBar.init(frame: CGRect.init(x: 0, y: 0, width: self.view.frame.size.width, height: 48))
         tabBar.itemAppearance = .titles
-
-        tabBar.selectedItemTintColor = SettingValues.reduceColor ? ColorUtil.fontColor : UIColor.white
-        tabBar.unselectedItemTintColor = SettingValues.reduceColor ? ColorUtil.fontColor.withAlphaComponent(0.45) : UIColor.white.withAlphaComponent(0.45)
+        
+        tabBar.selectedItemTintColor = SettingValues.reduceColor ? ColorUtil.theme.fontColor : UIColor.white
+        tabBar.unselectedItemTintColor = SettingValues.reduceColor ? ColorUtil.theme.fontColor.withAlphaComponent(0.45) : UIColor.white.withAlphaComponent(0.45)
+        
+        tabBar.selectedItemTitleFont = UIFont.boldSystemFont(ofSize: 14)
+        tabBar.unselectedItemTitleFont = UIFont.boldSystemFont(ofSize: 14)
+        
         tabBar.items = subs.enumerated().map { index, source in
             return UITabBarItem(title: source, image: nil, tag: index)
         }
         tabBar.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
         tabBar.selectionIndicatorTemplate = IndicatorTemplate()
         tabBar.delegate = self
+        tabBar.inkColor = UIColor.clear
         tabBar.selectedItem = tabBar.items[0]
         tabBar.tintColor = ColorUtil.accentColorForSub(sub: subs.isEmpty ? "NONE" : subs[0])
+        tabBar.backgroundColor = .clear
         tabBar.sizeToFit()
-        self.viewToMux = self.tabBar
-
+        //self.viewToMux = self.tabBar
         self.navigationItem.titleView = tabBar
+        
+        for item in tabBar.items {
+            if item.title == currentTitle {
+                tabBar.setSelectedItem(item, animated: false)
+            }
+        }
     }
     
     func didChooseSub(_ gesture: UITapGestureRecognizer) {
         let sub = gesture.view!.tag
         goToSubreddit(index: sub)
     }
-
+    
     var statusbarHeight: CGFloat {
         return UIApplication.shared.statusBarFrame.size.height
     }
     
-    func doLogin(token: OAuth2Token?) {
+    func doLogin(token: OAuth2Token?, register: Bool) {
         (UIApplication.shared.delegate as! AppDelegate).login = self
         if token == nil {
-            AccountController.addAccount(context: self)
+            AccountController.addAccount(context: self, register: register)
         } else {
             setToken(token: token!)
         }
     }
-
-    var tintColor: UIColor = UIColor.white
+    
     var menuNav: NavigationSidebarViewController?
-    var currentTitle = "Slide"
 
+    var currentTitle = "Slide"
+    
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         menuNav?.dismiss(animated: true)
     }
-
-    func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
-        guard completed else {
-            return
-        }
-        let page = MainViewController.vCs.index(of: self.viewControllers!.first!)
-        doCurrentPage(page!)
+    
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        
+        menuNav?.view.frame.size.width = splitViewController == nil ? view.frame.width : splitViewController!.primaryColumnWidth
     }
-
+    
+    func doLeftItem() {
+        let label = UILabel()
+        label.text = "   \(SettingValues.reduceColor ? "    " : "")\(SettingValues.subredditBar ? "" : self.currentTitle)"
+        label.textColor = SettingValues.reduceColor ? ColorUtil.theme.fontColor : .white
+        label.adjustsFontSizeToFitWidth = true
+        label.font = UIFont.boldSystemFont(ofSize: 20)
+        
+        if SettingValues.reduceColor {
+            var sideView = UIView()
+            sideView = UIView(frame: CGRect(x: 5, y: 5, width: 15, height: 15))
+            sideView.backgroundColor = ColorUtil.getColorForSub(sub: self.currentTitle)
+            sideView.translatesAutoresizingMaskIntoConstraints = false
+            label.addSubview(sideView)
+            sideView.layer.cornerRadius = 7.5
+            sideView.clipsToBounds = true
+        }
+        
+        label.sizeToFit()
+        let leftItem = UIBarButtonItem(customView: label)
+        
+        if !SettingValues.subredditBar {
+            self.navigationItem.leftBarButtonItems = SettingValues.subredditBar ? [leftItem] : [accountB, leftItem]
+        }
+    }
+    
     func doCurrentPage(_ page: Int) {
-        self.currentPage = page
-        if let vc = getSubredditVC() {
-            vc.doHeadView()
-            MainViewController.current = vc.sub
-            self.tintColor = ColorUtil.getColorForSub(sub: MainViewController.current)
-            self.menuNav?.setSubreddit(subreddit: MainViewController.current)
-            self.currentTitle = MainViewController.current
-            menuNav!.setColors(MainViewController.current)
-            navigationController?.navigationBar.barTintColor = ColorUtil.getColorForSub(sub: vc.sub, true)
-            self.inHeadView.backgroundColor = ColorUtil.getColorForSub(sub: vc.sub, true)
-            
-            if !(vc).loaded || !SettingValues.viewType {
-                if vc.loaded {
-                    vc.indicator?.isHidden = false
-                    vc.indicator?.startAnimating()
-                    vc.refresh(false)
-                } else {
-                    (vc).load(reset: true)
-                }
-            }
-            
-            let label = UILabel()
-            label.text = "   \(SettingValues.reduceColor ? "    " : "")\(SettingValues.viewType ? "" : self.currentTitle)"
-            label.textColor = SettingValues.reduceColor ? ColorUtil.fontColor : .white
-            label.adjustsFontSizeToFitWidth = true
-            label.font = UIFont.boldSystemFont(ofSize: 20)
-            
-            if SettingValues.reduceColor {
-                var sideView = UIView()
-                sideView = UIView(frame: CGRect(x: 5, y: 5, width: 15, height: 15))
-                sideView.backgroundColor = ColorUtil.getColorForSub(sub: self.currentTitle)
-                sideView.translatesAutoresizingMaskIntoConstraints = false
-                label.addSubview(sideView)
-                sideView.layer.cornerRadius = 7.5
-                sideView.clipsToBounds = true
-            }
-            
-            label.sizeToFit()
-            let leftItem = UIBarButtonItem(customView: label)
-            
-            if !SettingValues.viewType {
-                self.navigationItem.leftBarButtonItems = [leftItem]
-            }
-            
-            self.navigationController?.navigationBar.shadowImage = UIImage()
-            self.navigationController?.navigationBar.layoutIfNeeded()
-            
-            tabBar.backgroundColor = ColorUtil.getColorForSub(sub: MainViewController.current, true)
-            
-            tabBar.tintColor = ColorUtil.accentColorForSub(sub: MainViewController.current)
-            if !selected {
-                let page = MainViewController.vCs.index(of: self.viewControllers!.first!)
-                if !tabBar.items.isEmpty {
-                    tabBar.setSelectedItem(tabBar.items[page!], animated: true)
-                }
+        guard page < finalSubs.count else { return }
+        let vc = self.viewControllers![0] as! SingleSubredditViewController
+        MainViewController.current = vc.sub
+        UIAccessibility.post(notification: UIAccessibility.Notification.announcement, argument: "Viewing \(vc.sub)")
+        self.menuNav?.setSubreddit(subreddit: MainViewController.current)
+        self.currentTitle = MainViewController.current
+        menuNav!.setColors(MainViewController.current)
+        navigationController?.navigationBar.barTintColor = ColorUtil.getColorForSub(sub: vc.sub, true)
+        self.inHeadView.backgroundColor = SettingValues.fullyHideNavbar ? .clear : ColorUtil.getColorForSub(sub: vc.sub, true)
+        
+        if !(vc).loaded || !SettingValues.subredditBar {
+            if vc.loaded {
+                vc.indicator?.isHidden = false
+                vc.indicator?.startAnimating()
+                vc.loadBubbles()
+                vc.refresh(false)
             } else {
-                selected = false
+                vc.loadBubbles()
+                (vc).load(reset: true)
             }
+        }
+        
+        doLeftItem()
+        self.navigationController?.navigationBar.shadowImage = UIImage()
+        self.navigationController?.navigationBar.layoutIfNeeded()
+        
+        // Clear the menuNav's searchBar to refresh the menuNav
+        self.menuNav?.searchBar.text = nil
+        self.menuNav?.searchBar.endEditing(true)
+        
+        tabBar.tintColor = ColorUtil.accentColorForSub(sub: vc.sub)
+        if !selected {
+            let page = finalSubs.firstIndex(of: (self.viewControllers!.first as! SingleSubredditViewController).sub)
+            if !tabBar.items.isEmpty {
+                tabBar.setSelectedItem(tabBar.items[page!], animated: true)
+            }
+        } else {
+            selected = false
         }
     }
     
@@ -655,235 +812,302 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
         
         doButtons()
         var wasntHidden = false
-        if !menuNav!.view.isHidden {
+        if !(menuNav?.view.isHidden ?? true) {
             wasntHidden = true
-            menuNav!.view.isHidden = true
+            menuNav?.view.isHidden = true
         }
         super.viewWillTransition(to: size, with: coordinator)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             if wasntHidden {
-                self.menuNav!.view.isHidden = false
+                self.menuNav?.view.isHidden = false
             }
-            self.menuNav!.doRotate(false)
+            self.menuNav?.doRotate(false)
             self.getSubredditVC()?.showUI(false)
+            if UIDevice.current.userInterfaceIdiom == .pad && UIApplication.shared.applicationState == .active {
+                self.menuNav?.didSlideOver()
+            }
         }
     }
     
-    func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) {
-        color2 = ColorUtil.getColorForSub(sub: (pendingViewControllers[0] as! SingleSubredditViewController).sub, true)
-        color1 = ColorUtil.getColorForSub(sub: getSubredditVC()!.sub, true)
-    }
-
-    func pageViewController(_ pageViewController: UIPageViewController,
-                            viewControllerBefore viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = MainViewController.vCs.index(of: viewController) else {
-            return nil
-        }
-
-        let previousIndex = viewControllerIndex - 1
-
-        guard previousIndex >= 0 else {
-            return nil
-        }
-
-        guard MainViewController.vCs.count > previousIndex else {
-            return nil
-        }
-
-        return MainViewController.vCs[previousIndex]
-    }
-
-    func pageViewController(_ pageViewController: UIPageViewController,
-                            viewControllerAfter viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = MainViewController.vCs.index(of: viewController) else {
-            return nil
-        }
-
-        let nextIndex = viewControllerIndex + 1
-        let orderedViewControllersCount = MainViewController.vCs.count
-
-        guard orderedViewControllersCount != nextIndex else {
-            return nil
-        }
-
-        guard orderedViewControllersCount > nextIndex else {
-            return nil
-        }
-
-        return MainViewController.vCs[nextIndex]
-    }
-
     override func becomeFirstResponder() -> Bool {
         return true
     }
-
+    
     override var keyCommands: [UIKeyCommand]? {
-        return [UIKeyCommand(input: " ", modifierFlags: [], action: #selector(spacePressed))]
+        return [
+            UIKeyCommand(input: " ", modifierFlags: [], action: #selector(spacePressed)),
+            UIKeyCommand(input: UIKeyCommand.inputDownArrow, modifierFlags: [], action: #selector(spacePressed)),
+            UIKeyCommand(input: UIKeyCommand.inputUpArrow, modifierFlags: [], action: #selector(spacePressedUp)),
+            UIKeyCommand(input: "s", modifierFlags: .command, action: #selector(search), discoverabilityTitle: "Search"),
+            UIKeyCommand(input: "h", modifierFlags: .command, action: #selector(hideReadPosts), discoverabilityTitle: "Hide read posts"),
+            UIKeyCommand(input: "r", modifierFlags: .command, action: #selector(refresh), discoverabilityTitle: "Reload"),
+        ]
     }
-
+    
     @objc func spacePressed() {
-        UIView.animate(withDuration: 0.2, delay: 0, options: UIViewAnimationOptions.curveEaseOut, animations: {
+        UIView.animate(withDuration: 0.2, delay: 0, options: UIView.AnimationOptions.curveEaseOut, animations: {
             if let vc = self.getSubredditVC() {
-                vc.tableView.contentOffset.y += 350
+                vc.tableView.contentOffset.y = min(vc.tableView.contentOffset.y + 350, vc.tableView.contentSize.height - vc.tableView.frame.size.height)
             }
         }, completion: nil)
     }
 
+    @objc func spacePressedUp() {
+        UIView.animate(withDuration: 0.2, delay: 0, options: UIView.AnimationOptions.curveEaseOut, animations: {
+            if let vc = self.getSubredditVC() {
+                vc.tableView.contentOffset.y = max(vc.tableView.contentOffset.y - 350, -64)
+            }
+        }, completion: nil)
+    }
+
+    @objc func search() {
+        if let vc = self.getSubredditVC() {
+            vc.search()
+        }
+    }
+
+    @objc func hideReadPosts() {
+        if let vc = self.getSubredditVC() {
+            vc.hideReadPosts()
+        }
+    }
+
+    @objc func refresh() {
+        if let vc = self.getSubredditVC() {
+            vc.refresh()
+        }
+    }
+
     var inHeadView = UIView()
+    
+    @objc public func onAccountChangedNotificationPosted() {
+        DispatchQueue.main.async { [weak self] in
+            self?.doProfileIcon()
+        }
+    }
 
     override func viewDidLoad() {
         self.navToMux = self.navigationController!.navigationBar
-        self.color1 = ColorUtil.backgroundColor
-        self.color2 = ColorUtil.backgroundColor
+        self.color1 = ColorUtil.theme.backgroundColor
+        self.color2 = ColorUtil.theme.backgroundColor
         
-        if menuNav == nil {
-            makeMenuNav()
-        }
-
-        self.splitViewController?.preferredDisplayMode = UISplitViewControllerDisplayMode.allVisible
+        self.splitViewController?.preferredDisplayMode = UISplitViewController.DisplayMode.allVisible
         self.splitViewController?.maximumPrimaryColumnWidth = 10000
         self.splitViewController?.preferredPrimaryColumnWidthFraction = 0.33
-
+        
         if UIScreen.main.traitCollection.userInterfaceIdiom == .pad && self.splitViewController != nil {
             self.splitViewController?.showDetailViewController(PlaceholderViewController(), sender: nil)
         }
         
         self.restartVC()
-
-        doButtons()
-
-        super.viewDidLoad()
-        self.edgesForExtendedLayout = []
-        self.automaticallyAdjustsScrollViewInsets = false
-
-        inHeadView.removeFromSuperview()
-        inHeadView = UIView.init(frame: CGRect.init(x: 0, y: 0, width: max(self.view.frame.size.width, self.view.frame.size.height), height: (UIApplication.shared.statusBarView?.frame.size.height ?? 20)))
-        self.inHeadView.backgroundColor = ColorUtil.getColorForSub(sub: self.currentTitle, true)
         
-        if SettingValues.viewType {
+        doButtons()
+        
+        super.viewDidLoad()
+        self.automaticallyAdjustsScrollViewInsets = false
+        
+        inHeadView.removeFromSuperview()
+        inHeadView = UIView.init(frame: CGRect.init(x: 0, y: 0, width: max(self.view.frame.size.width, self.view.frame.size.height), height: (UIApplication.shared.statusBarUIView?.frame.size.height ?? 20)))
+        self.inHeadView.backgroundColor = SettingValues.fullyHideNavbar ? .clear : ColorUtil.getColorForSub(sub: self.currentTitle, true)
+        
+        if SettingValues.subredditBar {
             self.view.addSubview(inHeadView)
         }
-    
+        
         checkForUpdate()
-    
-        if UIScreen.main.traitCollection.userInterfaceIdiom == .pad {
-            self.edgesForExtendedLayout = UIRectEdge.all
-            self.extendedLayoutIncludesOpaqueBars = true
-
-            self.navigationController?.navigationBar.shadowImage = UIImage()
-            navigationController?.navigationBar.isTranslucent = false
-
-            navigationController?.navigationBar.barTintColor = ColorUtil.getColorForSub(sub: self.currentTitle, true)
-            tabBar.backgroundColor = ColorUtil.getColorForSub(sub: self.currentTitle, true)
-            self.inHeadView.backgroundColor = ColorUtil.getColorForSub(sub: self.currentTitle, true)
-
-            menuNav?.header.doColors()
-            if menuNav?.tableView != nil {
-                menuNav?.tableView.reloadData()
-            }
-        }
         
         let formatter = DateFormatter()
         formatter.dateFormat = "MM/dd/yyyy"
         let today = formatter.string(from: Date())
-    
+        
         if SettingValues.autoCache {
             if UserDefaults.standard.string(forKey: "DAY_LAUNCH") != today {
-                _ = AutoCache.init(baseController: self)
+                _ = AutoCache.init(baseController: self, subs: Subscriptions.offline)
                 UserDefaults.standard.setValue(today, forKey: "DAY_LAUNCH")
             }
         }
         requestReviewIfAppropriate()
         
-//        drawerButton = UIImageView.init(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
-//        drawerButton.backgroundColor = ColorUtil.foregroundColor
-//        drawerButton.clipsToBounds = true
-//        drawerButton.contentMode = .center
-//        drawerButton.layer.cornerRadius = 20
-//        drawerButton.image = UIImage(named: "menu")?.getCopy(withSize: CGSize.square(size: 25), withColor: ColorUtil.fontColor)
-//        self.view.addSubview(drawerButton)
-//        drawerButton.translatesAutoresizingMaskIntoConstraints = false
-//        drawerButton.addTapGestureRecognizer {
-//            self.showDrawer(self.drawerButton)
-//        }
+        //        drawerButton = UIImageView.init(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
+        //        drawerButton.backgroundColor = ColorUtil.theme.foregroundColor
+        //        drawerButton.clipsToBounds = true
+        //        drawerButton.contentMode = .center
+        //        drawerButton.layer.cornerRadius = 20
+        //        drawerButton.image = UIImage(named: "menu")?.getCopy(withSize: CGSize.square(size: 25), withColor: ColorUtil.theme.fontColor)
+        //        self.view.addSubview(drawerButton)
+        //        drawerButton.translatesAutoresizingMaskIntoConstraints = false
+        //        drawerButton.addTapGestureRecognizer {
+        //            self.showDrawer(self.drawerButton)
+        //        }
         
         toolbar?.addTapGestureRecognizer(action: {
             self.showDrawer(self.drawerButton)
         })
-        
+
+        NotificationCenter.default.addObserver(self, selector: #selector(onAccountRefreshRequested), name: .accountRefreshRequested, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(onAccountChangedNotificationPosted), name: .onAccountChangedToGuest, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(onAccountChangedNotificationPosted), name: .onAccountChanged, object: nil)
+
         let swipe = UISwipeGestureRecognizer(target: self, action: #selector(showDrawer(_:)))
         swipe.direction = .up
         
-//        drawerButton.addGestureRecognizer(swipe)
-//        drawerButton.isHidden = true
-//
-//        drawerButton.bottomAnchor == self.view.safeBottomAnchor - 8
-//        drawerButton.leadingAnchor == self.view.safeLeadingAnchor + 8
-//        drawerButton.heightAnchor == 40
-//        drawerButton.widthAnchor == 40
+        //        drawerButton.addGestureRecognizer(swipe)
+        //        drawerButton.isHidden = true
+        //
+        //        drawerButton.bottomAnchor == self.view.safeBottomAnchor - 8
+        //        drawerButton.leadingAnchor == self.view.safeLeadingAnchor + 8
+        //        drawerButton.heightAnchor == 40
+        //        drawerButton.widthAnchor == 40
+        
+        let edgePan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(screenEdgeSwiped))
+        edgePan.edges = .right
+        for view in view.subviews {
+            for rec in view.gestureRecognizers ?? [] {
+                rec.require(toFail: edgePan)
+            }
+        }
+        for rec in self.view.gestureRecognizers ?? [] {
+            rec.require(toFail: edgePan)
+        }
+
+        self.view.addGestureRecognizer(edgePan)
+    }
+    
+    @objc func screenEdgeSwiped() {
+        switch SettingValues.sideGesture {
+        case .SUBS:
+            menuNav?.expand()
+        case .INBOX:
+            self.showCurrentAccountMenu(nil)
+        case .POST:
+            if let vc = self.viewControllers?[0] as? SingleSubredditViewController {
+                vc.newPost(self)
+            }
+        case .SIDEBAR:
+            if let vc = self.viewControllers?[0] as? SingleSubredditViewController {
+                vc.doDisplaySidebar()
+            }
+        case .NONE:
+            return
+        }
     }
     
     public static var isOffline = false
     var menuB = UIBarButtonItem()
     var drawerButton = UIImageView()
-
-    func doButtons() {
-        if menu.superview != nil {
-            return
-        }
-        let sort = UIButton.init(type: .custom)
-        sort.setImage(UIImage.init(named: "ic_sort_white")?.navIcon(), for: UIControlState.normal)
-        sort.addTarget(self, action: #selector(self.showSortMenu(_:)), for: UIControlEvents.touchUpInside)
-        sort.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-        sortB = UIBarButtonItem.init(customView: sort)
-
-        let settings = UIButton.init(type: .custom)
-        settings.setImage(UIImage.init(named: "settings")?.toolbarIcon(), for: UIControlState.normal)
-        //todo this settings.addTarget(self, action: #selector(self.showDrawer(_:)), for: UIControlEvents.touchUpInside)
-        settings.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
-        let settingsB = UIBarButtonItem.init(customView: settings)
-
-        let offline = UIButton.init(type: .custom)
-        offline.setImage(UIImage.init(named: "offline")?.toolbarIcon(), for: UIControlState.normal)
-        offline.addTarget(self, action: #selector(self.restartVC), for: UIControlEvents.touchUpInside)
-        offline.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
-        let offlineB = UIBarButtonItem.init(customView: offline)
-
-        let flexButton = UIBarButtonItem(barButtonSystemItem: UIBarButtonSystemItem.flexibleSpace, target: nil, action: nil)
-
-        navigationController?.navigationBar.shadowImage = UIImage()
-        navigationController?.navigationBar.setBackgroundImage(UIImage(), for: .default)
-        if !MainViewController.isOffline {
-            more = UIButton.init(type: .custom)
-            more.accessibilityIdentifier = "more"
-            more.setImage(UIImage.init(named: "moreh")?.toolbarIcon(), for: UIControlState.normal)
-            more.addTarget(self, action: #selector(self.showMenu(_:)), for: UIControlEvents.touchUpInside)
-            more.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
-            
-            menu = UIButton.init(type: .custom)
-            menu.accessibilityIdentifier = "menu"
-            menu.setImage(UIImage.init(named: "menu")?.toolbarIcon(), for: UIControlState.normal)
-            menu.addTarget(self, action: #selector(self.showDrawer(_:)), for: UIControlEvents.touchUpInside)
-            menu.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
-            toolbar?.addSubview(menu)
-            toolbar?.addSubview(more)
-            
-            menu.heightAnchor == 56
-            menu.widthAnchor == 56
-            menu.leftAnchor == toolbar!.leftAnchor
-            menu.topAnchor == toolbar!.topAnchor
-            
-            more.heightAnchor == 56
-            more.widthAnchor == 56
-            more.rightAnchor == toolbar!.rightAnchor
-            more.topAnchor == toolbar!.topAnchor
-
+    
+    func doProfileIcon() {
+        let account = ExpandedHitButton(type: .custom)
+        let accountImage = UIImage(sfString: SFSymbol.personCropCircle, overrideString: "profile")?.navIcon()
+        if let image = AccountController.current?.image, let imageUrl = URL(string: image) {
+            account.sd_setImage(with: imageUrl, for: UIControl.State.normal, placeholderImage: accountImage, options: [.allowInvalidSSLCertificates], context: nil)
         } else {
-            toolbarItems = [settingsB, flexButton, offlineB]
+            account.setImage(accountImage, for: UIControl.State.normal)
+        }
+        account.layer.cornerRadius = 5
+        account.clipsToBounds = true
+        account.contentMode = .scaleAspectFill
+        account.addTarget(self, action: #selector(self.showCurrentAccountMenu(_:)), for: UIControl.Event.touchUpInside)
+        account.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
+        account.sizeAnchors == CGSize.square(size: 30)
+        accountB = UIBarButtonItem(customView: account)
+        accountB.accessibilityIdentifier = "Account button"
+        accountB.accessibilityLabel = "Account"
+        accountB.accessibilityHint = "Open account page"
+        if #available(iOS 13, *) {
+            let interaction = UIContextMenuInteraction(delegate: self)
+            self.accountB.customView?.addInteraction(interaction)
         }
         didUpdate()
     }
+    
+    func doButtons() {
+        if menu.superview != nil && !MainViewController.needsReTheme {
+            return
+        }
+        let sort = ExpandedHitButton(type: .custom)
+        sort.setImage(UIImage(sfString: SFSymbol.arrowUpArrowDownCircle, overrideString: "ic_sort_white")?.navIcon(), for: UIControl.State.normal)
+        sort.addTarget(self, action: #selector(self.showSortMenu(_:)), for: UIControl.Event.touchUpInside)
+        sort.frame = CGRect.init(x: 0, y: 0, width: 25, height: 25)
+        sortB = UIBarButtonItem.init(customView: sort)
 
+        let account = ExpandedHitButton(type: .custom)
+        let accountImage = UIImage(sfString: SFSymbol.personCropCircle, overrideString: "profile")?.navIcon()
+        if let image = AccountController.current?.image, let imageUrl = URL(string: image) {
+            print("Loading \(image)")
+            account.sd_setImage(with: imageUrl, for: UIControl.State.normal, placeholderImage: accountImage, options: [.allowInvalidSSLCertificates], context: nil)
+        } else {
+            account.setImage(accountImage, for: UIControl.State.normal)
+        }
+        account.layer.cornerRadius = 5
+        account.clipsToBounds = true
+        account.contentMode = .scaleAspectFill
+        account.addTarget(self, action: #selector(self.showCurrentAccountMenu(_:)), for: UIControl.Event.touchUpInside)
+        account.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
+        account.sizeAnchors == CGSize.square(size: 30)
+        accountB = UIBarButtonItem(customView: account)
+        accountB.accessibilityIdentifier = "Account button"
+        accountB.accessibilityLabel = "Account"
+        accountB.accessibilityHint = "Open account page"
+        if #available(iOS 13, *) {
+            let interaction = UIContextMenuInteraction(delegate: self)
+            self.accountB.customView?.addInteraction(interaction)
+        }
+
+        let settings = ExpandedHitButton(type: .custom)
+        settings.setImage(UIImage.init(sfString: SFSymbol.magnifyingglass, overrideString: "search")?.toolbarIcon(), for: UIControl.State.normal)
+       // TODO: - this settings.addTarget(self, action: #selector(self.showDrawer(_:)), for: UIControlEvents.touchUpInside)
+        settings.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
+        let settingsB = UIBarButtonItem.init(customView: settings)
+        
+        let offline = ExpandedHitButton(type: .custom)
+        offline.setImage(UIImage(sfString: SFSymbol.wifiSlash, overrideString: "offline")?.toolbarIcon(), for: UIControl.State.normal)
+        offline.addTarget(self, action: #selector(self.restartVC), for: UIControl.Event.touchUpInside)
+        offline.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
+        let offlineB = UIBarButtonItem.init(customView: offline)
+        
+        let flexButton = UIBarButtonItem(barButtonSystemItem: UIBarButtonItem.SystemItem.flexibleSpace, target: nil, action: nil)
+        
+        navigationController?.navigationBar.shadowImage = UIImage()
+        navigationController?.navigationBar.setBackgroundImage(UIImage(), for: .default)
+        for view in toolbar?.subviews ?? [UIView]() {
+            view.removeFromSuperview()
+        }
+        if !MainViewController.isOffline {
+            more = UIButton(type: .custom).then {
+                $0.setImage(UIImage.init(sfString: SFSymbol.ellipsis, overrideString: "moreh")?.toolbarIcon(), for: UIControl.State.normal)
+                $0.addTarget(self, action: #selector(self.showMenu(_:)), for: UIControl.Event.touchUpInside)
+
+                $0.accessibilityIdentifier = "Subreddit options button"
+                $0.accessibilityLabel = "Options"
+                $0.accessibilityHint = "Open subreddit options menu"
+            }
+            toolbar?.insertSubview(more, at: 0)
+            more.sizeAnchors == .square(size: 56)
+            
+            menu = UIButton(type: .custom).then {
+                $0.setImage(UIImage.init(sfString: SFSymbol.magnifyingglass, overrideString: "search")?.toolbarIcon(), for: UIControl.State.normal)
+                $0.addTarget(self, action: #selector(self.showDrawer(_:)), for: UIControl.Event.touchUpInside)
+                $0.accessibilityIdentifier = "Nav drawer button"
+                $0.accessibilityLabel = "Navigate"
+                $0.accessibilityHint = "Open navigation drawer"
+            }
+            toolbar?.insertSubview(menu, at: 0)
+            menu.sizeAnchors == .square(size: 56)
+
+            if let tool = toolbar {
+                menu.leftAnchor == tool.leftAnchor
+                menu.topAnchor == tool.topAnchor
+                more.rightAnchor == tool.rightAnchor
+                more.topAnchor == tool.topAnchor
+            }
+            
+        } else {
+            toolbarItems = [settingsB, accountB, flexButton, offlineB]
+        }
+        didUpdate()
+    }
+    
     func checkForUpdate() {
         if !SettingValues.doneVersion() {
             let session = (UIApplication.shared.delegate as! AppDelegate).session
@@ -895,7 +1119,7 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
                         break
                     case .success(let listing):
                         
-                        let submissions = listing.children.flatMap({ $0 as? Link })
+                        let submissions = listing.children.compactMap({ $0 as? Link })
                         if submissions.count < 2 {
                             return
                         }
@@ -908,7 +1132,7 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
                         let g1 = first.title.capturedGroups(withRegex: "(\\d+(\\.\\d+)+)")
                         let g2 = second.title.capturedGroups(withRegex: "(\\d+(\\.\\d+)+)")
                         let lastUpdate = g1.isEmpty ? (g2.isEmpty ? "" : g2[0][0]) : g1[0][0]
-
+                        
                         if first.stickied && first.title.contains(Bundle.main.releaseVersionNumber!) {
                             storedTitle = first.title
                             storedLink = first.permalink
@@ -918,15 +1142,14 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
                         } else if Bundle.main.releaseVersionNumber!.contains(lastUpdate) || Bundle.main.releaseVersionNumber!.contains(lastUpdate) {
                             storedTitle = g1.isEmpty ? second.title : first.title
                             storedLink = g1.isEmpty ? second.permalink : first.permalink
-
+                            
                             UserDefaults.standard.set(true, forKey: Bundle.main.releaseVersionNumber!)
                             UserDefaults.standard.synchronize()
                         }
-
+                        
                         if !storedTitle.isEmpty && !storedLink.isEmpty {
                             DispatchQueue.main.async {
-                                print("Showing")
-                                SettingValues.showVersionDialog(storedTitle, storedLink, parentVC: self)
+                                SettingValues.showVersionDialog(storedTitle, submissions[0], parentVC: self)
                             }
                         }
                     }
@@ -935,104 +1158,237 @@ class MainViewController: ColorMuxPagingViewController, UIPageViewControllerData
             }
         }
     }
-
+    
     func colorChanged(_ color: UIColor) {
         tabBar.tintColor = ColorUtil.accentColorForSub(sub: MainViewController.current)
-        tabBar.backgroundColor = SettingValues.reduceColor ? ColorUtil.backgroundColor : color
-        inHeadView.backgroundColor = SettingValues.reduceColor ? ColorUtil.backgroundColor : color
+        inHeadView.backgroundColor = SettingValues.reduceColor ? ColorUtil.theme.backgroundColor : color
+        if SettingValues.fullyHideNavbar {
+            inHeadView.backgroundColor = .clear
+        }
+        menuNav?.setColors(finalSubs[currentPage])
     }
-
+    
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        UIApplication.shared.statusBarView?.backgroundColor = .clear
+        UIApplication.shared.statusBarUIView?.backgroundColor = .clear
         
         menuNav?.view.isHidden = true
-        tabBar.backgroundColor = .clear
     }
-
-    func showSortMenu(_ sender: UIButton?) {
+    
+    @objc func showSortMenu(_ sender: UIButton?) {
         getSubredditVC()?.showSortMenu(sender)
     }
     
-    func showReadLater(_ sender: UIButton?) {
+    @objc func showReadLater(_ sender: UIButton?) {
         VCPresenter.showVC(viewController: ReadLaterViewController(subreddit: currentTitle), popupIfPossible: false, parentNavigationController: self.navigationController, parentViewController: self)
+    }
+
+    @objc func showCurrentAccountMenu(_ sender: UIButton?) {
+        let vc = CurrentAccountViewController()
+        vc.delegate = self
+        vc.modalPresentationStyle = .custom
+        vc.transitioningDelegate = currentAccountTransitioningDelegate
+        present(vc, animated: true)
     }
     
     func getSubredditVC() -> SingleSubredditViewController? {
-        return (MainViewController.vCs[currentPage] as? SingleSubredditViewController)
+        return viewControllers?.count ?? 0 == 0 ? nil : viewControllers?[0] as? SingleSubredditViewController
     }
-
-    var currentPage = 0
-
-    func showDrawer(_ sender: AnyObject) {
+    
+    var currentPage: Int {
+        if let vc = viewControllers?[0] as? SingleSubredditViewController {
+            return finalSubs.firstIndex(of: vc.sub) ?? 0
+        } else {
+            return 0
+        }
+    }
+    
+    @objc func showDrawer(_ sender: AnyObject) {
         if menuNav == nil {
             makeMenuNav()
         }
         menuNav!.setColors(MainViewController.current)
         menuNav!.expand()
     }
-
+    
     func shadowbox() {
         getSubredditVC()?.shadowboxMode()
     }
-
-    func showMenu(_ sender: AnyObject) {
+    
+    @objc func showMenu(_ sender: AnyObject) {
         getSubredditVC()?.showMore(sender, parentVC: self)
     }
+    
+    var selected = false
+}
 
-    func showThemeMenu() {
-        let actionSheetController: UIAlertController = UIAlertController(title: "Select a base theme", message: "", preferredStyle: .actionSheet)
-
-        let cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-            print("Cancel")
+extension MainViewController: UIPageViewControllerDataSource {
+    
+    func pageViewController(_ pageViewController: UIPageViewController,
+                            viewControllerBefore viewController: UIViewController) -> UIViewController? {
+        var index = finalSubs.firstIndex(of: (viewController as! SingleSubredditViewController).sub)
+        if let vc = viewController as? SingleSubredditViewController {
+            index = finalSubs.firstIndex(of: vc.sub)
         }
-        actionSheetController.addAction(cancelActionButton)
-
-        for theme in ColorUtil.Theme.cases {
-            let saveActionButton: UIAlertAction = UIAlertAction(title: theme.displayName, style: .default) { _ -> Void in
-                UserDefaults.standard.set(theme.rawValue, forKey: "theme")
-                UserDefaults.standard.synchronize()
-                _ = ColorUtil.doInit()
-                self.restartVC()
-            }
-            actionSheetController.addAction(saveActionButton)
+        guard let viewControllerIndex = index else {
+            return nil
         }
+        
+        let previousIndex = viewControllerIndex - 1
+        
+        guard previousIndex >= 0 else {
+            return nil
+        }
+        
+        guard finalSubs.count > previousIndex else {
+            return nil
+        }
+        
+        return SingleSubredditViewController(subName: finalSubs[previousIndex], parent: self)
+    }
+    
+    func pageViewController(_ pageViewController: UIPageViewController,
+                            viewControllerAfter viewController: UIViewController) -> UIViewController? {
+        guard let viewControllerIndex = finalSubs.firstIndex(of: (viewController as! SingleSubredditViewController).sub) else {
+            return nil
+        }
+        
+        let nextIndex = viewControllerIndex + 1
+        let orderedViewControllersCount = finalSubs.count
+        
+        guard orderedViewControllersCount != nextIndex else {
+            return nil
+        }
+        
+        guard orderedViewControllersCount > nextIndex else {
+            return nil
+        }
+        
+        return SingleSubredditViewController(subName: finalSubs[nextIndex], parent: self)
+    }
+    
+}
 
-        //todo make this work on ipad, also maybe merge with current code in SettingsTheme?
-        self.present(actionSheetController, animated: true, completion: nil)
+extension MainViewController: UIPageViewControllerDelegate {
+    func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
+        let page = finalSubs.firstIndex(of: (self.viewControllers!.first as! SingleSubredditViewController).sub)
+        //        let page = tabBar.items.index(of: tabBar.selectedItem!)
+        // TODO: - Crashes here
+        guard page != nil else {
+            return
+        }
+        doCurrentPage(page!)
+        self.navigationController?.setNavigationBarHidden(false, animated: true)
+    }
+    
+    func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) {
+        let pendingSub = (pendingViewControllers[0] as! SingleSubredditViewController).sub
+        let prevSub = getSubredditVC()?.sub ?? ""
+        color2 = ColorUtil.getColorForSub(sub: pendingSub, true)
+        color1 = ColorUtil.getColorForSub(sub: prevSub, true)
+    }
+}
+
+extension MainViewController: CurrentAccountViewControllerDelegate {
+    func currentAccountViewController(_ controller: CurrentAccountViewController, didRequestSettingsMenu: Void) {
+        let settings = SettingsViewController()
+        VCPresenter.showVC(viewController: settings, popupIfPossible: false, parentNavigationController: self.navigationController, parentViewController: self)
+    }
+    
+    func currentAccountViewController(_ controller: CurrentAccountViewController, goToMultireddit multireddit: String) {
+        finalSubs = []
+        finalSubs.append(contentsOf: Subscriptions.pinned)
+        finalSubs.append(contentsOf: Subscriptions.subreddits.sorted(by: { $0.caseInsensitiveCompare($1) == .orderedAscending }).filter({ return !Subscriptions.pinned.contains($0) }))
+        redoSubs()
+        goToSubreddit(subreddit: multireddit)
+    }
+    
+    func currentAccountViewController(_ controller: CurrentAccountViewController, didRequestCacheNow: Void) {
+        if Subscriptions.offline.isEmpty {
+            let alert = AlertController.init(title: "Caption", message: "", preferredStyle: .alert)
+            
+            alert.setupTheme()
+            alert.attributedTitle = NSAttributedString(string: "You have no subs set to Auto Cache", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+            
+            alert.attributedMessage = TextDisplayStackView.createAttributedChunk(baseHTML: "You can set this up in Settings > Offline Caching", fontSize: 14, submission: false, accentColor: ColorUtil.baseAccent, fontColor: ColorUtil.theme.fontColor, linksCallback: nil, indexCallback: nil)
+            
+            alert.addCloseButton()
+            alert.addBlurView()
+            present(alert, animated: true, completion: nil)
+        } else {
+            _ = AutoCache.init(baseController: self, subs: Subscriptions.offline)
+        }
     }
 
-    var selected = false
+    func currentAccountViewController(_ controller: CurrentAccountViewController?, didRequestAccountChangeToName accountName: String) {
+
+        AccountController.switchAccount(name: accountName)
+        if !UserDefaults.standard.bool(forKey: "done" + accountName) {
+            do {
+                try addAccount(token: OAuth2TokenRepository.token(of: accountName), register: false)
+            } catch {
+                addAccount(register: false)
+            }
+        } else {
+            Subscriptions.sync(name: accountName, completion: { [weak self] in
+                self?.hardReset()
+            })
+        }
+    }
+
+    func currentAccountViewController(_ controller: CurrentAccountViewController, didRequestGuestAccount: Void) {
+        AccountController.switchAccount(name: "GUEST")
+        Subscriptions.sync(name: "GUEST", completion: { [weak self] in
+            self?.hardReset()
+        })
+    }
+
+    func currentAccountViewController(_ controller: CurrentAccountViewController, didRequestLogOut: Void) {
+        let name: String
+        if AccountController.current != nil {
+            name = AccountController.current!.name
+        } else {
+            name = AccountController.currentName
+        }
+        AccountController.delete(name: name)
+        AccountController.switchAccount(name: "GUEST")
+        Subscriptions.sync(name: "GUEST", completion: { [weak self] in
+            self?.hardReset()
+        })
+    }
+
+    func currentAccountViewController(_ controller: CurrentAccountViewController, didRequestNewAccount: Void) {
+        MainViewController.doAddAccount(register: false)
+    }
+
 }
 
 class IndicatorTemplate: NSObject, MDCTabBarIndicatorTemplate {
     func indicatorAttributes(
-            for context: MDCTabBarIndicatorContext
-    ) -> MDCTabBarIndicatorAttributes {
+        for context: MDCTabBarIndicatorContext
+        ) -> MDCTabBarIndicatorAttributes {
         let bounds = context.bounds
         let attributes = MDCTabBarIndicatorAttributes()
         let underlineFrame = CGRect.init(x: bounds.minX,
-                y: bounds.height - 7,
-                width: bounds.width,
-                height: 3.0)
-        attributes.path = UIBezierPath.init(roundedRect: underlineFrame, byRoundingCorners: UIRectCorner.init(arrayLiteral: UIRectCorner.topLeft, UIRectCorner.topRight), cornerRadii: CGSize.init(width: 8, height: 8))
+                                         y: bounds.height - (UIDevice.current.userInterfaceIdiom == .pad ? 9 : 7),
+                                         width: bounds.width,
+                                         height: UIDevice.current.userInterfaceIdiom == .pad ? 4 : 5)
+        attributes.path = UIBezierPath.init(roundedRect: underlineFrame, byRoundingCorners: UIDevice.current.userInterfaceIdiom == .pad ? UIRectCorner.init(arrayLiteral: UIRectCorner.topLeft, UIRectCorner.topRight, UIRectCorner.bottomLeft, UIRectCorner.bottomRight) : UIRectCorner.init(arrayLiteral: UIRectCorner.topLeft, UIRectCorner.topRight), cornerRadii: UIDevice.current.userInterfaceIdiom == .pad ? CGSize.init(width: 2, height: 2) : CGSize.init(width: 8, height: 8))
         return attributes
     }
 }
 
 extension MainViewController: MDCTabBarDelegate {
-
     func tabBar(_ tabBar: MDCTabBar, didSelect item: UITabBarItem) {
         selected = true
-        let firstViewController = MainViewController.vCs[tabBar.items.index(of: item)!]
+        let firstViewController = SingleSubredditViewController(subName: finalSubs[tabBar.items.firstIndex(of: item)!], parent: self)
 
         setViewControllers([firstViewController],
-                direction: .forward,
-                animated: false,
-                completion: nil)
-
-        self.doCurrentPage(tabBar.items.index(of: item)!)
-        tabBar.backgroundColor = ColorUtil.getColorForSub(sub: self.currentTitle, true)
+                           direction: .forward,
+                           animated: false,
+                           completion: nil)
+        
+        self.doCurrentPage(tabBar.items.firstIndex(of: item)!)
     }
 }
 
@@ -1046,4 +1402,43 @@ extension Bundle {
     var releaseVersionNumberPretty: String {
         return "v\(releaseVersionNumber ?? "1.0.0")"
     }
+}
+
+class ExpandedHitButton: UIButton {
+    override func point( inside point: CGPoint, with event: UIEvent? ) -> Bool {
+        let relativeFrame = self.bounds
+        let hitTestEdgeInsets = UIEdgeInsets( top: -44, left: -44, bottom: -44, right: -44 )
+        let hitFrame = relativeFrame.inset(by: hitTestEdgeInsets)
+        return hitFrame.contains(point)
+    }
+}
+
+@available(iOS 13.0, *)
+extension MainViewController: UIContextMenuInteractionDelegate {
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+                return UIContextMenuConfiguration(identifier: nil, previewProvider: nil, actionProvider: { _ in
+
+            return self.makeContextMenu()
+        })
+
+    }
+    func makeContextMenu() -> UIMenu {
+
+        // Create a UIAction for sharing
+        var buttons = [UIAction]()
+        for accountName in AccountController.names.unique().sorted() {
+            if accountName == AccountController.currentName {
+                buttons.append(UIAction(title: accountName, image: UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.menuIcon(), handler: { (_) in
+                }))
+            } else {
+                buttons.append(UIAction(title: accountName, image: nil, handler: { (_) in
+                    self.currentAccountViewController(nil, didRequestAccountChangeToName: accountName)
+                }))
+            }
+        }
+
+        // Create and return a UIMenu with the share action
+        return UIMenu(title: "Switch Accounts", children: buttons)
+    }
+
 }

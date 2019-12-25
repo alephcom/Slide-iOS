@@ -65,7 +65,7 @@ open class OpenInChromeController {
                 if createNewTab {
                     chromeURLString += "&create-new-tab"
                 }
-                UIApplication.shared.openURL(URL(string: chromeURLString)!)
+                UIApplication.shared.openURL(URL(string: chromeURLString) ?? url)
             }
         } else if UIApplication.shared.canOpenURL(chromeSimpleURL) {
             let scheme = url.scheme?.lowercased()
@@ -77,8 +77,8 @@ open class OpenInChromeController {
             }
             if let chromeScheme = chromeScheme {
                 let absoluteURLString = url.absoluteString
-                let chromeURLString = chromeScheme + absoluteURLString.substring(from: absoluteURLString.range(of: ":")!.lowerBound)
-                UIApplication.shared.openURL(URL(string: chromeURLString)!)
+                let chromeURLString = chromeScheme + String(absoluteURLString[absoluteURLString.range(of: ":")!.lowerBound...])
+                UIApplication.shared.openURL(URL(string: chromeURLString) ?? url)
             }
         }
     }

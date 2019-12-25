@@ -6,6 +6,7 @@
 //  Copyright © 2017 Haptic Apps. All rights reserved.
 //
 
+import RealmSwift
 import reddift
 import UIKit
 
@@ -52,52 +53,60 @@ class PostFilter {
         }
         return false
     }
+    
+    public static func containedIn(_ array: [NSString], value: String) -> Bool {
+        for text in array {
+            if value.localizedCaseInsensitiveContains(String(text)) {
+                return true
+            }
+        }
+        return false
+    }
 
-    public static func matches(_ link: RSubmission, baseSubreddit: String) -> Bool {
-        let mainMatch = (PostFilter.domains.contains(where: { $0.containedIn(base: link.domain) })) || PostFilter.profiles.contains(where: { $0.caseInsensitiveCompare(link.author) == .orderedSame }) || PostFilter.subreddits.contains(where: { $0.caseInsensitiveCompare(link.subreddit) == .orderedSame }) || contains(PostFilter.flairs, value: link.flair) || contains(PostFilter.selftext, value: link.htmlBody) || contains(PostFilter.titles, value: link.title) || (link.nsfw && !SettingValues.nsfwEnabled)
-
-        let gifs = isGif(baseSubreddit)
-        let images = isImage(baseSubreddit)
-        let nsfw = isNsfw(baseSubreddit)
-        let albums = isAlbum(baseSubreddit)
-        let urls = isUrl(baseSubreddit)
-        let selftext = isSelftext(baseSubreddit)
-        let videos = isVideo(baseSubreddit)
+    public static func matches(_ link: RSubmission, baseSubreddit: String, gallery: Bool) -> Bool {
+        let mainMatch = (PostFilter.domains.contains(where: { $0.containedIn(base: link.domain) })) ||
+            PostFilter.profiles.contains(where: { $0.caseInsensitiveCompare(link.author) == .orderedSame }) ||
+            PostFilter.subreddits.contains(where: { $0.caseInsensitiveCompare(link.subreddit) == .orderedSame }) ||
+            contains(PostFilter.flairs, value: link.flair) ||
+            containedIn(PostFilter.selftext, value: link.htmlBody) ||
+            containedIn(PostFilter.titles, value: link.title) ||
+            (link.nsfw && !SettingValues.nsfwEnabled) || (link.nsfw && gallery && !(SettingValues.nsfwPreviews || SettingValues.hideNSFWCollection && Subscriptions.isCollection(baseSubreddit))) || link.hidden || History.getSeen(s: link) && SettingValues.hideSeen
+        
+        if mainMatch {
+            //No need to check further
+            return mainMatch
+        }
 
         var contentMatch = false
-
-        if (link.nsfw) {
-            if !SettingValues.nsfwEnabled {
-                contentMatch = true
-            }
-            if nsfw {
-                contentMatch = true
-            }
+        if link.nsfw {
+            // Hide NSFW if the user is not logged in, nsfw is not enabled (can only be done while authenticated),
+            // or the subreddit-specific nsfw filter is turned on
+            contentMatch = !AccountController.isLoggedIn || !SettingValues.nsfwEnabled || isNsfw(baseSubreddit)
         }
 
         switch ContentType.getContentType(submission: link) {
         case .REDDIT, .EMBEDDED, .LINK:
-            if urls {
+            if isUrl(baseSubreddit) {
                 contentMatch = true
             }
         case .SELF, .NONE:
-            if selftext {
+            if isSelftext(baseSubreddit) || gallery {
                 contentMatch = true
             }
         case .ALBUM:
-            if albums {
+            if isAlbum(baseSubreddit) {
                 contentMatch = true
             }
         case .IMAGE, .DEVIANTART, .IMGUR, .XKCD:
-            if images {
+            if isImage(baseSubreddit) {
                 contentMatch = true
             }
         case .GIF:
-            if gifs {
+            if isGif(baseSubreddit) {
                 contentMatch = true
             }
         case .VID_ME, .VIDEO, .STREAMABLE:
-            if videos {
+            if isVideo(baseSubreddit) {
                 contentMatch = true
             }
         default:
@@ -123,9 +132,9 @@ class PostFilter {
         return [isImage(sub), isAlbum(sub), isGif(sub), isVideo(sub), isUrl(sub), isSelftext(sub), isNsfw(sub)]
     }
 
-    public static func filter(_ input: [RSubmission], previous: [RSubmission]?, baseSubreddit: String) -> [RSubmission] {
+    public static func filter(_ input: [Object], previous: [RSubmission]?, baseSubreddit: String, gallery: Bool = false) -> [Object] {
         var ids: [String] = []
-        var toReturn: [RSubmission] = []
+        var toReturn: [Object] = []
         if previous != nil {
             for p in previous! {
                 ids.append(p.getId())
@@ -133,7 +142,25 @@ class PostFilter {
         }
 
         for link in input {
-            if !matches(link, baseSubreddit: baseSubreddit) && !ids.contains(link.getId()) {
+            if link is RSubmission {
+                if !matches(link as! RSubmission, baseSubreddit: baseSubreddit, gallery: gallery) && !ids.contains((link as! RSubmission).getId()) {
+                    toReturn.append(link)
+                }
+            } else if link is RComment {
+                let comment = link as! RComment
+                let mainMatch = PostFilter.profiles.contains(where: { $0.caseInsensitiveCompare(comment.author) == .orderedSame }) ||
+                    PostFilter.subreddits.contains(where: { $0.caseInsensitiveCompare(comment.subreddit) == .orderedSame }) ||
+                    contains(PostFilter.flairs, value: comment.flair)
+                if !mainMatch {
+                    toReturn.append(link)
+                }
+            } else if link is RMessage {
+                let message = link as! RMessage
+                let mainMatch = PostFilter.profiles.contains(where: { $0.caseInsensitiveCompare(message.author) == .orderedSame })
+                if !mainMatch {
+                    toReturn.append(link)
+                }
+            } else {
                 toReturn.append(link)
             }
         }

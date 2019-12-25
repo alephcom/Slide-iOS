@@ -14,7 +14,7 @@ protocol VideoScrubberViewDelegate: class {
     func sliderValueChanged(toSeconds: Float)
     func sliderDidBeginDragging()
     func sliderDidEndDragging()
-    func toggleReturnPlaying() -> Bool
+    func togglePlaying()
 }
 
 //extension UISlider {
@@ -56,8 +56,8 @@ class VideoScrubberView: UIView {
 
     var playButton = UIButton(type: .system)
 
-    let playButtonImage = UIImage(named: "play")?.getCopy(withSize: .square(size: 45))
-    let pauseButtonImage = UIImage(named: "pause")?.getCopy(withSize: .square(size: 45))
+    let playButtonImage = UIImage(sfString: SFSymbol.playFill, overrideString: "play")?.getCopy(withSize: .square(size: 20))
+    let pauseButtonImage = UIImage(sfString: SFSymbol.pauseFill, overrideString: "pause")?.getCopy(withSize: .square(size: 20))
     let largeThumbImage = UIImage(named: "circle")?.getCopy(withSize: .square(size: 30), withColor: .white)
     let smallThumbImage = UIImage(named: "circle")?.getCopy(withSize: .square(size: 20), withColor: .white)
     
@@ -72,14 +72,14 @@ class VideoScrubberView: UIView {
 //        slider.setThumbImage(UIImage(named: "circle")?.getCopy(withSize: .square(size: 72), withColor: slider.tintColor), for: .normal)
         slider.minimumValue = 0
         slider.maximumValue = 1
-//        slider.isContinuous = true
+        slider.isContinuous = true
 //        slider.setThumbImage(UIImage(), for: .normal)
 //        slider.setMinimumTrackImage(UIImage.image(with: slider.tintColor).getCopy(withSize: .square(size: 72)), for: .normal)
 //        slider.setMaximumTrackImage(UIImage.image(with: slider.tintColor.withAlphaComponent(0.4)).getCopy(withSize: .square(size: 72)), for: .normal)
 //        slider.thumbTintColor = ColorUtil.accentColorForSub(sub: "")
         slider.minimumTrackTintColor = ColorUtil.accentColorForSub(sub: "")
         slider.maximumTrackTintColor = ColorUtil.accentColorForSub(sub: "").withAlphaComponent(0.4)
-        slider.setThumbImage(UIImage.init(named: "circle")?.getCopy(withSize: CGSize.square(size: 20), withColor: .white), for: .normal)
+        slider.setThumbImage(UIImage(named: "circle")?.getCopy(withSize: CGSize.square(size: 20), withColor: .white), for: .normal)
         self.addSubview(slider)
         
         self.addSubview(playButton)
@@ -98,14 +98,14 @@ class VideoScrubberView: UIView {
 //        timeElapsedRightConstraint = timeElapsedLabel.rightAnchor == CGFloat(slider.thumbCenterX - 16) ~ .low
 //        slider
 
-        timeTotalLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 12, weight: 10)
+        timeTotalLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 12, weight: UIFont.Weight(rawValue: 10))
         timeTotalLabel.textAlignment = .center
         timeTotalLabel.textColor = UIColor.white
 
         timeTotalLabel.centerYAnchor == slider.centerYAnchor + 1
         timeTotalLabel.leftAnchor == self.leftAnchor + 8
 
-        playButton.setImage(UIImage.init(named: "pause")?.getCopy(withSize: CGSize.square(size: 45)), for: .normal)
+        playButton.setImage(UIImage(sfString: SFSymbol.pauseFill, overrideString: "pause")?.getCopy(withSize: CGSize.square(size: 20)), for: .normal)
         playButton.tintColor = UIColor.white
         playButton.addTarget(self, action: #selector(playButtonTapped(_:)), for: .touchUpInside)
 
@@ -122,7 +122,7 @@ class VideoScrubberView: UIView {
         self.clipsToBounds = true
         
         let blurView = UIVisualEffectView(frame: UIScreen.main.bounds)
-        blurEffect.setValue(3, forKeyPath: "blurRadius")
+        blurEffect.setValue(5, forKeyPath: "blurRadius")
         blurView.effect = blurEffect
         blurView.clipsToBounds = true
         blurView.layer.cornerRadius = 30
@@ -148,7 +148,7 @@ class VideoScrubberView: UIView {
         }
     }
 
-    fileprivate func getTimeString(_ time: Int) -> String {
+    private func getTimeString(_ time: Int) -> String {
         let h = time / 3600
         let m = (time % 3600) / 60
         let s = (time % 3600) % 60
@@ -165,12 +165,12 @@ class VideoScrubberView: UIView {
 }
 
 extension VideoScrubberView {
-    func sliderValueChanged(_ sender: ThickSlider) {
+    @objc func sliderValueChanged(_ sender: ThickSlider) {
         delegate?.sliderValueChanged(toSeconds: sender.value)
         timeTotalLabel.text = "+\(getTimeString(Int(floor(sender.value))))"
     }
 
-    func sliderDidBeginDragging(_ sender: ThickSlider) {
+    @objc func sliderDidBeginDragging(_ sender: ThickSlider) {
         delegate?.sliderDidBeginDragging()
         slider.setThumbImage(largeThumbImage, for: .normal)
         UIView.animate(withDuration: 0.3) {
@@ -178,7 +178,7 @@ extension VideoScrubberView {
         }
     }
 
-    func sliderDidEndDragging(_ sender: ThickSlider) {
+    @objc func sliderDidEndDragging(_ sender: ThickSlider) {
         delegate?.sliderDidEndDragging()
         slider.setThumbImage(smallThumbImage, for: .normal)
         UIView.animate(withDuration: 0.3) {
@@ -186,14 +186,8 @@ extension VideoScrubberView {
         }
     }
 
-    func playButtonTapped(_ sender: UIButton) {
-        if let delegate = delegate {
-            if delegate.toggleReturnPlaying() {
-                setPauseButton()
-            } else {
-                setPlayButton()
-            }
-        }
+    @objc func playButtonTapped(_ sender: UIButton) {
+        delegate?.togglePlaying()
     }
 }
 

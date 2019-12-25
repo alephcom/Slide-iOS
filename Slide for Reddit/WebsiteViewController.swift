@@ -17,10 +17,13 @@ class WebsiteViewController: MediaViewController, WKNavigationDelegate {
     var webView: WKWebView = WKWebView()
     var myProgressView: UIProgressView = UIProgressView()
     var sub: String
+    var register: Bool
+    var blocking11 = false
     
     init(url: URL, subreddit: String) {
         self.url = url
         self.sub = subreddit
+        self.register = false
         super.init(nibName: nil, bundle: nil)
         setBarColors(color: ColorUtil.getColorForSub(sub: subreddit))
     }
@@ -31,14 +34,14 @@ class WebsiteViewController: MediaViewController, WKNavigationDelegate {
 
         if navigationController != nil {
             let sort = UIButton.init(type: .custom)
-            sort.setImage(UIImage.init(named: "size")?.navIcon(), for: UIControlState.normal)
-            sort.addTarget(self, action: #selector(self.readerMode(_:)), for: UIControlEvents.touchUpInside)
+            sort.setImage(UIImage(sfString: SFSymbol.textformatAlt, overrideString: "size")?.navIcon(), for: UIControl.State.normal)
+            sort.addTarget(self, action: #selector(self.readerMode(_:)), for: UIControl.Event.touchUpInside)
             sort.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
             let sortB = UIBarButtonItem.init(customView: sort)
             
             let nav = UIButton.init(type: .custom)
-            nav.setImage(UIImage.init(named: "nav")?.navIcon(), for: UIControlState.normal)
-            nav.addTarget(self, action: #selector(self.openExternally(_:)), for: UIControlEvents.touchUpInside)
+            nav.setImage(UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")?.navIcon(), for: UIControl.State.normal)
+            nav.addTarget(self, action: #selector(self.openExternally(_:)), for: UIControl.Event.touchUpInside)
             nav.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
             let navB = UIBarButtonItem.init(customView: nav)
 
@@ -47,60 +50,47 @@ class WebsiteViewController: MediaViewController, WKNavigationDelegate {
 
     }
     
-    func openExternally(_ sender: UIButton) {
+    @objc func openExternally(_ sender: UIButton) {
         guard let baseURL = self.webView.url else {
             return
         }
-        let alert = UIAlertController.init(title: baseURL.absoluteString, message: "", preferredStyle: .actionSheet)
+        let alert = DragDownAlertMenu(title: "Link options", subtitle: baseURL.absoluteString, icon: baseURL.absoluteString)
         let open = OpenInChromeController.init()
         if open.isChromeInstalled() {
-            alert.addAction(
-                UIAlertAction(title: "Open in Chrome", style: .default) { (_) in
-                    open.openInChrome(baseURL, callbackURL: nil, createNewTab: true)
-                }
-            )
+            alert.addAction(title: "Open in Chrome", icon: UIImage(named: "world")?.menuIcon()) {
+                open.openInChrome(baseURL, callbackURL: nil, createNewTab: true)
+            }
         }
-        alert.addAction(
-            UIAlertAction(title: "Open in Safari", style: .default) { (_) in
-                if #available(iOS 10.0, *) {
-                    UIApplication.shared.open(baseURL, options: [:], completionHandler: nil)
-                } else {
-                    UIApplication.shared.openURL(baseURL)
-                }
-            }
-        )
-        alert.addAction(
-            UIAlertAction(title: "Share URL", style: .default) { (_) in
-                let shareItems: Array = [baseURL]
-                let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
-                if let presenter = activityViewController.popoverPresentationController {
-                    presenter.sourceView = sender
-                    presenter.sourceRect = sender.bounds
-                }
-                let window = UIApplication.shared.keyWindow!
-                if let modalVC = window.rootViewController?.presentedViewController {
-                    modalVC.present(activityViewController, animated: true, completion: nil)
-                } else {
-                    window.rootViewController!.present(activityViewController, animated: true, completion: nil)
-                }
-            }
-        )
-        alert.addAction(
-            UIAlertAction(title: "Cancel", style: .cancel) { (_) in
-            }
-        )
-        let window = UIApplication.shared.keyWindow!
-        alert.modalPresentationStyle = .popover
         
-        if let presenter = alert.popoverPresentationController {
-            presenter.sourceView = sender
-            presenter.sourceRect = sender.bounds
+        alert.addAction(title: "Open in default app", icon: UIImage(sfString: SFSymbol.safariFill, overrideString: "nav")?.menuIcon(), action: {
+            if #available(iOS 10.0, *) {
+                UIApplication.shared.open(baseURL, options: convertToUIApplicationOpenExternalURLOptionsKeyDictionary([:]), completionHandler: nil)
+            } else {
+                UIApplication.shared.openURL(baseURL)
+            }
+        })
+        
+        alert.addAction(title: "Share URL", icon: UIImage(sfString: SFSymbol.squareAndArrowUp, overrideString: "share")?.menuIcon()) {
+            let shareItems: Array = [baseURL]
+            let activityViewController: UIActivityViewController = UIActivityViewController(activityItems: shareItems, applicationActivities: nil)
+            if let presenter = activityViewController.popoverPresentationController {
+                presenter.sourceView = sender
+                presenter.sourceRect = sender.bounds
+            }
+            let window = UIApplication.shared.keyWindow!
+            if let modalVC = window.rootViewController?.presentedViewController {
+                modalVC.present(activityViewController, animated: true, completion: nil)
+            } else {
+                window.rootViewController!.present(activityViewController, animated: true, completion: nil)
+            }
         }
+
+        let window = UIApplication.shared.keyWindow!
         
         if let modalVC = window.rootViewController?.presentedViewController {
-            modalVC.present(alert, animated: true, completion: nil)
+            alert.show(modalVC)
         } else {
-            window.rootViewController!.present(alert, animated: true, completion: nil)
+            alert.show(window.rootViewController)
         }
     }
 
@@ -111,16 +101,19 @@ class WebsiteViewController: MediaViewController, WKNavigationDelegate {
         }
     }
     
-    func readerMode(_ sender: AnyObject) {
-        let safariVC = SFHideSafariViewController(url: webView.url!, entersReaderIfAvailable: true)
-        present(safariVC, animated: true, completion: nil)
+    @objc func readerMode(_ sender: AnyObject) {
+        if let url = webView.url ?? url {
+            let safariVC = SFHideSafariViewController(url: url, entersReaderIfAvailable: true)
+            present(safariVC, animated: true, completion: nil)
+        }
     }
     
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
-    override func viewWillDisappear(_ animated: Bool) {
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
         if setObserver {
             webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress))
         }
@@ -147,7 +140,46 @@ class WebsiteViewController: MediaViewController, WKNavigationDelegate {
 
         self.webView.scrollView.frame = self.view.frame
         self.webView.scrollView.setZoomScale(1, animated: false)
+        if #available(iOS 11, *) {
+            if UserDefaults.standard.bool(forKey: "adblock-loaded") {
+                WKContentRuleListStore.default().lookUpContentRuleList(forIdentifier: "slide-ad-blocking") { [weak self] (contentRuleList, error) in
+                    guard let strongSelf = self else { return }
+                    if let error = error {
+                        print(error.localizedDescription)
+                        UserDefaults.standard.set(false, forKey: "adblock-loaded")
+                        strongSelf.setupBlocking()
+                        return
+                    }
+                    if let list = contentRuleList {
+                        strongSelf.blocking11 = true
+                        strongSelf.webView.configuration.userContentController.add(list)
+                    }
+                }
+            } else {
+                setupBlocking()
+            }
+        }
         loadUrl()
+    }
+    
+    @available(iOS 11.0, *)
+    func setupBlocking() {
+        if let jsonFilePath = Bundle.main.path(forResource: "adaway.json", ofType: nil),
+            let jsonFileContent = try? String(contentsOfFile: jsonFilePath, encoding: String.Encoding.utf8) {
+            WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "slide-ad-blocking", encodedContentRuleList: jsonFileContent) { [weak self] (contentRuleList, error) in
+                guard let strongSelf = self else { return }
+                if let error = error {
+                    strongSelf.blocking11 = false
+                    print(error.localizedDescription)
+                    return
+                }
+                if let list = contentRuleList {
+                    strongSelf.blocking11 = true
+                    strongSelf.webView.configuration.userContentController.add(list)
+                    UserDefaults.standard.set(true, forKey: "adblock-loaded")
+                }
+            }
+        }
     }
     
     var setObserver = false
@@ -171,10 +203,27 @@ class WebsiteViewController: MediaViewController, WKNavigationDelegate {
     
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         UIApplication.shared.isNetworkActivityIndicatorVisible = false
+        if register && (webView.url?.absoluteString ?? "").contains("login.compact") {
+            if !(webView.url?.absoluteString ?? "").contains("register") {
+                var login = webView.url?.absoluteString ?? ""
+                login = login.replacingOccurrences(of: "login.compact", with: "register.compact")
+                let myURLRequest: URLRequest = URLRequest(url: URL(string: login)!)
+                webView.load(myURLRequest)
+                self.register = false
+            }
+        }
+    }
+    
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // Fix for "target=_blank" links not opening
+        if navigationAction.targetFrame == nil {
+            webView.load(navigationAction.request)
+        }
+        return nil
     }
     
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        var request = navigationAction.request
+        let request = navigationAction.request
         let url = request.url
         
         if url != nil {
@@ -201,25 +250,32 @@ class WebsiteViewController: MediaViewController, WKNavigationDelegate {
                         }
                     })
                 }
-            } else if (url?.absoluteString ?? "").contains("reddit.com") {
-                self.title = "Log in"
-                self.navigationItem.rightBarButtonItems = []
+            } else if (url?.absoluteString ?? "").contains("reddit.com/api/v1/authorize") {
+                if self.title != "Log in" {
+                    self.title = "Log in"
+                    self.navigationItem.rightBarButtonItems = []
+                    let dataStore = WKWebsiteDataStore.default()
+                    dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
+                        dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+                                             for: records.filter { $0.displayName.contains("reddit") },
+                                             completionHandler: {})
+                    }
+                }
             }
         }
 
-        if url == nil || !(isAd(url: url!)) {
-            
+        if !blocking11 {
+            if url == nil || !(isAd(url: url!)) {
+                
+                decisionHandler(WKNavigationActionPolicy.allow)
+                
+                } else {
+                
+                decisionHandler(WKNavigationActionPolicy.cancel)
+            }
+        } else {
             decisionHandler(WKNavigationActionPolicy.allow)
-            
-            } else {
-            
-            decisionHandler(WKNavigationActionPolicy.cancel)
         }
-
-    }
-    
-    func webView(_ webView: UIWebView, shouldStartLoadWith request: URLRequest, navigationType: UIWebViewNavigationType) -> Bool {
-        return request.url == nil || !(isAd(url: request.url!))
     }
 
     func isAd(url: URL) -> Bool {
@@ -246,7 +302,7 @@ class WebsiteViewController: MediaViewController, WKNavigationDelegate {
     
 }
 extension WKWebView {
-    func stringByEvaluatingJavaScriptFromString(script: String) -> String {
+    func stringByEvaluatingJavaScriptFromString(script: String) -> String? {
         var resultString: String?
         var finished: Bool = false
         self.evaluateJavaScript(script, completionHandler: {(result: Any?, error: Error?) -> Void in
@@ -259,8 +315,13 @@ extension WKWebView {
             finished = true
         })
         while !finished {
-            RunLoop.current.run(mode: RunLoopMode.defaultRunLoopMode, before: NSDate.distantFuture)
+            RunLoop.current.run(mode: RunLoop.Mode.default, before: NSDate.distantFuture)
         }
-        return resultString!
+        return resultString
     }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToUIApplicationOpenExternalURLOptionsKeyDictionary(_ input: [String: Any]) -> [UIApplication.OpenExternalURLOptionsKey: Any] {
+	return Dictionary(uniqueKeysWithValues: input.map { key, value in (UIApplication.OpenExternalURLOptionsKey(rawValue: key), value) })
 }

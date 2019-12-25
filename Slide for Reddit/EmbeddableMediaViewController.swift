@@ -16,6 +16,7 @@ struct EmbeddableMediaDataModel {
     var lqURL: URL?
     var text: String?
     var inAlbum: Bool = false
+    var buttons: Bool = true
 }
 
 class EmbeddableMediaViewController: UIViewController {
@@ -24,9 +25,11 @@ class EmbeddableMediaViewController: UIViewController {
     var contentType: ContentType.CType!
     var progressView: VerticalAlignedLabel = VerticalAlignedLabel()
     var bottomButtons = UIStackView()
-    var navigationBar = UINavigationBar()
+    var upvoteButton = UIButton()
 
     var commentCallback: (() -> Void)?
+    var upvoteCallback: (() -> Void)?
+    var isUpvoted = false
     var failureCallback: ((_ url: URL) -> Void)? 
 
     init(model: EmbeddableMediaDataModel, type: ContentType.CType) {
@@ -34,7 +37,7 @@ class EmbeddableMediaViewController: UIViewController {
         self.data = model
         self.contentType = type
     }
-
+    
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -62,7 +65,7 @@ class EmbeddableMediaViewController: UIViewController {
     func updateProgress(_ percent: CGFloat, _ total: String) {
         let startAngle = -CGFloat.pi / 2
 
-        let center = CGPoint (x: 90 / 2, y: 60 / 2)
+        let center = CGPoint(x: 90 / 2, y: 60 / 2)
         let radius = CGFloat(60 / 2)
         let arc = CGFloat.pi * CGFloat(2) * percent
         
@@ -89,7 +92,7 @@ class EmbeddableMediaViewController: UIViewController {
 
     func setProgressViewVisible(_ visible: Bool) {
         // Bring the loading indicator to the front
-        self.view.bringSubview(toFront: progressView)
+        self.view.bringSubviewToFront(progressView)
         if visible {
             progressView.transform = CGAffineTransform(scaleX: 0.001, y: 0.001)
             progressView.isHidden = false
@@ -104,7 +107,7 @@ class EmbeddableMediaViewController: UIViewController {
             })
         }
     }
-
+    
 //    override func didReceiveMemoryWarning() {
 //        super.didReceiveMemoryWarning()
 //        // Dispose of any resources that can be recreated.
@@ -115,11 +118,31 @@ class EmbeddableMediaViewController: UIViewController {
 // MARK: - Actions
 extension EmbeddableMediaViewController {
     
-    func openComments(_ sender: AnyObject) {
+    @objc func openComments(_ sender: AnyObject) {
         if commentCallback != nil {
-            self.dismiss(animated: true) {
-                self.commentCallback!()
+            var viewToMove: UIView
+            if self is ImageMediaViewController {
+                viewToMove = (self as! ImageMediaViewController).imageView
+            } else {
+                viewToMove = (self as! VideoMediaViewController).isYoutubeView ? (self as! VideoMediaViewController).youtubeView : (self as! VideoMediaViewController).videoView
             }
+            var newFrame = viewToMove.frame
+            newFrame.origin.y = -newFrame.size.height * 0.2
+            UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseOut, animations: {
+                viewToMove.frame = newFrame
+                self.parent?.view.alpha = 0
+                self.dismiss(animated: true)
+            }, completion: { _ in
+                self.commentCallback!()
+            })
+        }
+    }
+    
+    @objc func upvote(_ sender: AnyObject) {
+        if upvoteCallback != nil {
+            self.upvoteCallback!()
+            isUpvoted = !isUpvoted
+            self.upvoteButton.setImage(UIImage(sfString: SFSymbol.arrowUp, overrideString: "upvote")?.navIcon(true).getCopy(withColor: isUpvoted ? ColorUtil.upvoteColor : UIColor.white), for: [])
         }
     }
 }

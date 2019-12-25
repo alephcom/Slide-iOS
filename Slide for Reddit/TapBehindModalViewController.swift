@@ -8,14 +8,22 @@
 
 //Code from https://stackoverflow.com/a/44171475/3697225
 
+import Anchorage
 import Foundation
+
+protocol TapBehindModalViewControllerDelegate {
+    func shouldDismiss() -> Bool
+}
+
 class TapBehindModalViewController: UINavigationController, UIGestureRecognizerDelegate {
-    private var tapOutsideRecognizer: UITapGestureRecognizer!
-    
+    public var tapOutsideRecognizer: UITapGestureRecognizer!
+    public var del: TapBehindModalViewControllerDelegate?
+    public var closeCallback: (() -> Void)?
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
-        if self.tapOutsideRecognizer == nil && (modalPresentationStyle == .pageSheet || modalPresentationStyle == .formSheet) {
+        if self.tapOutsideRecognizer == nil && (modalPresentationStyle == .pageSheet || modalPresentationStyle == .popover) {
             self.tapOutsideRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.handleTapBehind))
             self.tapOutsideRecognizer.numberOfTapsRequired = 1
             self.tapOutsideRecognizer.cancelsTouchesInView = false
@@ -26,6 +34,7 @@ class TapBehindModalViewController: UINavigationController, UIGestureRecognizerD
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        closeCallback?()
         
         if self.tapOutsideRecognizer != nil {
             self.view.window?.removeGestureRecognizer(self.tapOutsideRecognizer)
@@ -38,8 +47,8 @@ class TapBehindModalViewController: UINavigationController, UIGestureRecognizerD
     }
     
     // MARK: - Gesture methods to dismiss this with tap outside
-    func handleTapBehind(sender: UITapGestureRecognizer) {
-        if sender.state == UIGestureRecognizerState.ended {
+    @objc func handleTapBehind(sender: UITapGestureRecognizer) {
+        if sender.state == UIGestureRecognizer.State.ended && del?.shouldDismiss() ?? true {
             let location: CGPoint = sender.location(in: self.view)
             
             if !self.view.point(inside: location, with: nil) {

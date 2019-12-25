@@ -6,29 +6,37 @@
 //  Copyright © 2018 Haptic Apps. All rights reserved.
 //
 
+import Anchorage
+import SDCAlertView
 import UIKit
 
-class CacheSettings: UITableViewController {
+class CacheSettings: BubbleSettingTableViewController {
 
     var subs: [String] = []
-    var autoCache: UITableViewCell = UITableViewCell.init(style: .subtitle, reuseIdentifier: "auto")
-    var cacheContent: UITableViewCell = UITableViewCell.init(style: .subtitle, reuseIdentifier: "cache")
+    var autoCache: UITableViewCell = InsetCell.init(style: .subtitle, reuseIdentifier: "auto")
+    var cacheContent: UITableViewCell = InsetCell.init(style: .subtitle, reuseIdentifier: "cache")
+    var depth: UITableViewCell = InsetCell.init(style: .subtitle, reuseIdentifier: "depth")
+    var posts: UITableViewCell = InsetCell.init(style: .subtitle, reuseIdentifier: "posts")
 
-    var autoCacheSwitch = UISwitch()
-    var cacheContentSwitch = UISwitch()
-
+    var autoCacheSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
+    var cacheContentSwitch = UISwitch().then {
+        $0.onTintColor = ColorUtil.baseAccent
+    }
+    
     public func createCell(_ cell: UITableViewCell, _ switchV: UISwitch? = nil, isOn: Bool, text: String) {
         cell.textLabel?.text = text
-        cell.textLabel?.textColor = ColorUtil.fontColor
-        cell.backgroundColor = ColorUtil.foregroundColor
+        cell.textLabel?.textColor = ColorUtil.theme.fontColor
+        cell.backgroundColor = ColorUtil.theme.foregroundColor
         cell.textLabel?.numberOfLines = 0
         cell.textLabel?.lineBreakMode = .byWordWrapping
         if let s = switchV {
             s.isOn = isOn
-            s.addTarget(self, action: #selector(SettingsLayout.switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+            s.addTarget(self, action: #selector(SettingsLayout.switchIsChanged(_:)), for: UIControl.Event.valueChanged)
             cell.accessoryView = s
         }
-        cell.selectionStyle = UITableViewCellSelectionStyle.none
+        cell.selectionStyle = UITableViewCell.SelectionStyle.none
     }
     
     override func viewDidLoad() {
@@ -40,21 +48,33 @@ class CacheSettings: UITableViewController {
             $0.localizedCaseInsensitiveCompare($1) == ComparisonResult.orderedAscending
         }
         tableView.reloadData()
-        self.tableView.separatorStyle = .none
+        self.headers = ["Caching options", "Subreddits to Auto-Cache"]
 
         createCell(autoCache, autoCacheSwitch, isOn: SettingValues.autoCache, text: "Cache subreddits automatically")
         self.autoCache.detailTextLabel?.text = "Will run the first time Slide opens each day"
-        self.autoCache.detailTextLabel?.textColor = ColorUtil.fontColor
+        self.autoCache.detailTextLabel?.textColor = ColorUtil.theme.fontColor
         self.autoCache.detailTextLabel?.lineBreakMode = .byWordWrapping
         self.autoCache.detailTextLabel?.numberOfLines = 0
 
         createCell(cacheContent, cacheContentSwitch, isOn: false, text: "Cache subreddits automatically")
         self.cacheContent.detailTextLabel?.text = "Coming soon!"
-        self.cacheContent.detailTextLabel?.textColor = ColorUtil.fontColor
+        self.cacheContent.detailTextLabel?.textColor = ColorUtil.theme.fontColor
         self.cacheContent.detailTextLabel?.lineBreakMode = .byWordWrapping
         self.cacheContent.detailTextLabel?.numberOfLines = 0
 
         self.tableView.tableFooterView = UIView()
+        
+        createCell(depth, nil, isOn: false, text: "Depth of comments to cache")
+        self.depth.detailTextLabel?.text = "\(SettingValues.commentDepth) levels"
+        self.depth.detailTextLabel?.textColor = ColorUtil.theme.fontColor
+        self.depth.detailTextLabel?.lineBreakMode = .byWordWrapping
+        self.depth.detailTextLabel?.numberOfLines = 0
+
+        createCell(posts, nil, isOn: false, text: "Number of posts to cache in each subreddit")
+        self.posts.detailTextLabel?.text = "\(SettingValues.cachedPostsCount) posts"
+        self.posts.detailTextLabel?.textColor = ColorUtil.theme.fontColor
+        self.posts.detailTextLabel?.lineBreakMode = .byWordWrapping
+        self.posts.detailTextLabel?.numberOfLines = 0
     }
 
     var delete = UIButton()
@@ -71,30 +91,12 @@ class CacheSettings: UITableViewController {
     }
 
     func save(_ selector: AnyObject?) {
-        /* todo this
+        // TODO: - this
+        /*
         SubredditReorderViewController.changed = true
         Subscriptions.set(name: AccountController.currentName, subs: subs, completion: {
             self.dismiss(animated: true, completion: nil)
         })*/
-    }
-
-    override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        let label: UILabel = UILabel()
-        label.textColor = ColorUtil.baseAccent
-        label.font = FontGenerator.boldFontOfSize(size: 20, submission: true)
-        let toReturn = label.withPadding(padding: UIEdgeInsets.init(top: 0, left: 12, bottom: 0, right: 0))
-        toReturn.backgroundColor = ColorUtil.backgroundColor
-
-        switch section {
-        case 0: label.text = "Caching settings"
-        case 1: label.text = "Subreddits to Cache"
-        default: label.text = ""
-        }
-        return toReturn
-    }
-
-    override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        return CGFloat(70)
     }
 
     override func didReceiveMemoryWarning() {
@@ -108,15 +110,11 @@ class CacheSettings: UITableViewController {
         return 2
     }
     
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: false)
-    }
-
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return section == 0 ? 1 : subs.count
+        return section == 0 ? 3 : subs.count
     }
 
-    func switchIsChanged(_ changed: UISwitch) {
+    @objc func switchIsChanged(_ changed: UISwitch) {
         if changed == autoCacheSwitch {
             if !VCPresenter.proDialogShown(feature: true, self) {
                 SettingValues.autoCache = changed.isOn
@@ -125,9 +123,9 @@ class CacheSettings: UITableViewController {
                 changed.isOn = false
             }
         } else if changed == cacheContentSwitch {
-            //todo this setting
+           // TODO: - this setting
         } else if !changed.isOn {
-            selected.remove(at: selected.index(of: changed.accessibilityIdentifier!)!)
+            selected.remove(at: selected.firstIndex(of: changed.accessibilityIdentifier!)!)
             Subscriptions.setOffline(subs: selected) {
             }
         } else {
@@ -138,13 +136,83 @@ class CacheSettings: UITableViewController {
     }
     
     var selected = [String]()
+    
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        
+        if indexPath.section == 0 {
+            if indexPath.row == 1 {
+                let actionSheetController = AlertController(title: "Posts to cache", message: nil, preferredStyle: .alert)
+                
+                actionSheetController.addCloseButton()
+                
+                let values = [["10", "15", "20", "25", "30", "35", "40", "45", "50", "55", "60", "65", "70", "75", "80", "85", "90", "95", "100"]]
+                let pickerView = PickerViewViewControllerColored(values: values, initialSelection: [(0, (SettingValues.cachedPostsCount - 10) / 5)], action: { (_, _, chosen, _) in
+                    SettingValues.cachedPostsCount = (chosen.row * 5) + 10
+                    UserDefaults.standard.set((chosen.row * 5) + 10, forKey: SettingValues.pref_postsToCache)
+                    UserDefaults.standard.synchronize()
+                    self.posts.detailTextLabel?.text = "\((chosen.row * 5) + 10) posts"
+                })
+                
+                actionSheetController.setupTheme()
+                
+                actionSheetController.attributedTitle = NSAttributedString(string: "Posts to cache", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+                actionSheetController.attributedMessage = NSAttributedString(string: "How many posts will cache in each subreddit", attributes: [NSAttributedString.Key.font: UIFont.systemFont(ofSize: 14), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+
+                actionSheetController.addChild(pickerView)
+                
+                let pv = pickerView.view!
+                actionSheetController.contentView.addSubview(pv)
+                
+                pv.edgeAnchors == actionSheetController.contentView.edgeAnchors - 14
+                pv.heightAnchor == CGFloat(216)
+                pickerView.didMove(toParent: actionSheetController)
+                
+                actionSheetController.addBlurView()
+                
+                self.present(actionSheetController, animated: true, completion: nil)
+            } else if indexPath.row == 2 {
+                let actionSheetController = AlertController(title: "Comment cache depth", message: nil, preferredStyle: .alert)
+                
+                actionSheetController.addCloseButton()
+                
+                let values = [["4", "5", "6", "7", "8", "9", "10"]]
+                let pickerView = PickerViewViewControllerColored(values: values, initialSelection: [(0, SettingValues.commentDepth - 4)], action: { (_, _, chosen, _) in
+                    SettingValues.commentDepth = chosen.row + 4
+                    UserDefaults.standard.set(chosen.row + 4, forKey: SettingValues.pref_commentDepth)
+                    UserDefaults.standard.synchronize()
+                    self.depth.detailTextLabel?.text = "\(chosen.row + 4) levels"
+                })
+                
+                actionSheetController.setupTheme()
+                
+                actionSheetController.attributedTitle = NSAttributedString(string: "Comment cache depth", attributes: [NSAttributedString.Key.font: UIFont.boldSystemFont(ofSize: 17), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+                actionSheetController.attributedMessage = NSAttributedString(string: "How deep comment chains will load to", attributes: [NSAttributedString.Key.font: UIFont.systemFont(ofSize: 14), NSAttributedString.Key.foregroundColor: ColorUtil.theme.fontColor])
+
+                actionSheetController.addChild(pickerView)
+                
+                let pv = pickerView.view!
+                actionSheetController.contentView.addSubview(pv)
+                
+                pv.edgeAnchors == actionSheetController.contentView.edgeAnchors - 14
+                pv.heightAnchor == CGFloat(216)
+                pickerView.didMove(toParent: actionSheetController)
+                
+                actionSheetController.addBlurView()
+                
+                self.present(actionSheetController, animated: true, completion: nil)
+            }
+        }
+    }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if indexPath.section == 0 {
             if indexPath.row == 0 {
                 return autoCache
+            } else if indexPath.row == 1 {
+                return posts
             } else {
-                return cacheContent
+                return depth
             }
         } else {
             let thing = subs[indexPath.row]
@@ -152,13 +220,15 @@ class CacheSettings: UITableViewController {
             let c = tableView.dequeueReusableCell(withIdentifier: "sub", for: indexPath) as! SubredditCellView
             c.setSubreddit(subreddit: thing, nav: nil)
             cell = c
-            cell?.backgroundColor = ColorUtil.foregroundColor
-            let aSwitch = UISwitch()
+            cell?.backgroundColor = ColorUtil.theme.foregroundColor
+            let aSwitch = UISwitch().then {
+                $0.onTintColor = ColorUtil.accentColorForSub(sub: thing)
+            }
             if selected.contains(thing) {
                 aSwitch.isOn = true
             }
             aSwitch.accessibilityIdentifier = thing
-            aSwitch.addTarget(self, action: #selector(switchIsChanged(_:)), for: UIControlEvents.valueChanged)
+            aSwitch.addTarget(self, action: #selector(switchIsChanged(_:)), for: UIControl.Event.valueChanged)
             c.accessoryView = aSwitch
             return cell!
         }
@@ -167,7 +237,7 @@ class CacheSettings: UITableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         setupBaseBarColors()
-        self.title = "Manage subreddit caching"
+        self.title = "Manage offline caching"
     }
 
 }

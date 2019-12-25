@@ -39,7 +39,7 @@ class ProfileContributionLoader: ContributionLoader {
                 if reload {
                     paginator = Paginator()
                 }
-                try delegate?.session?.getUserContent(name, content: userContent, sort: .hot, timeFilterWithin: (delegate?.time)!, paginator: paginator, completion: { (result) in
+                try delegate?.session?.getUserContent(name, content: userContent, sort: (delegate?.userSort)!, timeFilterWithin: (delegate?.time)!, paginator: paginator, completion: { (result) in
                     switch result {
                     case .failure:
                         self.delegate?.failed(error: result.error!)
@@ -49,7 +49,7 @@ class ProfileContributionLoader: ContributionLoader {
                             self.content = []
                         }
                         let before = self.content.count
-                        let baseContent = listing.children.flatMap({ $0 })
+                        let baseContent = listing.children.compactMap({ $0 })
                         for item in baseContent {
                             if item is Comment {
                                 self.content.append(RealmDataWrapper.commentToRComment(comment: item as! Comment, depth: 0))
@@ -60,7 +60,7 @@ class ProfileContributionLoader: ContributionLoader {
                         self.canGetMore = listing.paginator.hasMore()
                         self.paginator = listing.paginator
                         DispatchQueue.main.async {
-                            self.delegate?.doneLoading(before: before)
+                            self.delegate?.doneLoading(before: before, filter: AccountController.currentName.lowercased() != self.name.lowercased())
                         }
                     }
                 })

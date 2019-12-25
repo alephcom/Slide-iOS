@@ -33,7 +33,7 @@ class History {
         let fullname = s.getId()
         if let time = seenTimes.object(forKey: fullname) {
             if time is NSNumber {
-                return Double(time as! NSNumber)
+                return Double(truncating: time as! NSNumber)
             } else {
                 return 0
             }
@@ -49,13 +49,13 @@ class History {
     }
     
     public static var currentSeen: [String] = [String]()
-    public static func addSeen(s: RSubmission, skipDuplicates: Bool = false) {
+    public static func addSeen(s: RSubmission, skipDuplicates: Bool = true) {
         if !SettingValues.saveNSFWHistory && s.nsfw {
             
         } else if SettingValues.saveHistory {
             let fullname = s.getId()
             currentSeen.append(fullname)
-            if !skipDuplicates || (skipDuplicates && commentCounts.object(forKey: s.getId()) != nil) {
+            if !skipDuplicates || seenTimes.object(forKey: fullname) == nil {
                 seenTimes.setValue(NSNumber(value: NSDate().timeIntervalSince1970), forKey: fullname)
             }
             currentVisits.append(s.getId())
@@ -73,7 +73,7 @@ class History {
     public static func getInboxSeen() -> Double {
         if let time = seenTimes.object(forKey: "inbox") {
             if time is NSNumber {
-                return Double(time as! NSNumber)
+                return Double(truncating: time as! NSNumber)
             } else {
                 return 0
             }

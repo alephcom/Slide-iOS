@@ -8,7 +8,6 @@
 
 import AudioToolbox
 import reddift
-import reddift
 import SDWebImage
 import UIKit
 
@@ -16,6 +15,7 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
     
     var baseSubs: [String] = []
     var popular: [String] = []
+    var subscribe: Bool
 
     var filteredContent: [String] = []
     var callback: (_ sub: String) -> Void?
@@ -23,8 +23,9 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
     var includeCollections = false
     var includeSubscriptions = false
 
-    init(includeSubscriptions: Bool, includeCollections: Bool, includeTrending: Bool, callback: @escaping (_ sub: String) -> Void) {
+    init(includeSubscriptions: Bool, includeCollections: Bool, includeTrending: Bool, subscribe: Bool, callback: @escaping (_ sub: String) -> Void) {
         self.callback = callback
+        self.subscribe = subscribe
         super.init(nibName: nil, bundle: nil)
         self.includeTrending = includeTrending
         self.includeCollections = includeCollections
@@ -32,9 +33,15 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
         
         if includeSubscriptions {
             baseSubs.append(contentsOf: Subscriptions.subreddits)
+            if !includeCollections {
+                baseSubs = baseSubs.filter({ (sub) -> Bool in
+                    let contained = sub != "all" && sub != "frontpage" && sub != "popular" && sub != "random" && sub != "randnsfw" && sub != "friends" && !sub.startsWith("/m/") && !sub.contains("+")
+                    return contained
+                })
+            }
         }
         if includeCollections {
-            baseSubs.append(contentsOf: ["all", "frontpage", "popular", "random", "myrandom", "randnsfw"])
+            baseSubs.append(contentsOf: ["all", "friends", "frontpage", "popular", "random", "myrandom", "randnsfw"])
         }
     }
     
@@ -73,8 +80,8 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
         self.automaticallyAdjustsScrollViewInsets = false
         self.tableView.register(SubredditCellView.classForCoder(), forCellReuseIdentifier: "sub")
         
-        tableView.backgroundColor = ColorUtil.backgroundColor
-        tableView.separatorColor = ColorUtil.backgroundColor
+        tableView.backgroundColor = ColorUtil.theme.backgroundColor
+        tableView.separatorColor = ColorUtil.theme.backgroundColor
         tableView.separatorInset = .zero
         
         tableView.reloadData()
@@ -86,6 +93,13 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
         
         let cell = tableView.cellForRow(at: indexPath) as! SubredditCellView
         let sub = cell.subreddit
+        
+        if !subscribe {
+            self.navigationController?.popViewController(animated: true)
+            self.dismiss(animated: true, completion: nil)
+            self.callback(sub)
+            return
+        }
 
         if Subscriptions.isCollection(sub) {
             self.navigationController?.popViewController(animated: true)
@@ -93,38 +107,28 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
             return
         }
         
-        let alrController = UIAlertController.init(title: "Subscribe to \(sub)", message: nil, preferredStyle: .actionSheet)
+        let alrController = DragDownAlertMenu(title: "Follow r/\(sub)", subtitle: "", icon: nil, themeColor: ColorUtil.accentColorForSub(sub: sub), full: true)
 
         if AccountController.isLoggedIn {
-            let somethingAction = UIAlertAction(title: "Add to sub list and subscribe", style: UIAlertActionStyle.default, handler: {(_: UIAlertAction!) in
+            alrController.addAction(title: "Subscribe", icon: nil) {
                 Subscriptions.subscribe(sub, true, session: (UIApplication.shared.delegate as! AppDelegate).session!)
                 BannerUtil.makeBanner(text: "Subscribed", seconds: 5, context: self.parent, top: true)
                 self.navigationController?.popViewController(animated: true)
                 self.callback(sub)
-            })
-            alrController.addAction(somethingAction)
+            }
         } else {
             self.navigationController?.popViewController(animated: true)
             self.callback(sub)
             return
         }
         
-        let somethingAction = UIAlertAction(title: "Add to sub list", style: UIAlertActionStyle.default, handler: {(_: UIAlertAction!) in
+        alrController.addAction(title: "Casually subscribe", icon: nil) {
             Subscriptions.subscribe(sub, false, session: (UIApplication.shared.delegate as! AppDelegate).session!)
             self.navigationController?.popViewController(animated: true)
             self.callback(sub)
-        })
-        alrController.addAction(somethingAction)
-        
-        let cancelAction = UIAlertAction(title: "Cancel", style: UIAlertActionStyle.cancel, handler: { (_: UIAlertAction!) in print("cancel") })
-        
-        alrController.addAction(cancelAction)
-        alrController.modalPresentationStyle = .popover
-        if let presenter = alrController.popoverPresentationController {
-            presenter.sourceView = cell.contentView
-            presenter.sourceRect = cell.contentView.bounds
         }
-        self.present(alrController, animated: true, completion: {})
+        
+        alrController.show(self)
     }
     
     var searchBar: UISearchBar = UISearchBar()
@@ -196,15 +200,16 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
     override func viewDidLoad() {
         super.viewDidLoad()
         tableView.estimatedRowHeight = 400.0
-        tableView.rowHeight = UITableViewAutomaticDimension
-        self.tableView.separatorStyle = UITableViewCellSeparatorStyle.none
+        tableView.rowHeight = UITableView.automaticDimension
+        self.tableView.separatorStyle = UITableViewCell.SeparatorStyle.none
 
         self.searchBar = UISearchBar(frame: CGRect(x: 0, y: 0, width: 3, height: 50))
         searchBar.autocorrectionType = .no
         searchBar.autocapitalizationType = .none
         searchBar.spellCheckingType = .no
         searchBar.frame.size.height = 50
-        if ColorUtil.theme != .LIGHT {
+        searchBar.becomeFirstResponder()
+        if !ColorUtil.theme.isLight {
             searchBar.keyboardAppearance = .dark
         }
 
@@ -212,13 +217,14 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
         
         tableView.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: 50, right: 0)
         
-        searchBar.searchBarStyle = UISearchBarStyle.minimal
+        searchBar.searchBarStyle = UISearchBar.Style.minimal
         searchBar.placeholder = " Search for a subreddit"
         searchBar.sizeToFit()
         searchBar.isTranslucent = true
         searchBar.barStyle = .blackTranslucent
         searchBar.delegate = self
         self.navigationController?.setNavigationBarHidden(false, animated: false)
+        self.title = "Search for a Subreddit"
     }
     
     func reloadData() {
@@ -249,7 +255,7 @@ class SubredditFindReturnViewController: MediaTableViewController, UISearchBarDe
         label.textColor = ColorUtil.baseAccent
         label.font = FontGenerator.boldFontOfSize(size: 20, submission: true)
         let toReturn = label.withPadding(padding: UIEdgeInsets.init(top: 0, left: 12, bottom: 0, right: 0))
-        toReturn.backgroundColor = ColorUtil.backgroundColor
+        toReturn.backgroundColor = ColorUtil.theme.backgroundColor
         
         switch section {
         case 0: label.text  = "Preview"

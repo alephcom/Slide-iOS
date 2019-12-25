@@ -11,12 +11,25 @@ import MaterialComponents.MaterialTabs
 import reddift
 import UIKit
 
-class InboxViewController: UIPageViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+class InboxViewController: UIPageViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIScrollViewDelegate, UIGestureRecognizerDelegate, UINavigationControllerDelegate {
     var content: [MessageWhere] = []
     var isReload = false
     var session: Session?
 
     var vCs: [UIViewController] = []
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+
+        } else {
+            return .lightContent
+        }
+    }
 
     public init() {
         self.session = (UIApplication.shared.delegate as! AppDelegate).session
@@ -38,26 +51,27 @@ class InboxViewController: UIPageViewController, UIPageViewControllerDataSource,
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        self.navigationController?.delegate = self
         self.title = "Inbox"
         UIApplication.shared.applicationIconBadgeNumber = 0
         navigationController?.setNavigationBarHidden(false, animated: true)
         setupBaseBarColors()
         let edit = UIButton.init(type: .custom)
-        edit.setImage(UIImage.init(named: "edit")?.navIcon(), for: UIControlState.normal)
-        edit.addTarget(self, action: #selector(self.new(_:)), for: UIControlEvents.touchUpInside)
+        edit.setImage(UIImage(sfString: SFSymbol.pencil, overrideString: "edit")?.navIcon(), for: UIControl.State.normal)
+        edit.addTarget(self, action: #selector(self.new(_:)), for: UIControl.Event.touchUpInside)
         edit.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
         let editB = UIBarButtonItem.init(customView: edit)
 
         let read = UIButton.init(type: .custom)
-        read.setImage(UIImage.init(named: "seen")?.navIcon(), for: UIControlState.normal)
-        read.addTarget(self, action: #selector(self.read(_:)), for: UIControlEvents.touchUpInside)
+        read.setImage(UIImage(sfString: .eyeFill, overrideString: "seen")?.navIcon(), for: UIControl.State.normal)
+        read.addTarget(self, action: #selector(self.read(_:)), for: UIControl.Event.touchUpInside)
         read.frame = CGRect.init(x: 0, y: 0, width: 30, height: 30)
         let readB = UIBarButtonItem.init(customView: read)
 
         navigationItem.rightBarButtonItems = [editB, readB]
     }
 
-    func new(_ sender: AnyObject) {
+    @objc func new(_ sender: AnyObject) {
         VCPresenter.presentAlert(TapBehindModalViewController.init(rootViewController: ReplyViewController.init(completion: {(_) in
             DispatchQueue.main.async(execute: { () -> Void in
                 BannerUtil.makeBanner(text: "Message sent!", seconds: 3, context: self)
@@ -65,7 +79,7 @@ class InboxViewController: UIPageViewController, UIPageViewControllerDataSource,
         })), parentVC: self)
     }
 
-    func read(_ sender: AnyObject) {
+    @objc func read(_ sender: AnyObject) {
         do {
             try session?.markAllMessagesAsRead(completion: { (result) in
                 switch result {
@@ -93,6 +107,12 @@ class InboxViewController: UIPageViewController, UIPageViewControllerDataSource,
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        if let navigationController = navigationController {
+            if navigationController.viewControllers.count == 1 {
+                navigationItem.leftBarButtonItem = UIBarButtonItem.init(title: "Close", style: .done, target: self, action: #selector(closeButtonPressed))
+            }
+        }
+
         var items: [String] = []
         for i in content {
             items.append(i.description)
@@ -101,25 +121,37 @@ class InboxViewController: UIPageViewController, UIPageViewControllerDataSource,
         tabBar = MDCTabBar.init(frame: CGRect.zero)
         tabBar.backgroundColor = ColorUtil.getColorForSub(sub: "", true)
         tabBar.itemAppearance = .titles
-        tabBar.selectedItemTintColor = (SettingValues.reduceColor ? ColorUtil.fontColor : UIColor.white)
-        tabBar.unselectedItemTintColor = (SettingValues.reduceColor ? ColorUtil.fontColor : UIColor.white).withAlphaComponent(0.45)
+        tabBar.selectedItemTintColor = (SettingValues.reduceColor ? ColorUtil.theme.fontColor : UIColor.white)
+        tabBar.unselectedItemTintColor = (SettingValues.reduceColor ? ColorUtil.theme.fontColor : UIColor.white).withAlphaComponent(0.45)
 
         tabBar.items = content.enumerated().map { index, source in
             return UITabBarItem(title: source.description, image: nil, tag: index)
         }
-        tabBar.selectionIndicatorTemplate = IndicatorTemplate()
         tabBar.delegate = self
+        tabBar.inkColor = UIColor.clear
         tabBar.selectedItem = tabBar.items[0]
         tabBar.tintColor = ColorUtil.accentColorForSub(sub: "NONE")
 
         self.view.addSubview(tabBar)
         tabBar.heightAnchor == 48
+        
+        self.edgesForExtendedLayout = UIRectEdge.all
+    
+        self.extendedLayoutIncludesOpaqueBars = true
+        self.automaticallyAdjustsScrollViewInsets = false
+
+        var isModal13 = false
+        if #available(iOS 13, *), (self.navigationController?.viewControllers[0] == self) {
+            isModal13 = true
+        }
+        tabBar.topAnchor == self.view.topAnchor + (self.navigationController?.navigationBar.frame.size.height ?? 64) + (isModal13 ? 0 : UIApplication.shared.statusBarFrame.height)
+
         tabBar.horizontalAnchors == self.view.horizontalAnchors
         tabBar.sizeToFit()
-
+        
         time = History.getInboxSeen()
         History.inboxSeen()
-        view.backgroundColor = ColorUtil.backgroundColor
+        view.backgroundColor = ColorUtil.theme.backgroundColor
         // set up style before super view did load is executed
         // -
 
@@ -158,7 +190,7 @@ class InboxViewController: UIPageViewController, UIPageViewControllerDataSource,
         guard completed else {
             return
         }
-        let page = vCs.index(of: self.viewControllers!.first!)
+        let page = vCs.firstIndex(of: self.viewControllers!.first!)
 
         if !selected {
             tabBar.setSelectedItem(tabBar.items[page!], animated: true)
@@ -193,7 +225,7 @@ class InboxViewController: UIPageViewController, UIPageViewControllerDataSource,
 
     func pageViewController(_ pageViewController: UIPageViewController,
                             viewControllerBefore viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = vCs.index(of: viewController) else {
+        guard let viewControllerIndex = vCs.firstIndex(of: viewController) else {
             return nil
         }
 
@@ -212,7 +244,7 @@ class InboxViewController: UIPageViewController, UIPageViewControllerDataSource,
 
     func pageViewController(_ pageViewController: UIPageViewController,
                             viewControllerAfter viewController: UIViewController) -> UIViewController? {
-        guard let viewControllerIndex = vCs.index(of: viewController) else {
+        guard let viewControllerIndex = vCs.firstIndex(of: viewController) else {
             return nil
         }
 
@@ -235,12 +267,19 @@ class InboxViewController: UIPageViewController, UIPageViewControllerDataSource,
 extension InboxViewController: MDCTabBarDelegate {
 
     func tabBar(_ tabBar: MDCTabBar, didSelect item: UITabBarItem) {
-        let firstViewController = vCs[tabBar.items.index(of: item)!]
-        currentIndex = tabBar.items.index(of: item)!
+        let firstViewController = vCs[tabBar.items.firstIndex(of: item)!]
+        currentIndex = tabBar.items.firstIndex(of: item)!
         setViewControllers([firstViewController],
                            direction: .forward,
                            animated: false,
                            completion: nil)
         
+    }
+}
+
+// MARK: - Actions
+extension InboxViewController {
+    @objc func closeButtonPressed() {
+        dismiss(animated: true, completion: nil)
     }
 }

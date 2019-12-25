@@ -6,6 +6,7 @@
 //  Copyright © 2017 Haptic Apps. All rights reserved.
 //
 
+import AudioToolbox
 import Foundation
 import reddift
 
@@ -32,7 +33,9 @@ class Subscriptions {
         if let accounts = UserDefaults.standard.array(forKey: "subsP" + AccountController.currentName) {
             return accounts as! [String]
         }
-        return []
+        UserDefaults.standard.set(["frontpage", "all", "popular"], forKey: "subsP" + AccountController.currentName)
+        UserDefaults.standard.synchronize()
+        return ["frontpage", "all", "popular"]
     }
     
     public static var offline: [String] {
@@ -111,13 +114,19 @@ class Subscriptions {
         UserDefaults.standard.synchronize()
     }
 
-    public static func subscribe(_ name: String, _ subscribe: Bool, session: Session) {
+    public static func subscribe(_ name: String, _ subscribe: Bool, session: Session?) {
         var sub = Subscriptions.subreddits
+        SubredditReorderViewController.changed = true
         sub.append(name)
         set(name: AccountController.currentName, subs: sub) { () in }
-        if subscribe && AccountController.isLoggedIn {
+        if #available(iOS 10.0, *) {
+            HapticUtility.hapticActionStrong()
+        } else if SettingValues.hapticFeedback {
+            AudioServicesPlaySystemSound(1519)
+        }
+        if subscribe && AccountController.isLoggedIn && session != nil {
             do {
-                try session.setSubscribeSubreddit(Subreddit.init(subreddit: name), subscribe: true, completion: { (_) in
+                try session!.setSubscribeSubreddit(Subreddit.init(subreddit: name), subscribe: true, completion: { (_) in
                     
                 })
             } catch {
@@ -129,8 +138,14 @@ class Subscriptions {
     public static func unsubscribe(_ name: String, session: Session) {
         var subs = Subscriptions.subreddits
         subs = subs.filter { $0 != name }
-        
+        setPinned(name: AccountController.currentName, subs: pinned.filter { $0 != name }, completion: {})
+        SubredditReorderViewController.changed = true
         set(name: AccountController.currentName, subs: subs) { () in }
+        if #available(iOS 10.0, *) {
+            HapticUtility.hapticActionStrong()
+        } else if SettingValues.hapticFeedback {
+            AudioServicesPlaySystemSound(1519)
+        }
         if AccountController.isLoggedIn {
             do {
                 try session.setSubscribeSubreddit(Subreddit.init(subreddit: name), subscribe: false, completion: { (result) in
@@ -158,7 +173,7 @@ class Subscriptions {
                         print(result.error!)
                         completion(toReturn, toReturnMultis)
                     case .success(let listing):
-                        toReturn += listing.children.flatMap({ $0 as? Subreddit })
+                        toReturn += listing.children.compactMap({ $0 as? Subreddit })
                         paginator = listing.paginator
                         print("Size is \(toReturn.count) and hasmore is \(paginator.hasMore())")
                         if paginator.hasMore() {

@@ -9,42 +9,141 @@
 import Anchorage
 import reddift
 import SDWebImage
+import SloppySwiper
 import UIKit
-import XLActionController
 
-class ContentListingViewController: MediaViewController, UICollectionViewDelegate, WrappingFlowLayoutDelegate, UICollectionViewDataSource, SubmissionMoreDelegate, UIScrollViewDelegate {
+class ContentListingViewController: MediaViewController, UICollectionViewDelegate, WrappingFlowLayoutDelegate, UICollectionViewDataSource, SubmissionMoreDelegate, UIScrollViewDelegate, UINavigationControllerDelegate, AutoplayScrollViewDelegate {
+    var currentPlayingIndex = [IndexPath]()
+    
+    var isScrollingDown = true
+    
+    var lastScrollDirectionWasDown = false
+    
+    var lastYUsed = CGFloat.zero
+    
+    var lastY = CGFloat.zero
+    
+    func getTableView() -> UICollectionView {
+        return self.tableView
+    }
+    
+    var autoplayHandler: AutoplayScrollViewHandler!
+    func headerOffset() -> Int {
+        return 0
+    }
+    
+    func subscribe(link: RSubmission) {
+        let sub = link.subreddit
+        let alrController = UIAlertController.init(title: "Follow r/\(sub)", message: nil, preferredStyle: .alert)
+        if AccountController.isLoggedIn {
+            let somethingAction = UIAlertAction(title: "Subscribe", style: UIAlertAction.Style.default, handler: { (_: UIAlertAction!) in
+                Subscriptions.subscribe(sub, true, session: self.session!)
+                self.subChanged = true
+                BannerUtil.makeBanner(text: "Subscribed\nr/\(sub)", color: ColorUtil.accentColorForSub(sub: sub), seconds: 3, context: self, top: true)
+            })
+            alrController.addAction(somethingAction)
+        }
+        
+        let somethingAction = UIAlertAction(title: "Casually subscribe", style: UIAlertAction.Style.default, handler: { (_: UIAlertAction!) in
+            Subscriptions.subscribe(sub, false, session: self.session!)
+            self.subChanged = true
+            BannerUtil.makeBanner(text: "Added\nr/\(sub) ", color: ColorUtil.accentColorForSub(sub: sub), seconds: 3, context: self, top: true)
+        })
+        alrController.addAction(somethingAction)
+        
+        alrController.addCancelButton()
+        
+        alrController.modalPresentationStyle = .fullScreen
+        self.present(alrController, animated: true, completion: {})
+    }
+    
+    var swiper: SloppySwiper?
+    
+    func hide(index: Int) {
+        baseData.content.remove(at: index)
+        flowLayout.reset(modal: presentingViewController != nil, vc: self, isGallery: false)
+        tableView.reloadData()
+    }
+    
+    func applyFilters() {
+        self.baseData.getData(reload: true)
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        
+        for index in tableView.indexPathsForVisibleItems {
+            if let cell = tableView.cellForItem(at: index) as? LinkCellView {
+                cell.endVideos()
+            }
+        }
+    }
+    
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        if ColorUtil.theme.isLight && SettingValues.reduceColor {
+                        if #available(iOS 13, *) {
+                return .darkContent
+            } else {
+                return .default
+            }
+
+        } else {
+            return .lightContent
+        }
+    }
+    
+    @objc func showSortMenu(_ selector: UIButton?) {
+        if baseData is ProfileContributionLoader {
+            let actionSheetController = DragDownAlertMenu(title: "Profile sorting", subtitle: "", icon: nil, themeColor: ColorUtil.baseAccent, full: true)
+            
+            let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.getCopy(withSize: .square(size: 20), withColor: .blue)
+            
+            for link in UserContentSortBy.cases {
+                actionSheetController.addAction(title: link.description, icon: userSort == link ? selected : nil) {
+                    self.showTimeMenuUser(s: link, selector: selector)
+                }
+            }
+            
+            actionSheetController.show(self)
+        }
+    }
     
     func showFilterMenu(_ cell: LinkCellView) {
         //Not implemented
     }
     public var inHeadView = UIView()
-
+    
     var baseData: ContributionLoader
     var session: Session?
     var tableView: UICollectionView!
     var loaded = false
-
+    
     init(dataSource: ContributionLoader) {
         baseData = dataSource
         super.init(nibName: nil, bundle: nil)
+        autoplayHandler = AutoplayScrollViewHandler(delegate: self)
         baseData.delegate = self
         setBarColors(color: baseData.color)
     }
-
+    
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
+    
     func failed(error: Error) {
-        print(error)
+        print(error.localizedDescription)
         loaded = true
         loading = false
+        DispatchQueue.main.async {
+            self.emptyStateView.isHidden = false
+            self.endAndResetRefresh()
+        }
     }
-
-    func drefresh(_ sender: AnyObject) {
+    
+    @objc func drefresh(_ sender: AnyObject) {
         refresh()
     }
-
+    
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         self.automaticallyAdjustsScrollViewInsets = false
@@ -52,15 +151,18 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
         self.extendedLayoutIncludesOpaqueBars = true
         self.navigationController?.setToolbarHidden(true, animated: false)
         self.navigationController?.setNavigationBarHidden(false, animated: false)
+        self.navigationController?.delegate = self
         
         if !loaded && !loading {
-            defer {
-                refreshControl.beginRefreshing()
-            }
+            self.tableView.contentOffset = CGPoint(x: 0, y: -self.refreshControl.frame.size.height)
+            refreshControl.beginRefreshing()
+        } else {
+            self.tableView.reloadData()
         }
         if let interactiveGesture = self.navigationController?.interactivePopGestureRecognizer {
             self.tableView.panGestureRecognizer.require(toFail: interactiveGesture)
         }
+        autoplayHandler.autoplayOnce(self.tableView)
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -68,10 +170,20 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
         if !loading && !loaded {
             refresh()
         }
+        
+        if self.navigationController != nil && !((self.baseData is FriendsContributionLoader || baseData is ProfileContributionLoader || baseData is InboxContributionLoader || baseData is CollectionsContributionLoader || baseData is ModQueueContributionLoader || baseData is ModMailContributionLoader)) {
+            if !(self.navigationController?.delegate is SloppySwiper) {
+                swiper = SloppySwiper.init(navigationController: self.navigationController!)
+                self.navigationController!.delegate = swiper!
+            }
+        }
+        
+        setupBaseBarColors()
     }
-
+    
     var flowLayout: WrappingFlowLayout = WrappingFlowLayout.init()
-
+    var emptyStateView = EmptyStateView()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         setupBaseBarColors()
@@ -80,72 +192,95 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
         self.tableView = UICollectionView(frame: CGRect.zero, collectionViewLayout: flowLayout)
         self.view = UIView.init(frame: CGRect.zero)
         self.view.addSubview(tableView)
-
+        tableView.verticalAnchors == view.verticalAnchors
+        tableView.horizontalAnchors == view.safeHorizontalAnchors
+        
         self.tableView.delegate = self
         self.tableView.dataSource = self
-
+        
         refreshControl = UIRefreshControl()
-        refreshControl.tintColor = ColorUtil.fontColor
-
+        refreshControl.tintColor = ColorUtil.theme.fontColor
+        
         refreshControl.attributedTitle = NSAttributedString(string: "")
-        refreshControl.addTarget(self, action: #selector(self.drefresh(_:)), for: UIControlEvents.valueChanged)
+        refreshControl.addTarget(self, action: #selector(self.drefresh(_:)), for: UIControl.Event.valueChanged)
         tableView.addSubview(refreshControl)
+        refreshControl.centerAnchors == tableView.centerAnchors
+        
         tableView.alwaysBounceVertical = true
-
+        
         self.tableView.register(BannerLinkCellView.classForCoder(), forCellWithReuseIdentifier: "banner")
         self.tableView.register(AutoplayBannerLinkCellView.classForCoder(), forCellWithReuseIdentifier: "autoplay")
         self.tableView.register(ThumbnailLinkCellView.classForCoder(), forCellWithReuseIdentifier: "thumb")
         self.tableView.register(TextLinkCellView.classForCoder(), forCellWithReuseIdentifier: "text")
         self.tableView.register(CommentCellView.classForCoder(), forCellWithReuseIdentifier: "comment")
         self.tableView.register(MessageCellView.classForCoder(), forCellWithReuseIdentifier: "message")
-        self.tableView.register(NoContentCell.classForCoder(), forCellWithReuseIdentifier: "nocontent")
         self.tableView.register(FriendCellView.classForCoder(), forCellWithReuseIdentifier: "friend")
-        tableView.backgroundColor = ColorUtil.backgroundColor
-
+        tableView.backgroundColor = ColorUtil.theme.backgroundColor
+        
         var top = 0
         
-        top += ((self.baseData is FriendsContributionLoader || baseData is ProfileContributionLoader || baseData is InboxContributionLoader || baseData is ModQueueContributionLoader || baseData is ModMailContributionLoader) ? 45 : 0)
+        top += ((self.baseData is FriendsContributionLoader || baseData is ProfileContributionLoader || baseData is InboxContributionLoader || baseData is CollectionsContributionLoader || baseData is ModQueueContributionLoader || baseData is ModMailContributionLoader) ? 45 : 0)
         
         self.tableView.contentInset = UIEdgeInsets.init(top: CGFloat(top), left: 0, bottom: 65, right: 0)
         
+        self.view.addSubview(emptyStateView)
+        if self is ReadLaterViewController {
+            emptyStateView.setText(title: "No Saved Posts", message: "Go add posts to Read Later to see them here.")
+        } else {
+            emptyStateView.setText(title: "Nothing to see here!", message: "No content was found.")
+        }
+        emptyStateView.isHidden = true
+        emptyStateView.edgeAnchors == self.tableView.edgeAnchors
+        self.view.bringSubviewToFront(emptyStateView)
+        
         session = (UIApplication.shared.delegate as! AppDelegate).session
+        
+        flowLayout.reset(modal: presentingViewController != nil, vc: self, isGallery: false)
+        tableView.reloadData()
     }
     
     var oldsize = CGFloat(0)
-
+    
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
-        tableView.frame = self.view.bounds
+        
         if self.view.bounds.width != oldsize {
             oldsize = self.view.bounds.width
-            flowLayout.reset()
+            flowLayout.reset(modal: presentingViewController != nil, vc: self, isGallery: false)
             tableView.reloadData()
         }
     }
-
+    
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        
+        oldsize = self.view.bounds.width
+        coordinator.animate(
+            alongsideTransition: { [unowned self] _ in
+                self.flowLayout.reset(modal: self.presentingViewController != nil, vc: self, isGallery: false)
+                self.view.setNeedsLayout()
+            }, completion: nil
+        )
+    }
+    
     var tC: UIViewController?
-
+    
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
         // Dispose of any resources that can be recreated.
     }
-
+    
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        return baseData.content.count == 0 && loaded && !loading ? 1 : baseData.content.count
+        return baseData.content.count
     }
-
+    
     func collectionView(_ tableView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        if baseData.content.count == 0 {
-            let cell = tableView.dequeueReusableCell(withReuseIdentifier: "nocontent", for: indexPath) as! NoContentCell
-            cell.doText(controller: self)
-            return cell
-        }
         let thing = baseData.content[indexPath.row]
         var cell: UICollectionViewCell?
         if thing is RSubmission {
-            
+            let tableWidth = self.tableView.frame.size.width
             var c: LinkCellView?
-            switch SingleSubredditViewController.cellType(forSubmission: thing as! RSubmission, false) {
+            switch SingleSubredditViewController.cellType(forSubmission: thing as! RSubmission, false, cellWidth: (tableWidth == 0 ? UIScreen.main.bounds.size.width : tableWidth) ) {
             case .thumb:
                 c = tableView.dequeueReusableCell(withReuseIdentifier: "thumb", for: indexPath) as! ThumbnailLinkCellView
             case .banner:
@@ -155,19 +290,19 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
             default:
                 c = tableView.dequeueReusableCell(withReuseIdentifier: "text", for: indexPath) as! TextLinkCellView
             }
-
+            
             c?.preservesSuperviewLayoutMargins = false
             c?.del = self
             
-            (c)!.configure(submission: thing as! RSubmission, parent: self, nav: self.navigationController, baseSub: "")
-
+            (c)!.configure(submission: thing as! RSubmission, parent: self, nav: self.navigationController, baseSub: "", np: false)
+            
             c?.layer.shouldRasterize = true
             c?.layer.rasterizationScale = UIScreen.main.scale
             
             if self is ReadLaterViewController {
                 c?.readLater.isHidden = false
             }
-
+            
             cell = c
         } else if thing is RComment {
             let c = tableView.dequeueReusableCell(withReuseIdentifier: "comment", for: indexPath) as! CommentCellView
@@ -191,42 +326,30 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
         
         return cell!
     }
-
+    
+    func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        if cell is AutoplayBannerLinkCellView {
+            (cell as! AutoplayBannerLinkCellView).doLoadVideo()
+        }
+    }
+    
     func collectionView(_ collectionView: UICollectionView, width: CGFloat, indexPath: IndexPath) -> CGSize {
         let itemWidth = width
-
+        
         if indexPath.row < baseData.content.count {
             let thing = baseData.content[indexPath.row]
-
+            
             if thing is RSubmission {
                 let submission = thing as! RSubmission
-                return SingleSubredditViewController.sizeWith(submission, width, false)
+                return SingleSubredditViewController.sizeWith(submission, width, false, false)
             } else if thing is RComment {
                 let comment = thing as! RComment
                 if estimatedHeights[comment.id] == nil {
-                    let attrs = [NSFontAttributeName: FontGenerator.boldFontOfSize(size: 12, submission: false)] as [String: Any]
-                    let endString = NSMutableAttributedString(string: "  •  \(DateFormatter().timeSince(from: comment.created, numericDates: true))  •  ")
-
-                    let boldString = NSMutableAttributedString(string: "\(comment.score)pts", attributes: attrs)
-                    let subString = NSMutableAttributedString(string: "r/\(comment.subreddit)")
-                    let color = ColorUtil.getColorForSub(sub: comment.subreddit)
-                    if color != ColorUtil.baseColor {
-                        subString.addAttribute(NSForegroundColorAttributeName, value: color, range: NSRange.init(location: 0, length: subString.length))
-                    }
-
-                    let infoString = NSMutableAttributedString.init(string: "", attributes: [NSFontAttributeName: FontGenerator.fontOfSize(size: 12, submission: false)])
-                    infoString.append(boldString)
-                    infoString.append(endString)
-                    infoString.append(subString)
-
-                    let titleString = NSMutableAttributedString.init(string: comment.submissionTitle, attributes: [NSFontAttributeName: FontGenerator.boldFontOfSize(size: 18, submission: false)])
-                    titleString.append(NSAttributedString.init(string: "\n", attributes: nil))
-                    titleString.append(infoString)
+                    let titleText = CommentCellView.getTitle(comment)
                     
-                    let height = TextStackEstimator.init(fontSize: 16, submission: false, color: .white, width: itemWidth - 16)
-                    height.setTextWithTitleHTML(titleString, htmlString: comment.htmlText)
+                    let height = TextDisplayStackView.estimateHeight(fontSize: 16, submission: false, width: itemWidth - 16, titleString: titleText, htmlString: comment.htmlText)
                     
-                    estimatedHeights[comment.id] = height.estimatedHeight + 20
+                    estimatedHeights[comment.id] = height + 20
                 }
                 return CGSize(width: itemWidth, height: estimatedHeights[comment.id]!)
             } else if thing is RFriend {
@@ -234,129 +357,88 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
             } else {
                 let message = thing as! RMessage
                 if estimatedHeights[message.id] == nil {
-                    var title: NSMutableAttributedString = NSMutableAttributedString()
-                    if message.wasComment {
-                        title = NSMutableAttributedString.init(string: message.linkTitle, attributes: [NSFontAttributeName: FontGenerator.boldFontOfSize(size: 18, submission: true)])
-                    } else {
-                        title = NSMutableAttributedString.init(string: message.subject, attributes: [NSFontAttributeName: FontGenerator.boldFontOfSize(size: 18, submission: true)])
-                    }
-
-                    let endString = NSMutableAttributedString(string: "\(DateFormatter().timeSince(from: message.created, numericDates: true))  •  from \(message.author)")
-
-                    let subString = NSMutableAttributedString(string: "r/\(message.subreddit)")
-                    let color = ColorUtil.getColorForSub(sub: message.subreddit)
-                    if color != ColorUtil.baseColor {
-                        subString.addAttribute(NSForegroundColorAttributeName, value: color, range: NSRange.init(location: 0, length: subString.length))
-                    }
-
-                    let infoString = NSMutableAttributedString.init(string: "", attributes: [NSFontAttributeName: FontGenerator.fontOfSize(size: 12, submission: true)])
-                    infoString.append(endString)
-                    if !message.subreddit.isEmpty {
-                        infoString.append(NSAttributedString.init(string: "  •  "))
-                        infoString.append(subString)
-                    }
-
-                    let html = message.htmlBody
-                    var content: NSMutableAttributedString?
-                    if !html.isEmpty() {
-                        do {
-                            let attr = try NSMutableAttributedString(data: (html.data(using: .unicode)!), options: [NSDocumentTypeDocumentAttribute: NSHTMLTextDocumentType], documentAttributes: nil)
-                            let font = FontGenerator.fontOfSize(size: 16, submission: false)
-                            let attr2 = attr.reconstruct(with: font, color: ColorUtil.fontColor, linkColor: .white)
-                            content = LinkParser.parse(attr2, .white)
-                        } catch {
-                        }
-                    }
+                    let titleText = MessageCellView.getTitleText(message: message)
                     
-                    let framesetterT = CTFramesetterCreateWithAttributedString(title)
-                    let textSizeT = CTFramesetterSuggestFrameSizeWithConstraints(framesetterT, CFRange(), nil, CGSize.init(width: itemWidth - 16 - (message.subject.hasPrefix("re:") ? 30 : 0), height: CGFloat.greatestFiniteMagnitude), nil)
-                    let framesetterI = CTFramesetterCreateWithAttributedString(infoString)
-                    let textSizeI = CTFramesetterSuggestFrameSizeWithConstraints(framesetterI, CFRange(), nil, CGSize.init(width: itemWidth - 16 - (message.subject.hasPrefix("re:") ? 30 : 0), height: CGFloat.greatestFiniteMagnitude), nil)
-                    if content != nil {
-                        let framesetterB = CTFramesetterCreateWithAttributedString(content!)
-                        let textSizeB = CTFramesetterSuggestFrameSizeWithConstraints(framesetterB, CFRange(), nil, CGSize.init(width: itemWidth - 16 - (message.subject.hasPrefix("re:") ? 30 : 0), height: CGFloat.greatestFiniteMagnitude), nil)
-
-                        estimatedHeights[message.id] = CGFloat(36 + textSizeT.height + textSizeI.height + textSizeB.height)
-                    } else {
-                        estimatedHeights[message.id] = CGFloat(36 + textSizeT.height + textSizeI.height)
-                    }
+                    let height = TextDisplayStackView.estimateHeight(fontSize: 16, submission: false, width: itemWidth - 16 - (message.subject.unescapeHTML.hasPrefix("re:") ? 30 : 0), titleString: titleText, htmlString: message.htmlBody)
+                    
+                    estimatedHeights[message.id] = height + 20
                 }
                 return CGSize(width: itemWidth, height: estimatedHeights[message.id]!)
             }
         }
         return CGSize(width: itemWidth, height: 90)
     }
-
+    
     var estimatedHeights: [String: CGFloat] = [:]
-
+    
     var showing = false
-
+    
     func showLoader() {
         showing = true
-        //todo maybe add this later
+       // TODO: - maybe add this later
     }
-
+    
     var sort = LinkSortType.hot
+    var userSort = UserContentSortBy.new
     var time = TimeFilterWithin.day
-
+    
     func showMenu(sender: UIButton?) {
-        let actionSheetController: UIAlertController = UIAlertController(title: "Sorting", message: "", preferredStyle: .actionSheet)
-
-        let cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-            print("Cancel")
-        }
-        actionSheetController.addAction(cancelActionButton)
-
+        let actionSheetController = DragDownAlertMenu(title: "Sorting", subtitle: "", icon: nil, themeColor: ColorUtil.baseAccent, full: true)
+        
+        let selected = UIImage(sfString: SFSymbol.checkmarkCircle, overrideString: "selected")!.getCopy(withSize: .square(size: 20), withColor: .blue)
+        
         for link in LinkSortType.cases {
-            let saveActionButton: UIAlertAction = UIAlertAction(title: link.description, style: .default) { _ -> Void in
+            actionSheetController.addAction(title: link.description, icon: sort == link ? selected : nil) {
                 self.showTimeMenu(s: link, selector: sender)
             }
-            actionSheetController.addAction(saveActionButton)
         }
-
-        if let presenter = actionSheetController.popoverPresentationController {
-            presenter.sourceView = sender!
-            presenter.sourceRect = sender!.bounds
-        }
-
-        self.present(actionSheetController, animated: true, completion: nil)
-
+        
+        actionSheetController.show(self)
     }
-
+    
+    func showTimeMenuUser(s: UserContentSortBy, selector: UIButton?) {
+        if s == .hot || s == .new {
+            userSort = s
+            refresh()
+            return
+        } else {
+            let actionSheetController = DragDownAlertMenu(title: "Select a time period", subtitle: "", icon: nil, themeColor: ColorUtil.baseAccent, full: true)
+            
+            for t in TimeFilterWithin.cases {
+                actionSheetController.addAction(title: t.param, icon: nil) {
+                    self.userSort = s
+                    self.time = t
+                    self.refresh()
+                }
+            }
+            
+            actionSheetController.show(self)
+        }
+    }
+    
     func showTimeMenu(s: LinkSortType, selector: UIButton?) {
         if s == .hot || s == .new || s == .rising || s == .best {
             sort = s
             refresh()
             return
         } else {
-            let actionSheetController: UIAlertController = UIAlertController(title: "Sorting", message: "", preferredStyle: .actionSheet)
-
-            let cancelActionButton: UIAlertAction = UIAlertAction(title: "Cancel", style: .cancel) { _ -> Void in
-                print("Cancel")
-            }
-            actionSheetController.addAction(cancelActionButton)
-
+            let actionSheetController = DragDownAlertMenu(title: "Select a time period", subtitle: "", icon: nil, themeColor: ColorUtil.baseAccent, full: true)
+            
             for t in TimeFilterWithin.cases {
-                let saveActionButton: UIAlertAction = UIAlertAction(title: t.param, style: .default) { _ -> Void in
+                actionSheetController.addAction(title: t.param, icon: nil) {
                     self.sort = s
                     self.time = t
                     self.refresh()
                 }
-                actionSheetController.addAction(saveActionButton)
             }
-
-            if let presenter = actionSheetController.popoverPresentationController {
-                presenter.sourceView = selector!
-                presenter.sourceRect = selector!.bounds
-            }
-
-            self.present(actionSheetController, animated: true, completion: nil)
+            
+            actionSheetController.show(self)
         }
     }
     
     func doHeadView() {
         inHeadView.removeFromSuperview()
-        inHeadView = UIView.init(frame: CGRect.init(x: 0, y: 0, width: max(self.view.frame.size.width, self.view.frame.size.height), height: (UIApplication.shared.statusBarView?.frame.size.height ?? 20)))
+        inHeadView = UIView.init(frame: CGRect.init(x: 0, y: 0, width: max(self.view.frame.size.width, self.view.frame.size.height), height: (UIApplication.shared.statusBarUIView?.frame.size.height ?? 20)))
         self.inHeadView.backgroundColor = ColorUtil.getColorForSub(sub: "", true)
         
         if !(navigationController is TapBehindModalViewController) {
@@ -366,26 +448,23 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
     
     func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
         if cell is LinkCellView && (cell as! LinkCellView).videoView != nil {
-            (cell as! LinkCellView).videoView!.player?.pause()
-            (cell as! LinkCellView).videoView!.player?.currentItem?.asset.cancelLoading()
-            (cell as! LinkCellView).videoView!.player?.currentItem?.cancelPendingSeeks()
-            (cell as! LinkCellView).videoView!.player = nil
-            (cell as! LinkCellView).updater?.invalidate()
+            (cell as! LinkCellView).endVideos()
         }
     }
-
+    
     var refreshControl: UIRefreshControl!
-
+    
     func refresh() {
         loading = true
+        emptyStateView.isHidden = true
         baseData.reset()
         refreshControl.beginRefreshing()
-        flowLayout.reset()
+        flowLayout.reset(modal: presentingViewController != nil, vc: self, isGallery: false)
         flowLayout.invalidateLayout()
         tableView.reloadData()
         baseData.getData(reload: true)
     }
-
+    
     func loadMore() {
         if loading || !loaded {
             return
@@ -398,21 +477,47 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
     }
     
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        if scrollView.contentSize.height > 0 && (scrollView.contentSize.height - (scrollView.contentOffset.y + scrollView.frame.size.height) < 300) {
-            if loaded && !loading && baseData.canGetMore {
+        autoplayHandler.scrollViewDidScroll(scrollView)
+    }
+
+    func didScrollExtras(_ currentY: CGFloat) {
+        if self.tableView.contentSize.height > 0 && (tableView.contentSize.height - (tableView.contentOffset.y + tableView.frame.size.height) < 300) {
+            if self.loaded && !self.loading && self.baseData.canGetMore {
                 self.loadMore()
             }
         }
+
     }
-
+    
+    func endAndResetRefresh() {
+        self.refreshControl.endRefreshing()
+        self.refreshControl.removeFromSuperview()
+        self.refreshControl = UIRefreshControl()
+        self.refreshControl.tintColor = ColorUtil.theme.fontColor
+        
+        self.refreshControl.attributedTitle = NSAttributedString(string: "")
+        self.refreshControl.addTarget(self, action: #selector(self.drefresh(_:)), for: UIControl.Event.valueChanged)
+        self.tableView.addSubview(self.refreshControl)
+    }
+    
     var loading: Bool = false
-
-    func doneLoading(before: Int) {
+    
+    func doneLoading(before: Int, filter: Bool) {
         loading = false
         loaded = true
         DispatchQueue.main.async {
+            if filter {
+                self.baseData.content = PostFilter.filter(self.baseData.content, previous: [], baseSubreddit: (self.baseData is SearchContributionLoader ? (self.baseData as! SearchContributionLoader).sub : "all"))
+            }
+            // If there is no data after loading, show the empty state view.
+            if self.baseData.content.count == 0 {
+                self.emptyStateView.isHidden = false
+            } else {
+                self.emptyStateView.isHidden = true
+            }
+            
             if before == 0 || before > self.baseData.content.count {
-                self.flowLayout.reset()
+                self.flowLayout.reset(modal: self.presentingViewController != nil, vc: self, isGallery: false)
                 self.tableView.reloadData()
                 
                 var top = CGFloat(0)
@@ -420,17 +525,20 @@ class ContentListingViewController: MediaViewController, UICollectionViewDelegat
                     top += 22
                 }
                 
-                self.tableView.contentOffset = CGPoint.init(x: 0, y: -18 + (-1 * (((self.baseData is FriendsContributionLoader || self.baseData is ProfileContributionLoader || self.baseData is InboxContributionLoader || self.baseData is ModQueueContributionLoader || self.baseData is ModMailContributionLoader) ? 45 : 0) + (self.navigationController?.navigationBar.frame.size.height ?? 64))) - top)
+                //New xcode is complaining about computation times...
+                let headerOffset = CGFloat((self.baseData is FriendsContributionLoader || self.baseData is ProfileContributionLoader || self.baseData is InboxContributionLoader || self.baseData is CollectionsContributionLoader || self.baseData is ModQueueContributionLoader || self.baseData is ModMailContributionLoader) ? 45 : 0)
+                let totalOffset = (-1 * (headerOffset + (self.navigationController?.navigationBar.frame.size.height ?? 64)))
+                self.tableView.contentOffset = CGPoint.init(x: 0, y: -18 + totalOffset - top)
             } else {
                 var paths = [IndexPath]()
                 for i in before..<self.baseData.content.count {
                     paths.append(IndexPath.init(item: i, section: 0))
                 }
-
-                self.flowLayout.reset()
+                
+                self.flowLayout.reset(modal: self.presentingViewController != nil, vc: self, isGallery: false)
                 self.tableView.insertItems(at: paths)
             }
-            self.refreshControl.endRefreshing()
+            self.endAndResetRefresh()
         }
         self.loading = false
     }
@@ -441,70 +549,96 @@ extension ContentListingViewController: LinkCellViewDelegate {
         let comment = CommentViewController.init(submission: id, subreddit: subreddit)
         VCPresenter.showVC(viewController: comment, popupIfPossible: true, parentNavigationController: navigationController, parentViewController: self)
     }
-
+    
     func deleteSelf(_ cell: LinkCellView) {
         //Dont implememt
     }
-
+    
     func more(_ cell: LinkCellView) {
-        PostActions.showMoreMenu(cell: cell, parent: self, nav: self.navigationController!, mutableList: false, delegate: self)
+        PostActions.showMoreMenu(cell: cell, parent: self, nav: self.navigationController!, mutableList: false, delegate: self, index: tableView.indexPath(for: cell)?.row ?? 0)
     }
-
+    
     func upvote(_ cell: LinkCellView) {
         do {
             try session?.setVote(ActionStates.getVoteDirection(s: cell.link!) == .up ? .none : .up, name: (cell.link?.getId())!, completion: { (_) in
-
+                
             })
             ActionStates.setVoteDirection(s: cell.link!, direction: ActionStates.getVoteDirection(s: cell.link!) == .up ? .none : .up)
             History.addSeen(s: cell.link!)
             cell.refresh()
+            cell.refreshTitle(force: true)
         } catch {
-
+            
         }
     }
-
+    
     func downvote(_ cell: LinkCellView) {
         do {
             try session?.setVote(ActionStates.getVoteDirection(s: cell.link!) == .down ? .none : .down, name: (cell.link?.getId())!, completion: { (_) in
-
+                
             })
             ActionStates.setVoteDirection(s: cell.link!, direction: ActionStates.getVoteDirection(s: cell.link!) == .down ? .none : .down)
             History.addSeen(s: cell.link!)
             cell.refresh()
+            cell.refreshTitle(force: true)
         } catch {
-
+            
         }
     }
-
+    
     func save(_ cell: LinkCellView) {
-        do {
-            try session?.setSave(!ActionStates.isSaved(s: cell.link!), name: (cell.link?.getId())!, completion: { (_) in
-
-            })
-            ActionStates.setSaved(s: cell.link!, saved: !ActionStates.isSaved(s: cell.link!))
-            History.addSeen(s: cell.link!)
-            cell.refresh()
-        } catch {
-
+        if baseData is CollectionsContributionLoader {
+            var message = ""
+            if let ctitle = (baseData as? CollectionsContributionLoader)?.collectionTitle {
+                if Collections.getCollectionIDs(title: ctitle).count == 1 {
+                    message = "Deleting the last post in \(ctitle) will delete the collection entirely"
+                }
+                let alert = UIAlertController(title: "Remove from this collection?", message: message, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "Remove", style: UIAlertAction.Style.destructive, handler: { (_) in
+                    Collections.removeFromCollection(link: cell.link!, title: ctitle)
+                    self.baseData.content = self.baseData.content.filter { (object) -> Bool in
+                        if let link = object as? RSubmission {
+                            if link.getId() == cell.link!.getId() {
+                                return false
+                            }
+                        }
+                        return true
+                    }
+                    self.tableView.reloadData()
+                }))
+                alert.addCancelButton()
+                self.present(alert, animated: true, completion: nil)
+            }
+        } else {
+            do {
+                try session?.setSave(!ActionStates.isSaved(s: cell.link!), name: (cell.link?.getId())!, completion: { (_) in
+                    
+                })
+                ActionStates.setSaved(s: cell.link!, saved: !ActionStates.isSaved(s: cell.link!))
+                History.addSeen(s: cell.link!)
+                cell.refresh()
+            } catch {
+                
+            }
         }
     }
-
+    
     func reply(_ cell: LinkCellView) {
-
+        
     }
-
+    
     func hide(_ cell: LinkCellView) {
     }
-
+    
     func mod(_ cell: LinkCellView) {
         PostActions.showModMenu(cell, parent: self)
     }
-
+    
     func readLater(_ cell: LinkCellView) {
         guard cell.link != nil else {
-            fatalError("Cell must have a link!")
+            return
         }
-
+        
         if self is ReadLaterViewController {
             ReadLater.removeReadLater(id: cell.link!.getId())
             let savedIndex = tableView.indexPath(for: cell)?.row ?? 0
@@ -523,58 +657,84 @@ extension ContentListingViewController: LinkCellViewDelegate {
                     self.tableView.insertItems(at: [IndexPath.init(row: savedIndex, section: 0)])
                 }
             }
+        } else {
+            ReadLater.toggleReadLater(link: cell.link!)
+            if #available(iOS 10.0, *) {
+                HapticUtility.hapticActionComplete()
+            }
         }
-
         cell.refresh()
     }
-
+    
 }
 
-public class NoContentCell: UICollectionViewCell {
-    override public init(frame: CGRect) {
-        super.init(frame: frame)
-        setupView()
+class EmptyStateView: UIView {
+    
+    var titleLabel = UILabel().then {
+        $0.textAlignment = .center
+        $0.numberOfLines = 0
     }
-    var title = UILabel()
+    
+    public override init(frame: CGRect) {
+        super.init(frame: frame)
+    }
+    
+    convenience init() {
+        self.init(frame: .zero)
+        
+        addSubview(titleLabel)
+        titleLabel.centerAnchors == centerAnchors
+        titleLabel.widthAnchor == self.widthAnchor - 50
+        
+        setText(title: "Title Placeholder", message: "Message Placeholder")
+    }
     
     required public init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
-    func doText(controller: ContentListingViewController) {
-        let text: String
-        if controller is ReadLaterViewController {
-            text = "Nothing to see here!\nNo more posts to Read Later"
-        } else {
-            text = "Nothing to see here!\nNo content was found"
-        }
-        let textParts = text.components(separatedBy: "\n")
-        
+    func setText(title: String, message: String?) {
         let finalText: NSMutableAttributedString!
-        if textParts.count > 1 {
-            let firstPart = NSMutableAttributedString.init(string: textParts[0], attributes: [NSForegroundColorAttributeName: ColorUtil.fontColor.withAlphaComponent(0.8), NSFontAttributeName: UIFont.boldSystemFont(ofSize: 14)])
-            let secondPart = NSMutableAttributedString.init(string: "\n" + textParts[1], attributes: [NSForegroundColorAttributeName: ColorUtil.fontColor.withAlphaComponent(0.5), NSFontAttributeName: UIFont.systemFont(ofSize: 12)])
+        if let message = message {
+            let firstPart = NSMutableAttributedString.init(string: title, attributes: convertToOptionalNSAttributedStringKeyDictionary([
+                convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): ColorUtil.theme.fontColor.withAlphaComponent(0.8),
+                convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.boldSystemFont(ofSize: 20),
+            ]))
+            let secondPart = NSMutableAttributedString.init(string: "\n\n" + message, attributes: convertToOptionalNSAttributedStringKeyDictionary([
+                convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): ColorUtil.theme.fontColor.withAlphaComponent(0.5),
+                convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.systemFont(ofSize: 14),
+            ]))
             firstPart.append(secondPart)
             finalText = firstPart
         } else {
-            finalText = NSMutableAttributedString.init(string: text, attributes: [NSForegroundColorAttributeName: UIColor.white, NSFontAttributeName: UIFont.boldSystemFont(ofSize: 14)])
+            finalText = NSMutableAttributedString.init(string: title, attributes: convertToOptionalNSAttributedStringKeyDictionary([convertFromNSAttributedStringKey(NSAttributedString.Key.foregroundColor): UIColor.white, convertFromNSAttributedStringKey(NSAttributedString.Key.font): UIFont.boldSystemFont(ofSize: 14)]))
         }
-        title.attributedText = finalText
+        titleLabel.attributedText = finalText
     }
-    
-    func setupView() {
-        title = UILabel()
-        title.backgroundColor = ColorUtil.foregroundColor
-        title.textAlignment = .center
-        
-        title.numberOfLines = 0
-        title.layer.cornerRadius = 15
-        title.clipsToBounds = true
-        let titleView = title.withPadding(padding: UIEdgeInsets(top: 8, left: 12, bottom: 0, right: 12))
-        self.contentView.addSubview(titleView)
-        
-        titleView.heightAnchor == 90
-        titleView.horizontalAnchors == self.contentView.horizontalAnchors
-        titleView.topAnchor == self.contentView.topAnchor
-    }
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringKey(_ input: NSAttributedString.Key) -> String {
+    return input.rawValue
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
+    guard let input = input else { return nil }
+    return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertToNSAttributedStringDocumentReadingOptionKeyDictionary(_ input: [String: Any]) -> [NSAttributedString.DocumentReadingOptionKey: Any] {
+    return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.DocumentReadingOptionKey(rawValue: key), value) })
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringDocumentAttributeKey(_ input: NSAttributedString.DocumentAttributeKey) -> String {
+    return input.rawValue
+}
+
+// Helper function inserted by Swift 4.2 migrator.
+private func convertFromNSAttributedStringDocumentType(_ input: NSAttributedString.DocumentType) -> String {
+    return input.rawValue
 }
